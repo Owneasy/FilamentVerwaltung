@@ -38,6 +38,9 @@ Public Class ServerDatenquelle
         ' Keine Weiterleitungen folgen: Cloudflare Access leitet ohne gültiges Service-Token auf eine Anmeldeseite um
         _client = New HttpClient(New SocketsHttpHandler With {.AllowAutoRedirect = False, .ConnectTimeout = TimeSpan.FromSeconds(5)}) With {
             .Timeout = TimeSpan.FromMinutes(5)}
+        ' Ohne User-Agent blockiert Cloudflare (Browser Integrity Check / Bot-Schutz) die Anfragen mit 403
+        Dim version = GetType(ServerDatenquelle).Assembly.GetName().Version
+        _client.DefaultRequestHeaders.UserAgent.Add(New ProductInfoHeaderValue("FilamentVerwaltung", If(version?.ToString(3), "1.0")))
         _client.DefaultRequestHeaders.Authorization = New AuthenticationHeaderValue("Bearer", zugang.Token.Trim())
         If zugang.CloudflareId.Trim().Length > 0 Then
             _client.DefaultRequestHeaders.Add("CF-Access-Client-Id", zugang.CloudflareId.Trim())
@@ -162,14 +165,18 @@ Public Class ServerDatenquelle
         If antwort.StatusCode = HttpStatusCode.Unauthorized Then
             Throw New UnauthorizedAccessException("Der Server hat das Zugangs-Token abgelehnt (steht in token.txt im Datenordner des Servers).")
         End If
-        If antwort.StatusCode = HttpStatusCode.Forbidden Then
-            Throw New UnauthorizedAccessException("Zugriff verweigert (403) – bei Cloudflare Access das Service-Token prüfen.")
-        End If
         Dim text = ""
         Try
             text = antwort.Content.ReadAsStringAsync().GetAwaiter().GetResult()
         Catch
         End Try
+        If antwort.StatusCode = HttpStatusCode.Forbidden Then
+            ' Cloudflare nennt in der Fehlerseite einen Code, z. B. "error code: 1010" (Bot-Schutz) oder 1020 (Firewall-Regel)
+            Dim cf = System.Text.RegularExpressions.Regex.Match(text, "error code:?\s*(\d{4})", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            Throw New UnauthorizedAccessException("Zugriff verweigert (403" & If(cf.Success, ", Cloudflare-Fehler " & cf.Groups(1).Value, "") & "). " &
+                                                  "Bei Cloudflare Access Client-ID und Secret prüfen und ob die Policy auf ""Service Auth"" steht" &
+                                                  If(cf.Success, "; bei 1010/1020 greift der Bot-Schutz bzw. eine Firewall-Regel von Cloudflare.", "."))
+        End If
         Dim istHtml = If(antwort.Content.Headers.ContentType?.MediaType, "").Contains("html")
         If istHtml OrElse text.Trim().Length = 0 Then text = $"Der Server meldet Fehler {code} ({antwort.ReasonPhrase})."
         Throw New InvalidOperationException(text.Trim())
