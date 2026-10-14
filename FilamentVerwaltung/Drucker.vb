@@ -116,6 +116,9 @@ Public Class DruckerStatus
     Public Property Faecher As New List(Of DruckerFach)
     ''' <summary>Temperaturen (Düse, Bett, ggf. Kammer) – leer, wenn der Drucker keine meldet.</summary>
     Public Property Temperaturen As New List(Of DruckerTemperatur)
+    ''' <summary>Aktuelle Schicht und Gesamtzahl laut Drucker (Bambu, Klipper mit SET_PRINT_STATS_INFO), sonst Nothing.</summary>
+    Public Property Schicht As Integer?
+    Public Property SchichtenGesamt As Integer?
     ''' <summary>Was der Drucker gerade tut (z. B. "Bett wird nivelliert") – leer, wenn er es nicht meldet.</summary>
     Public Property Phase As String = ""
     Public Property Meldung As String = ""

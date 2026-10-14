@@ -185,15 +185,29 @@ Public Class DruckerKarte
         If s.GrammGeplant.HasValue Then teile.Add($"{s.GrammGeplant.Value:N0} g laut Slicer")
         lblFortschritt.Text = String.Join(" · ", teile)
         lblFortschritt.Visible = teile.Count > 0
-        TemperaturenAnzeigen(If(s.Zustand = DruckerZustand.Offline, New List(Of DruckerTemperatur), s.Temperaturen))
+        WerteAnzeigen(s)
         lblMeldung.Text = s.Meldung
         lblMeldung.Visible = s.Zustand = DruckerZustand.Offline AndAlso s.Meldung.Length > 0
         SpulenAufbauen(s.Faecher, s.Slot)
     End Sub
 
-    ''' <summary>Düse / Bett / Kammer: Beschriftung leise, Wert fett; beim Aufheizen in Gelb mit Pfeil.</summary>
-    Private Sub TemperaturenAnzeigen(liste As List(Of DruckerTemperatur))
-        Dim signatur = String.Join("|", liste.Select(Function(x) x.Name))
+    ''' <summary>
+    ''' Zeile mit Düse / Bett / Kammer und der aktuellen Schicht: Beschriftung leise, Wert fett;
+    ''' Temperaturen beim Aufheizen in Gelb mit Pfeil.
+    ''' </summary>
+    Private Sub WerteAnzeigen(s As DruckerStatus)
+        Dim werte As New List(Of (Name As String, Text As String, Farbe As Color))
+        If s.Zustand <> DruckerZustand.Offline Then
+            For Each x In s.Temperaturen
+                werte.Add((x.Name, If(x.HeiztAuf, If(x.Ist < x.Soll.Value, "↑ ", "↓ "), "") & x.WertText,
+                           If(x.HeiztAuf, Theme.Gelb, If(x.Heizt, Theme.TextStark, Theme.TextLeise))))
+            Next
+            If s.DruckLaeuft AndAlso s.Schicht.HasValue AndAlso s.Schicht.Value > 0 Then
+                werte.Add(("Schicht", If(s.SchichtenGesamt.GetValueOrDefault() > 0, $"{s.Schicht.Value} / {s.SchichtenGesamt.Value}", CStr(s.Schicht.Value)), Theme.TextStark))
+            End If
+        End If
+
+        Dim signatur = String.Join("|", werte.Select(Function(x) x.Name))
         If signatur <> _temperaturSignatur Then
             _temperaturSignatur = signatur
             temperaturen.SuspendLayout()
@@ -202,7 +216,7 @@ Public Class DruckerKarte
             Next
             temperaturen.Controls.Clear()
             _temperaturWerte.Clear()
-            For Each x In liste
+            For Each x In werte
                 temperaturen.Controls.Add(New Label With {.Text = x.Name, .AutoSize = True, .Font = Theme.SchriftKlein, .ForeColor = Theme.TextLeise,
                                                           .Margin = New Padding(0, 2, 4, 0)})
                 Dim wert As New Label With {.AutoSize = True, .Font = Theme.SchriftFett, .Margin = New Padding(0, 0, 18, 0)}
@@ -211,12 +225,11 @@ Public Class DruckerKarte
             Next
             temperaturen.ResumeLayout()
         End If
-        For i = 0 To liste.Count - 1
-            Dim x = liste(i)
-            _temperaturWerte(i).Text = If(x.HeiztAuf, If(x.Ist < x.Soll.Value, "↑ ", "↓ "), "") & x.WertText
-            _temperaturWerte(i).ForeColor = If(x.HeiztAuf, Theme.Gelb, If(x.Heizt, Theme.TextStark, Theme.TextLeise))
+        For i = 0 To werte.Count - 1
+            _temperaturWerte(i).Text = werte(i).Text
+            _temperaturWerte(i).ForeColor = werte(i).Farbe
         Next
-        temperaturen.Visible = liste.Count > 0
+        temperaturen.Visible = werte.Count > 0
     End Sub
 
     ''' <summary>Zuordnung Fach → Spule. Wird nur neu aufgebaut, wenn sich die Fächer ändern.</summary>

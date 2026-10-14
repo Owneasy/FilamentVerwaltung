@@ -349,6 +349,9 @@ Public Class MoonrakerVerbindung
         Dim verbraucht = Zahl(stats, "filament_used")
         If verbraucht.HasValue AndAlso verbraucht.Value > 0 Then s.FilamentMmVerbraucht = verbraucht
         Dim status = Kind(antwort, "result", "status")
+        Dim schicht = Zahl(stats, "info", "current_layer"), gesamt = Zahl(stats, "info", "total_layer")
+        If schicht.HasValue Then s.Schicht = CInt(schicht.Value)
+        If gesamt.HasValue Then s.SchichtenGesamt = CInt(gesamt.Value)
         Temperatur(s, "Düse", Zahl(status, "extruder", "temperature"), Zahl(status, "extruder", "target"))
         Temperatur(s, "Bett", Zahl(status, "heater_bed", "temperature"), Zahl(status, "heater_bed", "target"))
 
@@ -667,6 +670,9 @@ Public Class BambuVerbindung
         s.Fortschritt = Math.Max(0, Math.Min(1, If(Zahl(feld("mc_percent")), 0.0) / 100.0))
         Dim rest = Zahl(feld("mc_remaining_time"))
         If rest.HasValue Then s.RestSekunden = CInt(rest.Value * 60)
+        Dim schicht = Zahl(feld("layer_num")), gesamt = Zahl(feld("total_layer_num"))
+        If schicht.HasValue Then s.Schicht = CInt(schicht.Value)
+        If gesamt.HasValue Then s.SchichtenGesamt = CInt(gesamt.Value)
         ' Phase nur während eines Auftrags – nach dem Druck bleibt stg_cur oft auf dem letzten Wert stehen
         Dim phase = Zahl(feld("stg_cur"))
         If phase.HasValue AndAlso s.DruckLaeuft Then s.Phase = PhaseText(CInt(phase.Value))
