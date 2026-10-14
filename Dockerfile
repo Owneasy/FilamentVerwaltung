@@ -13,6 +13,8 @@ COPY FilamentVerwaltung.Server/ FilamentVerwaltung.Server/
 RUN dotnet publish FilamentVerwaltung.Server/FilamentVerwaltung.Server.vbproj -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
+# ffmpeg für das Kamerabild der Bambu-Drucker X1/H2D (RTSPS)
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app .
 # Unraid legt appdata-Ordner meist als root an – deshalb als root laufen.

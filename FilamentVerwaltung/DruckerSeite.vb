@@ -98,8 +98,8 @@ Public Class DruckerKarte
     Private _fachSignatur As String = Nothing
     Private _filamente As New List(Of Filament)
     Private _aktualisiert As Boolean
-    Private ReadOnly _protokoll As DruckerProtokoll
-    Private _kamera As BambuKamera
+    Private ReadOnly _dienst As IDruckerDienst
+    Private _kamera As IKamera
     Private _kameraAn As Boolean
     Private ReadOnly kameraBild As New PictureBox With {.Dock = DockStyle.Fill, .Height = 227, .SizeMode = PictureBoxSizeMode.Zoom,
                                                          .BackColor = Color.Black, .Margin = New Padding(0, 8, 0, 2), .Visible = False}
@@ -110,10 +110,10 @@ Public Class DruckerKarte
     Public Event BearbeitenGeklickt(d As Drucker)
     Public Event ProtokollGeklickt(d As Drucker)
 
-    Public Sub New(d As Drucker, db As IDatenquelle, Optional protokoll As DruckerProtokoll = Nothing)
+    Public Sub New(d As Drucker, db As IDatenquelle, dienst As IDruckerDienst)
         _Drucker = d
         _db = db
-        _protokoll = protokoll
+        _dienst = dienst
         Width = 440
         AutoSize = True
         AutoSizeMode = AutoSizeMode.GrowAndShrink
@@ -320,7 +320,7 @@ Public Class DruckerKarte
 
     Private Sub KameraStarten()
         If _kamera Is Nothing Then
-            _kamera = New BambuKamera(Drucker, _protokoll)
+            _kamera = _dienst.KameraErstellen(Drucker)
             AddHandler _kamera.BildEmpfangen, AddressOf KameraBildEmpfangen
             AddHandler _kamera.StatusGeaendert, AddressOf KameraStatusGeaendert
         End If
@@ -448,7 +448,7 @@ Public Class DruckerSeite
             k.Dispose()
         Next
         For Each d In drucker
-            Dim karte As New DruckerKarte(d, _db, _ueberwachung.Protokoll(d.Id))
+            Dim karte As New DruckerKarte(d, _db, _ueberwachung)
             AddHandler karte.BearbeitenGeklickt, Sub(x) Bearbeiten(x.Kopie(), "Drucker bearbeiten")
             AddHandler karte.ProtokollGeklickt, AddressOf ProtokollZeigen
             karte.Aktualisieren(If(d.Aktiv, _ueberwachung.Status(d.Id), Nothing), _filamente)
@@ -479,7 +479,7 @@ Public Class DruckerSeite
     End Sub
 
     Private Sub ProtokollZeigen(d As Drucker)
-        Dim text = If(_ueberwachung.Protokoll(d.Id)?.Alles(), "")
+        Dim text = _ueberwachung.ProtokollText(d.Id)
         Using f As New Form With {.Text = $"Protokoll – {d.Name}", .Size = New Size(900, 560), .StartPosition = FormStartPosition.CenterParent,
                                   .ShowInTaskbar = False, .MinimizeBox = False}
             DialogGestalten(f)

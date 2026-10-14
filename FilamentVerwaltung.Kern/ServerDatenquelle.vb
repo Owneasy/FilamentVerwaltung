@@ -406,6 +406,53 @@ Public Class ServerDatenquelle
         Schicken(HttpMethod.Post, "sicherungen/wiederherstellen", New SicherungAnfrage With {.Name = s.Name})
     End Sub
 
+    ' ------------------------------------------------------------------ Drucker live (vom Server überwacht)
+
+    Public Function DruckerLiveLaden() As List(Of DruckerLive)
+        Return Abrufen(Of List(Of DruckerLive))("drucker/live")
+    End Function
+
+    Public Function DruckerProtokollText(druckerId As Long) As String
+        Return Abrufen(Of WertAnfrage)($"drucker/{druckerId}/protokoll")?.Wert
+    End Function
+
+    ''' <summary>Startet das Senden auf dem Server; liefert die Nummer des Auftrags für <see cref="SendeAuftrag"/>.</summary>
+    Public Function SendenStarten(druckerId As Long, dateiId As Long, optionen As SendeOptionen) As String
+        Return Schicken(Of SendeAuftragInfo)(HttpMethod.Post, $"drucker/{druckerId}/senden",
+                                             New SendenAnfrage With {.DateiId = dateiId, .Optionen = optionen}).Id
+    End Function
+
+    Public Function SendeAuftrag(id As String) As SendeAuftragInfo
+        Return Abrufen(Of SendeAuftragInfo)("sendeauftraege/" & Q(id))
+    End Function
+
+    Public Sub SendenAbbrechen(id As String)
+        Schicken(HttpMethod.Delete, "sendeauftraege/" & Q(id))
+    End Sub
+
+    Public Function DruckEndenLaden() As List(Of DruckEnde)
+        Return Abrufen(Of List(Of DruckEnde))("druckenden")
+    End Function
+
+    Public Sub DruckEndeErledigt(id As Long)
+        Schicken(HttpMethod.Delete, $"druckenden/{id}")
+    End Sub
+
+    ''' <summary>Neuestes Kamerabild; ohne Bild (noch keins da oder Fehler) steht im Status, warum.</summary>
+    Public Function KameraBild(druckerId As Long) As (Bild As Byte(), Status As String)
+        Using antwort = Senden(HttpMethod.Get, $"drucker/{druckerId}/kamera")
+            If antwort.StatusCode = HttpStatusCode.NoContent Then
+                Dim status As IEnumerable(Of String) = Nothing
+                Dim text = If(antwort.Headers.TryGetValues("X-Kamera-Status", status), Uri.UnescapeDataString(status.First()), "Warte auf Bild …")
+                Return (Nothing, text)
+            End If
+            Using s = antwort.Content.ReadAsStream(), ms As New MemoryStream()
+                s.CopyTo(ms)
+                Return (ms.ToArray(), "")
+            End Using
+        End Using
+    End Function
+
     Public Sub Dispose() Implements IDisposable.Dispose
         _client.Dispose()
     End Sub

@@ -2,8 +2,8 @@
 
 ''' <summary>
 ''' Fragt alle aktiven Drucker regelmäßig ab und meldet, wenn ein Druck endet.
-''' Läuft im Thread, der <see cref="Starten"/> aufruft (in der App: UI-Thread) – die Abfragen selbst sind asynchron
-''' und kehren über den SynchronizationContext dorthin zurück.
+''' Läuft in der App (lokaler Betrieb) und auf dem Server. Ereignisse kommen im Thread, der <see cref="Starten"/>
+''' aufruft (in der App: UI-Thread; auf dem Server: Thread-Pool) – der Zustand ist deshalb mit einer Sperre geschützt.
 ''' </summary>
 Public Class DruckerUeberwachung
     Implements IDruckerDienst
@@ -31,10 +31,13 @@ Public Class DruckerUeberwachung
 
     Private ReadOnly _db As IDatenquelle
     Private ReadOnly _eintraege As New Dictionary(Of Long, Eintrag)
+    Private ReadOnly _sperre As New Object()
     Private ReadOnly _abbruch As New CancellationTokenSource()
 
     Public Event StatusGeaendert(druckerId As Long) Implements IDruckerDienst.StatusGeaendert
     Public Event DruckBeendet(ende As DruckEnde) Implements IDruckerDienst.DruckBeendet
+    ''' <summary>Lokal nie ausgelöst (es gibt nur diesen einen Empfänger).</summary>
+    Public Event DruckEndeEntfernt(endeId As Long) Implements IDruckerDienst.DruckEndeEntfernt
 
     Public Sub New(db As IDatenquelle)
         _db = db
@@ -66,47 +69,66 @@ Public Class DruckerUeberwachung
         Catch ex As Exception
             Return
         End Try
-        ' Entfernte oder deaktivierte Drucker trennen
-        For Each id In _eintraege.Keys.ToList()
-            If Not liste.Any(Function(d) d.Id = id AndAlso d.Aktiv) Then
-                _eintraege(id).Verbindung?.Dispose()
-                _eintraege.Remove(id)
-            End If
-        Next
-        For Each d In liste.Where(Function(x) x.Aktiv)
-            Dim e As Eintrag = Nothing
-            If _eintraege.TryGetValue(d.Id, e) Then
-                ' Geänderte Verbindungsdaten: neu verbinden
-                If e.Drucker.Typ <> d.Typ OrElse e.Drucker.Adresse <> d.Adresse OrElse e.Drucker.Zugang <> d.Zugang OrElse
-                   e.Drucker.Benutzer <> d.Benutzer OrElse e.Drucker.Seriennummer <> d.Seriennummer Then
-                    e.Verbindung?.Dispose()
-                    e.Verbindung = DruckerVerbindung.Erstellen(d, e.Protokoll)
-                    e.Status = New DruckerStatus()
+        SyncLock _sperre
+            ' Entfernte oder deaktivierte Drucker trennen
+            For Each id In _eintraege.Keys.ToList()
+                If Not liste.Any(Function(d) d.Id = id AndAlso d.Aktiv) Then
+                    _eintraege(id).Verbindung?.Dispose()
+                    _eintraege.Remove(id)
                 End If
-                e.Drucker = d
-            Else
-                e = New Eintrag With {.Drucker = d}
-                e.Verbindung = DruckerVerbindung.Erstellen(d, e.Protokoll)
-                _eintraege(d.Id) = e
-            End If
-        Next
+            Next
+            For Each d In liste.Where(Function(x) x.Aktiv)
+                Dim e As Eintrag = Nothing
+                If _eintraege.TryGetValue(d.Id, e) Then
+                    ' Geänderte Verbindungsdaten: neu verbinden
+                    If e.Drucker.Typ <> d.Typ OrElse e.Drucker.Adresse <> d.Adresse OrElse e.Drucker.Zugang <> d.Zugang OrElse
+                       e.Drucker.Benutzer <> d.Benutzer OrElse e.Drucker.Seriennummer <> d.Seriennummer Then
+                        e.Verbindung?.Dispose()
+                        e.Verbindung = DruckerVerbindung.Erstellen(d, e.Protokoll)
+                        e.Status = New DruckerStatus()
+                    End If
+                    e.Drucker = d
+                Else
+                    e = New Eintrag With {.Drucker = d}
+                    e.Verbindung = DruckerVerbindung.Erstellen(d, e.Protokoll)
+                    _eintraege(d.Id) = e
+                End If
+            Next
+        End SyncLock
         AlleAbfragen()
     End Sub
 
     Public Function Status(druckerId As Long) As DruckerStatus Implements IDruckerDienst.Status
-        Dim e As Eintrag = Nothing
-        Return If(_eintraege.TryGetValue(druckerId, e), e.Status, Nothing)
+        SyncLock _sperre
+            Dim e As Eintrag = Nothing
+            Return If(_eintraege.TryGetValue(druckerId, e), e.Status, Nothing)
+        End SyncLock
     End Function
 
-    Public Function Protokoll(druckerId As Long) As DruckerProtokoll Implements IDruckerDienst.Protokoll
-        Dim e As Eintrag = Nothing
-        Return If(_eintraege.TryGetValue(druckerId, e), e.Protokoll, Nothing)
+    ''' <summary>Ids der überwachten Drucker.</summary>
+    Public Function DruckerIds() As List(Of Long)
+        SyncLock _sperre
+            Return _eintraege.Keys.ToList()
+        End SyncLock
+    End Function
+
+    Public Function Protokoll(druckerId As Long) As DruckerProtokoll
+        SyncLock _sperre
+            Dim e As Eintrag = Nothing
+            Return If(_eintraege.TryGetValue(druckerId, e), e.Protokoll, Nothing)
+        End SyncLock
+    End Function
+
+    Public Function ProtokollText(druckerId As Long) As String Implements IDruckerDienst.ProtokollText
+        Return If(Protokoll(druckerId)?.Alles(), "")
     End Function
 
     ''' <summary>Dateiendungen, die der Drucker zum Drucken annimmt (leer, wenn nicht überwacht).</summary>
     Public Function DruckbareEndungen(druckerId As Long) As String() Implements IDruckerDienst.DruckbareEndungen
-        Dim e As Eintrag = Nothing
-        Return If(_eintraege.TryGetValue(druckerId, e), e.Verbindung.DruckbareEndungen, Array.Empty(Of String)())
+        SyncLock _sperre
+            Dim e As Eintrag = Nothing
+            Return If(_eintraege.TryGetValue(druckerId, e), e.Verbindung.DruckbareEndungen, Array.Empty(Of String)())
+        End SyncLock
     End Function
 
     ''' <summary>
@@ -116,35 +138,60 @@ Public Class DruckerUeberwachung
     Public Async Function SendenAsync(druckerId As Long, dateiPfad As String, dateiId As Long, optionen As SendeOptionen,
                                       fortschritt As IProgress(Of Double), abbruch As CancellationToken) As Task Implements IDruckerDienst.SendenAsync
         Dim e As Eintrag = Nothing
-        If Not _eintraege.TryGetValue(druckerId, e) Then Throw New InvalidOperationException("Der Drucker wird nicht überwacht (in den Druckereinstellungen aktivieren).")
+        SyncLock _sperre
+            If Not _eintraege.TryGetValue(druckerId, e) Then Throw New InvalidOperationException("Der Drucker wird nicht überwacht (in den Druckereinstellungen aktivieren).")
+            e.GesendetDateiId = dateiId
+            e.GesendetUm = Date.Now
+        End SyncLock
         e.Protokoll.Schreiben($"Sende Auftrag: {IO.Path.GetFileName(dateiPfad)}")
-        e.GesendetDateiId = dateiId
-        e.GesendetUm = Date.Now
         Try
             Await e.Verbindung.SendenAsync(dateiPfad, optionen, fortschritt, abbruch)
         Catch
-            e.GesendetDateiId = Nothing
+            SyncLock _sperre
+                e.GesendetDateiId = Nothing
+            End SyncLock
             Throw
         End Try
         ' Gleich nachsehen, damit die Karte den Start zeigt
-        If Not e.LaeuftGerade Then Abfragen(e)
+        AbfragenWennFrei(e)
     End Function
 
     ''' <summary>Anzahl Drucker, die gerade drucken.</summary>
     Public ReadOnly Property AnzahlDruckend As Integer Implements IDruckerDienst.AnzahlDruckend
         Get
-            Return _eintraege.Values.Where(Function(e) e.Status.DruckLaeuft).Count()
+            SyncLock _sperre
+                Return _eintraege.Values.Where(Function(e) e.Status.DruckLaeuft).Count()
+            End SyncLock
         End Get
     End Property
 
+    ''' <summary>Lokal ist nichts zu tun – das Druckende wird nirgends gespeichert.</summary>
+    Public Sub DruckEndeErledigt(ende As DruckEnde) Implements IDruckerDienst.DruckEndeErledigt
+    End Sub
+
+    Public Function KameraErstellen(d As Drucker) As IKamera Implements IDruckerDienst.KameraErstellen
+        Return New BambuKamera(d, Protokoll(d.Id))
+    End Function
+
     Private Sub AlleAbfragen()
-        For Each e In _eintraege.Values.ToList()
-            If Not e.LaeuftGerade Then Abfragen(e)
+        Dim liste As List(Of Eintrag)
+        SyncLock _sperre
+            liste = _eintraege.Values.ToList()
+        End SyncLock
+        For Each e In liste
+            AbfragenWennFrei(e)
         Next
     End Sub
 
+    Private Sub AbfragenWennFrei(e As Eintrag)
+        SyncLock _sperre
+            If e.LaeuftGerade Then Return
+            e.LaeuftGerade = True
+        End SyncLock
+        Abfragen(e)
+    End Sub
+
     Private Async Sub Abfragen(e As Eintrag)
-        e.LaeuftGerade = True
         Dim neu As DruckerStatus
         Try
             Using zeitlimit = CancellationTokenSource.CreateLinkedTokenSource(_abbruch.Token)
@@ -157,11 +204,17 @@ Public Class DruckerUeberwachung
         Catch ex As Exception
             Return  ' Programm wird beendet
         Finally
-            e.LaeuftGerade = False
+            SyncLock _sperre
+                e.LaeuftGerade = False
+            End SyncLock
         End Try
-        If Not _eintraege.ContainsValue(e) Then Return  ' inzwischen entfernt
-        Auswerten(e, neu)
+        Dim ende As DruckEnde
+        SyncLock _sperre
+            If Not _eintraege.ContainsValue(e) Then Return  ' inzwischen entfernt
+            ende = Auswerten(e, neu)
+        End SyncLock
         RaiseEvent StatusGeaendert(e.Drucker.Id)
+        If ende IsNot Nothing Then RaiseEvent DruckBeendet(ende)
     End Sub
 
     Private Shared Function KurzeFehlermeldung(ex As Exception) As String
@@ -173,10 +226,10 @@ Public Class DruckerUeberwachung
         Return innen.Message
     End Function
 
-    ''' <summary>Erkennt Beginn und Ende eines Druckauftrags.</summary>
-    Private Sub Auswerten(e As Eintrag, neu As DruckerStatus)
+    ''' <summary>Erkennt Beginn und Ende eines Druckauftrags; gibt beim Ende das <see cref="DruckEnde"/> zurück.</summary>
+    Private Shared Function Auswerten(e As Eintrag, neu As DruckerStatus) As DruckEnde
         e.Status = neu
-        If neu.Zustand = DruckerZustand.Offline OrElse neu.Zustand = DruckerZustand.Unbekannt Then Return ' kurzer Aussetzer beendet keinen Druck
+        If neu.Zustand = DruckerZustand.Offline OrElse neu.Zustand = DruckerZustand.Unbekannt Then Return Nothing ' kurzer Aussetzer beendet keinen Druck
 
         If neu.DruckLaeuft Then
             If Not e.JobAktiv OrElse (neu.Datei.Length > 0 AndAlso e.JobDatei.Length > 0 AndAlso neu.Datei <> e.JobDatei) Then
@@ -195,10 +248,10 @@ Public Class DruckerUeberwachung
             e.MaxFortschritt = Math.Max(e.MaxFortschritt, neu.Fortschritt)
             If neu.Slot.HasValue Then e.SlotZaehler(neu.Slot.Value) = If(e.SlotZaehler.ContainsKey(neu.Slot.Value), e.SlotZaehler(neu.Slot.Value), 0) + 1
             e.LetzterDruckStatus = neu
-            Return
+            Return Nothing
         End If
 
-        If Not e.JobAktiv Then Return
+        If Not e.JobAktiv Then Return Nothing
         e.JobAktiv = False
         Dim letzter = If(e.LetzterDruckStatus, neu)
         Dim fortschritt = Math.Max(e.MaxFortschritt, If(neu.Zustand = DruckerZustand.Fertig, 1.0, neu.Fortschritt))
@@ -220,15 +273,17 @@ Public Class DruckerUeberwachung
         }
         e.JobDateiId = Nothing
         e.Protokoll.Schreiben($"Druck beendet: {ende.Datei} ({If(abgebrochen, $"abgebrochen bei {ende.Fortschritt:P0}", "fertig")})")
-        RaiseEvent DruckBeendet(ende)
-    End Sub
+        Return ende
+    End Function
 
     Public Sub Dispose() Implements IDisposable.Dispose
         _abbruch.Cancel()
-        For Each e In _eintraege.Values
-            e.Verbindung?.Dispose()
-        Next
-        _eintraege.Clear()
+        SyncLock _sperre
+            For Each e In _eintraege.Values
+                e.Verbindung?.Dispose()
+            Next
+            _eintraege.Clear()
+        End SyncLock
     End Sub
 
 End Class

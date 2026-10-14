@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports Microsoft.AspNetCore.Http
 Imports Microsoft.AspNetCore.Mvc
 
@@ -12,10 +12,12 @@ Public Class DatenController
 
     Private ReadOnly _db As Datenbank
     Private ReadOnly _optionen As ServerOptionen
+    Private ReadOnly _ueberwachung As DruckerUeberwachung
 
-    Public Sub New(db As Datenbank, optionen As ServerOptionen)
+    Public Sub New(db As Datenbank, optionen As ServerOptionen, ueberwachung As DruckerUeberwachung)
         _db = db
         _optionen = optionen
+        _ueberwachung = ueberwachung
     End Sub
 
     <HttpGet("info")>
@@ -103,12 +105,14 @@ Public Class DatenController
     <HttpPost("drucker")>
     Public Function DruckerSpeichern(<FromBody> d As Drucker) As Drucker
         _db.DruckerSpeichern(d)
+        _ueberwachung.Neuladen()   ' neue Verbindungsdaten gleich übernehmen
         Return d
     End Function
 
     <HttpDelete("drucker/{id:long}")>
     Public Sub DruckerLoeschen(id As Long)
         _db.DruckerLoeschen(id)
+        _ueberwachung.Neuladen()
     End Sub
 
     <HttpGet("drucker/{id:long}/spulen")>
@@ -219,6 +223,7 @@ Public Class DatenController
         Dim s = _db.SicherungenLaden().FirstOrDefault(Function(x) String.Equals(x.Name, a.Name, StringComparison.OrdinalIgnoreCase))
         If s Is Nothing Then Return NotFound("Sicherung nicht gefunden.")
         _db.SicherungWiederherstellen(s)
+        _ueberwachung.Neuladen()
         Return Ok()
     End Function
 

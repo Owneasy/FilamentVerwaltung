@@ -43,7 +43,10 @@ Public Module Program
             End Try
         End If
 
-        Application.Run(New MainForm(db, New DruckerUeberwachung(db)))
+        ' Server: der Server überwacht die Drucker; lokal macht das die App selbst
+        Dim server = TryCast(db, ServerDatenquelle)
+        Dim drucker As IDruckerDienst = If(server IsNot Nothing, New ServerDruckerDienst(server), CType(New DruckerUeberwachung(db), IDruckerDienst))
+        Application.Run(New MainForm(db, drucker))
     End Sub
 
     ''' <summary>

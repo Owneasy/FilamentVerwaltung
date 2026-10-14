@@ -9,7 +9,7 @@ Imports System.Threading
 ''' Zuerst wird Port 6000 versucht, sonst RTSPS.
 ''' </summary>
 Public Class BambuKamera
-    Implements IDisposable
+    Implements IKamera
 
     Private ReadOnly _drucker As Drucker
     Private ReadOnly _protokoll As DruckerProtokoll
@@ -17,9 +17,9 @@ Public Class BambuKamera
     Private _ffmpeg As Process
 
     ''' <summary>Neues Bild (JPEG-Bytes). Kommt aus einem Hintergrund-Thread.</summary>
-    Public Event BildEmpfangen(jpeg As Byte())
+    Public Event BildEmpfangen(jpeg As Byte()) Implements IKamera.BildEmpfangen
     ''' <summary>Statusmeldung zum Anzeigen. Kommt aus einem Hintergrund-Thread.</summary>
-    Public Event StatusGeaendert(text As String)
+    Public Event StatusGeaendert(text As String) Implements IKamera.StatusGeaendert
 
     Public Sub New(d As Drucker, Optional protokoll As DruckerProtokoll = Nothing)
         _drucker = d
@@ -44,14 +44,14 @@ Public Class BambuKamera
         End Get
     End Property
 
-    Public Sub Starten()
+    Public Sub Starten() Implements IKamera.Starten
         If _abbruch IsNot Nothing Then Return
         _abbruch = New CancellationTokenSource()
         Dim token = _abbruch.Token
         Task.Run(Function() SchleifeAsync(token))
     End Sub
 
-    Public Sub Stoppen()
+    Public Sub Stoppen() Implements IKamera.Stoppen
         _abbruch?.Cancel()
         _abbruch = Nothing
         FfmpegBeenden()

@@ -66,7 +66,25 @@ Public Class DruckerFach
     Public Property Slot As Integer
     Public Property Beschreibung As String = ""
     ''' <summary>Farbe laut Drucker (z. B. aus dem RFID-Chip), leer wenn unbekannt.</summary>
+    <Text.Json.Serialization.JsonIgnore>
     Public Property Farbe As Drawing.Color?
+
+    ''' <summary>Farbe für die Übertragung zwischen Server und App als "#AARRGGBB" (leer = unbekannt).</summary>
+    Public Property FarbeHex As String
+        Get
+            Return If(Farbe.HasValue, "#" & Farbe.Value.ToArgb().ToString("X8"), "")
+        End Get
+        Set(value As String)
+            Dim wert As UInteger
+            Dim s = If(value, "").TrimStart("#"c)
+            If s.Length = 0 OrElse Not UInteger.TryParse(s, Globalization.NumberStyles.HexNumber, Globalization.CultureInfo.InvariantCulture, wert) Then
+                Farbe = Nothing
+            Else
+                If s.Length <= 6 Then wert = wert Or &HFF000000UI
+                Farbe = Drawing.Color.FromArgb(BitConverter.ToInt32(BitConverter.GetBytes(wert), 0))
+            End If
+        End Set
+    End Property
 End Class
 
 ''' <summary>Eine Temperatur des Druckers in °C, Soll = Nothing oder 0 heißt: Heizung aus bzw. nur Sensor.</summary>
@@ -158,6 +176,8 @@ End Class
 
 ''' <summary>Ein beendeter Druck, der gebucht werden kann.</summary>
 Public Class DruckEnde
+    ''' <summary>Nummer beim Server (0 = lokal erkannt, nicht gespeichert).</summary>
+    Public Property Id As Long
     Public Property DruckerId As Long
     Public Property DruckerName As String = ""
     Public Property Datei As String = ""

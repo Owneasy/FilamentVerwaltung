@@ -99,6 +99,11 @@ CREATE TABLE IF NOT EXISTS Drucker (
     Seriennummer TEXT    NOT NULL DEFAULT '',
     Aktiv        INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS DruckEnde (
+    Id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    Zeitpunkt TEXT    NOT NULL,
+    Daten     TEXT    NOT NULL
+);
 CREATE TABLE IF NOT EXISTS DruckerSpule (
     DruckerId  INTEGER NOT NULL,
     Slot       INTEGER NOT NULL,
@@ -525,6 +530,41 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             End If
         End Using
     End Sub
+
+    ' ------------------------------------------------------------------ Offene Druckenden (Server)
+
+    ''' <summary>Merkt ein erkanntes Druckende, bis es an einem PC gebucht oder verworfen wurde (setzt ende.Id).</summary>
+    Public Sub DruckEndeSpeichern(ende As DruckEnde)
+        Using c = Oeffnen()
+            ende.Id = Convert.ToInt64(Befehl(c, Nothing,
+                "INSERT INTO DruckEnde (Zeitpunkt, Daten) VALUES ($zeit, $daten); SELECT last_insert_rowid();",
+                "$zeit", ende.Zeitpunkt.ToString(DatumZeitFormat, CultureInfo.InvariantCulture),
+                "$daten", System.Text.Json.JsonSerializer.Serialize(ende)).ExecuteScalar())
+        End Using
+    End Sub
+
+    Public Function OffeneDruckEnden() As List(Of DruckEnde)
+        Dim liste As New List(Of DruckEnde)
+        Using c = Oeffnen(), cmd = c.CreateCommand()
+            cmd.CommandText = "SELECT Id, Daten FROM DruckEnde ORDER BY Id"
+            Using r = cmd.ExecuteReader()
+                While r.Read()
+                    Dim ende = System.Text.Json.JsonSerializer.Deserialize(Of DruckEnde)(r.GetString(1))
+                    If ende Is Nothing Then Continue While
+                    ende.Id = r.GetInt64(0)
+                    liste.Add(ende)
+                End While
+            End Using
+        End Using
+        Return liste
+    End Function
+
+    ''' <summary>Entfernt ein offenes Druckende; False, wenn es schon erledigt war (z. B. an einem anderen PC).</summary>
+    Public Function DruckEndeErledigt(id As Long) As Boolean
+        Using c = Oeffnen()
+            Return Befehl(c, Nothing, "DELETE FROM DruckEnde WHERE Id = $id", "$id", id).ExecuteNonQuery() > 0
+        End Using
+    End Function
 
     ' ------------------------------------------------------------------ Sicherung
 

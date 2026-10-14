@@ -1,10 +1,32 @@
-''' <summary>
+﻿''' <summary>
 ''' Anfragen und Antworten der Server-API (JSON), gemeinsam für Server und App.
 ''' </summary>
 Public Module Api
     ''' <summary>Größe eines Upload-Stücks – deutlich unter der 100-MB-Grenze von Cloudflare.</summary>
     Public Const UploadStueckBytes As Integer = 16 * 1024 * 1024
 End Module
+
+''' <summary>Live-Zustand eines überwachten Druckers.</summary>
+Public Class DruckerLive
+    Public Property DruckerId As Long
+    Public Property Status As DruckerStatus
+    Public Property Endungen As String() = Array.Empty(Of String)()
+End Class
+
+Public Class SendenAnfrage
+    Public Property DateiId As Long
+    Public Property Optionen As New SendeOptionen()
+End Class
+
+''' <summary>Fortschritt eines Druckauftrags, den der Server an den Drucker sendet.</summary>
+Public Class SendeAuftragInfo
+    Public Property Id As String = ""
+    ''' <summary>0..1</summary>
+    Public Property Fortschritt As Double
+    Public Property Fertig As Boolean
+    ''' <summary>Fehlermeldung, leer = kein Fehler.</summary>
+    Public Property Fehler As String = ""
+End Class
 
 Public Class ServerInfo
     Public Property App As String = "Filament-Verwaltung"

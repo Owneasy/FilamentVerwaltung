@@ -26,7 +26,7 @@ Public Class MainForm
     Private ReadOnly _ueberwachung As IDruckerDienst
 
     ' --- Beendete Drucke zum Buchen
-    Private ReadOnly _druckEnden As New Queue(Of DruckEnde)
+    Private ReadOnly _druckEnden As New List(Of DruckEnde)
     Private ReadOnly druckBanner As New TableLayoutPanel With {
         .Dock = DockStyle.Top, .Height = 52, .Visible = False, .ColumnCount = 3, .RowCount = 1,
         .BackColor = Hell(Theme.Gruen, 0.12), .Padding = New Padding(28, 8, 20, 8)
@@ -62,6 +62,7 @@ Public Class MainForm
         uebersichtSeite = New UebersichtSeite(db, _ueberwachung)
         AddHandler uebersichtSeite.SeiteOeffnen, AddressOf UebersichtZiel
         AddHandler _ueberwachung.DruckBeendet, AddressOf DruckBeendet
+        AddHandler _ueberwachung.DruckEndeEntfernt, AddressOf DruckEndeEntfernt
         AddHandler filamentSeite.AnzahlGeaendert, Sub(alle, vorhanden, leer)
                                                       filamentUntermenue(0).Knopf.Zahl = alle.ToString("N0")
                                                       filamentUntermenue(1).Knopf.Zahl = vorhanden.ToString("N0")
@@ -411,8 +412,7 @@ Public Class MainForm
         Dim btnVerwerfen As New WebButton("Verwerfen") With {.Anchor = AnchorStyles.Right, .Margin = New Padding(0)}
         AddHandler btnBuchen.Click, Sub(s, e) DruckBuchen()
         AddHandler btnVerwerfen.Click, Sub(s, e)
-                                           If _druckEnden.Count > 0 Then _druckEnden.Dequeue()
-                                           DruckBannerAktualisieren()
+                                           If _druckEnden.Count > 0 Then DruckEndeAbschliessen(_druckEnden(0))
                                        End Sub
         druckBanner.Controls.Add(lblDruckBanner, 0, 0)
         druckBanner.Controls.Add(btnBuchen, 1, 0)
@@ -425,9 +425,22 @@ Public Class MainForm
     End Sub
 
     Private Sub DruckBeendet(ende As DruckEnde)
-        _druckEnden.Enqueue(ende)
+        _druckEnden.Add(ende)
         DruckBannerAktualisieren()
         If Form.ActiveForm IsNot Me Then TaskleisteBlinken()
+    End Sub
+
+''' <summary>Gebucht oder verworfen: aus dem Hinweis nehmen und (beim Server) für alle PCs erledigen.</summary>
+    Private Sub DruckEndeAbschliessen(ende As DruckEnde)
+        _druckEnden.Remove(ende)
+        _ueberwachung.DruckEndeErledigt(ende)
+        DruckBannerAktualisieren()
+    End Sub
+
+    ''' <summary>An einem anderen PC gebucht oder verworfen.</summary>
+    Private Sub DruckEndeEntfernt(endeId As Long)
+        _druckEnden.RemoveAll(Function(x) x.Id = endeId)
+        DruckBannerAktualisieren()
     End Sub
 
     Private Sub DruckBannerAktualisieren()
@@ -435,7 +448,7 @@ Public Class MainForm
             druckBanner.Visible = False
             Return
         End If
-        Dim ende = _druckEnden.Peek()
+        Dim ende = _druckEnden(0)
         Dim weitere = If(_druckEnden.Count > 1, $"  (+{_druckEnden.Count - 1} weitere)", "")
         lblDruckBanner.Text = If(ende.Abgebrochen,
             $"Druck abgebrochen auf {ende.DruckerName}: {ende.Datei} bei {ende.Fortschritt:P0} – Verbrauch buchen?{weitere}",
@@ -445,7 +458,7 @@ Public Class MainForm
 
     Private Sub DruckBuchen()
         If _druckEnden.Count = 0 Then Return
-        Dim ende = _druckEnden.Peek()
+        Dim ende = _druckEnden(0)
         Dim filamente As List(Of Filament), dateien As List(Of Datei), zuordnung As Dictionary(Of Integer, Long)
         Try
             filamente = _db.AlleLaden()
@@ -457,8 +470,7 @@ Public Class MainForm
         End Try
         Dim vorschlag = BuchungVorschlagen(ende, filamente, dateien, zuordnung)
         If DruckeSeite.DruckDialogZeigen(Me, _db, vorschlag, filamente, dateien, $"Druck buchen – {ende.DruckerName}") Then
-            _druckEnden.Dequeue()
-            DruckBannerAktualisieren()
+            DruckEndeAbschliessen(ende)
             If _aktuelleSeite IsNot Nothing Then SeiteZeigen(_aktuelleSeite)
         End If
     End Sub

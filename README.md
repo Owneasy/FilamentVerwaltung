@@ -115,8 +115,10 @@ direkt im Nextcloud-Ordner zu halten, funktioniert, kann aber bei gleichzeitigem
 ## Server (Docker / Unraid) – im Aufbau
 
 Statt der lokalen Datenbank kann ein Server die Daten halten (Datenbank, Dateien, Sicherungen), damit mehrere PCs
-und auch unterwegs dieselben Daten nutzen. Stand: Daten, Dateien, Einstellungen und Sicherungen laufen über den Server;
-die Drucker werden vorerst noch von der App aus überwacht (Umzug auf den Server folgt).
+und auch unterwegs dieselben Daten nutzen. Daten, Dateien, Einstellungen und Sicherungen liegen auf dem Server, und der Server
+überwacht auch die Drucker: Live-Status, Erkennen fertiger Drucke (auch wenn kein PC läuft; der Hinweis zum Buchen erscheint
+an jedem verbundenen PC und verschwindet überall, sobald er an einem PC gebucht oder verworfen wurde), Senden an den Drucker
+und Kamerabild (Bambu Lab; für X1/H2D ist ffmpeg im Image enthalten) – damit funktioniert alles auch von unterwegs.
 
 **Installation auf Unraid (mit Vorlage):** GitHub baut das Image bei jedem Push automatisch
 (`.github/workflows/server-image.yml` → `ghcr.io/owneasy/filament-server:latest`).

@@ -47,6 +47,12 @@ Public Module ServerProgramm
         builder.Services.AddSingleton(optionen)
         builder.Services.AddSingleton(db)
         builder.Services.AddHostedService(Of AutomatischeSicherung)()
+        ' Drucker: Überwachung, Kamera, Sendeaufträge
+        Dim ueberwachung As New DruckerUeberwachung(db)
+        builder.Services.AddSingleton(ueberwachung)
+        builder.Services.AddSingleton(New KameraVerwaltung(ueberwachung))
+        builder.Services.AddSingleton(New SendeAuftraege())
+        builder.Services.AddHostedService(Of DruckerStart)()
         builder.Services.AddControllers()
 
         ' Abgebrochene Uploads vom letzten Lauf entfernen
