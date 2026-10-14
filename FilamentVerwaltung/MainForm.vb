@@ -34,6 +34,10 @@ Public Class MainForm
     Private ReadOnly lblDruckBanner As New Label With {.AutoSize = True, .Anchor = AnchorStyles.Left, .Font = Theme.SchriftFett,
                                                        .ForeColor = Theme.TextStark}
     Private ReadOnly tipps As New ToolTip()
+    Private ReadOnly btnVerbindung As New WebButton("Verbindung", Theme.SymServer, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
+    ''' <summary>Prüft beim Server regelmäßig, ob die Verbindung steht (grüner / roter Punkt).</summary>
+    Private ReadOnly verbindungsTimer As New Timer With {.Interval = 20000}
+    Private _verbindungPruefenLaeuft As Boolean
 
     ' --- Updates
     Private Const EinstellungUebersprungen As String = "Update.UebersprungeneVersion"
@@ -147,9 +151,8 @@ Public Class MainForm
         leiste.Controls.Add(New Panel With {.Margin = New Padding(0)}, 0, leiste.RowCount)
         leiste.RowCount += 1
 
-        Dim btnVerbindung As New WebButton("Verbindung", Theme.SymServer, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
         AddHandler btnVerbindung.Click, Sub(s, e) VerbindungZeigen()
-        tipps.SetToolTip(btnVerbindung, "Lokale Datenbank oder Server (z. B. Docker auf Unraid) wählen")
+        VerbindungAnzeigen(True)
         Zeile(leiste, btnVerbindung)
         Dim btnSicherungen As New WebButton("Sicherungen", Theme.SymSicherung, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
         AddHandler btnSicherungen.Click, Sub(s, e) SicherungenZeigen()
@@ -279,6 +282,28 @@ Public Class MainForm
         If antwort = DialogResult.Yes Then Application.Restart()
     End Sub
 
+    ''' <summary>Punkt am Knopf "Verbindung": grün = verbunden bzw. lokale Datenbank offen, rot = Server nicht erreichbar.</summary>
+    Private Sub VerbindungAnzeigen(verbunden As Boolean)
+        btnVerbindung.Punkt = If(verbunden, Theme.Gruen, Theme.Rot)
+        Dim server = TryCast(_db, ServerDatenquelle)
+        tipps.SetToolTip(btnVerbindung,
+            If(server Is Nothing, "Lokale Datenbank – klicken, um Datenbank oder Server zu wählen",
+               If(verbunden, "Verbunden mit " & server.Basis, "Keine Verbindung zum Server – es wird regelmäßig erneut versucht")))
+    End Sub
+
+    ''' <summary>Im Hintergrund prüfen, damit die Oberfläche nicht hängt (auch wenn der Server nicht antwortet).</summary>
+    Private Async Sub VerbindungPruefen()
+        Dim server = TryCast(_db, ServerDatenquelle)
+        If server Is Nothing OrElse _verbindungPruefenLaeuft Then Return
+        _verbindungPruefenLaeuft = True
+        Try
+            Dim ok = Await Task.Run(Function() server.Erreichbar())
+            If Not IsDisposed Then VerbindungAnzeigen(ok)
+        Finally
+            _verbindungPruefenLaeuft = False
+        End Try
+    End Sub
+
     ''' <summary>Verbindung ändern; danach startet die App neu (alle Seiten hängen an der Datenquelle).</summary>
     Private Sub VerbindungZeigen()
         Using dlg As New VerbindungDialog(Verbindung.Laden())
@@ -364,9 +389,14 @@ Public Class MainForm
         TryCast(_aktuelleSeite, ISeite)?.Aktivieren()
         UpdatePruefen(stumm:=True)
         _ueberwachung.Starten()
+        If TypeOf _db Is ServerDatenquelle Then
+            AddHandler verbindungsTimer.Tick, Sub(s, x) VerbindungPruefen()
+            verbindungsTimer.Start()
+        End If
     End Sub
 
     Protected Overrides Sub OnFormClosed(e As FormClosedEventArgs)
+        verbindungsTimer.Dispose()
         _ueberwachung.Dispose()
         MyBase.OnFormClosed(e)
     End Sub

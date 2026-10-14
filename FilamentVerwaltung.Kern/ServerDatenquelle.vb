@@ -97,6 +97,27 @@ Public Class ServerDatenquelle
         Throw New InvalidOperationException("Der Server ist nicht erreichbar." & Environment.NewLine & String.Join(Environment.NewLine, fehler))
     End Function
 
+    ''' <summary>
+    ''' Kurze Prüfung für die Statusanzeige: antwortet der Server unter der aktuellen Adresse?
+    ''' Sonst wird über <see cref="Verbinden"/> die andere Adresse versucht. Wirft keine Ausnahme.
+    ''' </summary>
+    Public Function Erreichbar() As Boolean
+        Try
+            If _basis.Length > 0 Then
+                InfoAbrufen(_basis)
+                Return True
+            End If
+        Catch ex As Exception
+            ' aktuelle Adresse antwortet nicht – unten die andere versuchen
+        End Try
+        Try
+            Verbinden()
+            Return True
+        Catch ex As Exception
+            Return False
+        End Try
+    End Function
+
     ''' <summary>Schlüssel der Design-Einstellung (für die Token-Prüfung; der Wert selbst ist egal).</summary>
     Private Const DesignSchluessel As String = "Design"
 

@@ -90,6 +90,21 @@ Public Class WebButton
         End Set
     End Property
 
+    Private _punkt As Color = Color.Empty
+
+    ''' <summary>Navigation: farbiger Statuspunkt rechtsbündig (z. B. Verbindung), Color.Empty = keiner.</summary>
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property Punkt As Color
+        Get
+            Return _punkt
+        End Get
+        Set(value As Color)
+            If _punkt = value Then Return
+            _punkt = value
+            Invalidate()
+        End Set
+    End Property
+
     Private ReadOnly Property Innenabstand As Integer
         Get
             If _unterpunkt Then Return Px(Me, 16 + 18 + 12)
@@ -216,6 +231,13 @@ Public Class WebButton
                                   TextFormatFlags.Right Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding Or TextFormatFlags.SingleLine)
         End If
 
+        If Stil = KnopfStil.Navigation AndAlso Not _punkt.IsEmpty Then
+            Dim d = Px(Me, 9)
+            Using b As New SolidBrush(_punkt)
+                g.FillEllipse(b, Width - Px(Me, 16) - d - zahlBreite, (Height - d) \ 2, d, d)
+            End Using
+            zahlBreite += d + Px(Me, 8)
+        End If
         ' Inhalt: links bündig in der Navigation, sonst zentriert
         Dim textBreite = TextRenderer.MeasureText(g, Text, Font, Size.Empty, TextFormatFlags.NoPadding Or TextFormatFlags.NoPrefix).Width
         Dim inhalt = SymbolBreite + Abstand + textBreite
