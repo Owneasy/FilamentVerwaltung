@@ -87,6 +87,8 @@ Public Class DruckerKarte
                                                  .Font = Theme.SchriftFett, .ForeColor = Theme.TextNormal, .Margin = New Padding(0, 12, 0, 4)}
     Private ReadOnly balken As New Fortschrittsbalken With {.Dock = DockStyle.Fill, .Margin = New Padding(0, 4, 0, 4)}
     Private ReadOnly lblFortschritt As New Label With {.AutoSize = True, .ForeColor = Theme.TextLeise, .Font = Theme.SchriftKlein, .Margin = New Padding(0, 0, 0, 8)}
+    Private ReadOnly lblPhase As New Label With {.AutoSize = True, .ForeColor = Theme.AkzentText, .Font = Theme.SchriftFett,
+                                                 .Margin = New Padding(0, 0, 0, 6), .Visible = False}
     Private ReadOnly lblMeldung As New Label With {.AutoSize = True, .MaximumSize = New Size(400, 0), .ForeColor = Theme.Rot,
                                                    .Font = Theme.SchriftKlein, .Margin = New Padding(0, 0, 0, 6), .Visible = False}
     Private ReadOnly temperaturen As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = True, .Margin = New Padding(0, 0, 0, 6), .Visible = False}
@@ -126,6 +128,7 @@ Public Class DruckerKarte
         t.Controls.Add(lblDatei)
         t.Controls.Add(balken)
         t.Controls.Add(lblFortschritt)
+        t.Controls.Add(lblPhase)
         t.Controls.Add(temperaturen)
         t.Controls.Add(lblMeldung)
         spulen.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
@@ -169,6 +172,9 @@ Public Class DruckerKarte
         balken.Visible = s.DruckLaeuft OrElse s.Zustand = DruckerZustand.Fertig
         balken.Wert = If(s.Zustand = DruckerZustand.Fertig, 1.0, s.Fortschritt)
         Dim teile As New List(Of String)
+        Dim phase = s.PhaseText()
+        lblPhase.Text = phase
+        lblPhase.Visible = phase.Length > 0
         If s.DruckLaeuft Then
             teile.Add(s.Fortschritt.ToString("P0"))
             If s.RestSekunden.HasValue Then teile.Add("noch " & DauerText(s.RestSekunden))

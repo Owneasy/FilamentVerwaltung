@@ -667,6 +667,11 @@ Public Class BambuVerbindung
         s.Fortschritt = Math.Max(0, Math.Min(1, If(Zahl(feld("mc_percent")), 0.0) / 100.0))
         Dim rest = Zahl(feld("mc_remaining_time"))
         If rest.HasValue Then s.RestSekunden = CInt(rest.Value * 60)
+        ' Phase nur während eines Auftrags – nach dem Druck bleibt stg_cur oft auf dem letzten Wert stehen
+        Dim phase = Zahl(feld("stg_cur"))
+        If phase.HasValue AndAlso s.DruckLaeuft Then s.Phase = PhaseText(CInt(phase.Value))
+        If s.Phase.Length = 0 AndAlso zustand.Equals("PREPARE", StringComparison.OrdinalIgnoreCase) Then s.Phase = "Druck wird vorbereitet"
+        If s.Phase.Length = 0 AndAlso zustand.Equals("SLICING", StringComparison.OrdinalIgnoreCase) Then s.Phase = "Wird geslict"
         Temperatur(s, "Düse", Zahl(feld("nozzle_temper")), Zahl(feld("nozzle_target_temper")))
         Temperatur(s, "Bett", Zahl(feld("bed_temper")), Zahl(feld("bed_target_temper")))
         ' Einen Kammersensor haben nur X1/H2. A1 (039…), A1 mini (030…), P1P (01S…) und P1S (01P…) melden trotzdem einen Fantasiewert (z. B. 5 °C)
@@ -778,6 +783,47 @@ Public Class BambuVerbindung
         Else
             Protokoll.Schreiben("Startbefehl: keine ausdrückliche Antwort – Status wird beobachtet")
         End If
+    End Function
+
+    ''' <summary>Bambu "stg_cur" → Text (0 = druckt, -1/255 = nichts → leer).</summary>
+    Private Shared Function PhaseText(stufe As Integer) As String
+        Select Case stufe
+            Case 1 : Return "Bett wird nivelliert"
+            Case 2 : Return "Heizbett heizt auf"
+            Case 3 : Return "Vibrationskompensation"
+            Case 4 : Return "Filamentwechsel"
+            Case 5 : Return "Pause (M400)"
+            Case 6 : Return "Pausiert: Filament leer"
+            Case 7 : Return "Düse heizt auf"
+            Case 8 : Return "Extrusion wird kalibriert"
+            Case 9 : Return "Bettoberfläche wird gescannt"
+            Case 10 : Return "Erste Schicht wird geprüft"
+            Case 11 : Return "Druckplatte wird erkannt"
+            Case 12, 18 : Return "Micro-Lidar wird kalibriert"
+            Case 13 : Return "Druckkopf fährt in Ausgangsposition"
+            Case 14 : Return "Düsenspitze wird gereinigt"
+            Case 15 : Return "Düsentemperatur wird geprüft"
+            Case 16 : Return "Vom Benutzer pausiert"
+            Case 17 : Return "Pausiert: Frontabdeckung abgefallen"
+            Case 19 : Return "Durchfluss wird kalibriert"
+            Case 20 : Return "Pausiert: Fehler Düsentemperatur"
+            Case 21 : Return "Pausiert: Fehler Heizbett-Temperatur"
+            Case 22 : Return "Filament wird entladen"
+            Case 23 : Return "Pausiert: Schrittverlust"
+            Case 24 : Return "Filament wird geladen"
+            Case 25 : Return "Motorgeräusch wird kalibriert"
+            Case 26 : Return "Pausiert: AMS getrennt"
+            Case 27 : Return "Pausiert: Hotend-Lüfter zu langsam"
+            Case 28 : Return "Pausiert: Fehler Kammertemperatur"
+            Case 29 : Return "Kammer kühlt ab"
+            Case 30 : Return "Pausiert durch G-Code"
+            Case 31 : Return "Motorgeräusch-Test"
+            Case 32 : Return "Pausiert: Filament an der Düse erkannt"
+            Case 33 : Return "Pausiert: Fehler Filamentschneider"
+            Case 34 : Return "Pausiert: Fehler in der ersten Schicht"
+            Case 35 : Return "Pausiert: Düse verstopft"
+            Case Else : Return ""
+        End Select
     End Function
 
     ''' <summary>Bambu-Farbe "RRGGBBAA" → Color.</summary>

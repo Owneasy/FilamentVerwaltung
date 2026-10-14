@@ -116,7 +116,22 @@ Public Class DruckerStatus
     Public Property Faecher As New List(Of DruckerFach)
     ''' <summary>Temperaturen (Düse, Bett, ggf. Kammer) – leer, wenn der Drucker keine meldet.</summary>
     Public Property Temperaturen As New List(Of DruckerTemperatur)
+    ''' <summary>Was der Drucker gerade tut (z. B. "Bett wird nivelliert") – leer, wenn er es nicht meldet.</summary>
+    Public Property Phase As String = ""
     Public Property Meldung As String = ""
+
+    ''' <summary>
+    ''' Phase zum Anzeigen: die gemeldete, sonst während der Vorbereitung (0 %) aus den Temperaturen abgeleitet.
+    ''' </summary>
+    Public Function PhaseText() As String
+        If Phase.Length > 0 Then Return Phase
+        If Not DruckLaeuft OrElse Fortschritt > 0.005 Then Return ""
+        Dim heizt = Temperaturen.Where(Function(t) t.HeiztAuf AndAlso t.Ist < t.Soll.Value).Select(Function(t) t.Name).ToList()
+        If heizt.Contains("Düse") Then Return "Düse heizt auf"
+        If heizt.Contains("Bett") Then Return "Heizbett heizt auf"
+        If heizt.Count > 0 Then Return heizt(0) & " heizt auf"
+        Return ""
+    End Function
 
     Public ReadOnly Property DruckLaeuft As Boolean
         Get
