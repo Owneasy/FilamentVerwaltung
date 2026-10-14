@@ -18,6 +18,7 @@ Public Class MainForm
     Private ReadOnly druckeSeite As DruckeSeite
     Private ReadOnly dateienSeite As DateienSeite
     Private ReadOnly statistikSeite As StatistikSeite
+    Private ReadOnly nachkaufSeite As NachkaufSeite
     Private ReadOnly tipps As New ToolTip()
 
     ' --- Updates
@@ -26,7 +27,7 @@ Public Class MainForm
         .Dock = DockStyle.Top, .Height = 52, .Visible = False, .ColumnCount = 3, .RowCount = 1,
         .BackColor = Hell(Theme.Akzent, 0.1), .Padding = New Padding(28, 8, 20, 8)
     }
-    Private ReadOnly lblBanner As New Label With {.AutoSize = True, .Anchor = AnchorStyles.Left, .ForeColor = Theme.AkzentGedrueckt,
+    Private ReadOnly lblBanner As New Label With {.AutoSize = True, .Anchor = AnchorStyles.Left, .ForeColor = Theme.AkzentText,
                                                   .Font = Theme.SchriftFett}
     Private ReadOnly btnUpdate As New WebButton("Nach Updates suchen", Theme.SymExport, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
     Private _update As UpdateInfo
@@ -37,6 +38,7 @@ Public Class MainForm
         druckeSeite = New DruckeSeite(db)
         dateienSeite = New DateienSeite(db)
         statistikSeite = New StatistikSeite(db)
+        nachkaufSeite = New NachkaufSeite(db)
         AddHandler filamentSeite.VerlaufAnzeigen, Sub(id)
                                                       druckeSeite.SpuleFiltern(id)
                                                       SeiteZeigen(druckeSeite)
@@ -50,9 +52,10 @@ Public Class MainForm
         AutoScaleMode = AutoScaleMode.Dpi
         Font = Theme.Schrift
         BackColor = Theme.Seite
+        ForeColor = Theme.TextNormal
         Text = "Filament-Verwaltung"
         Size = New Size(1440, 860)
-        MinimumSize = New Size(1000, 600)
+        MinimumSize = New Size(1000, 720)
         StartPosition = FormStartPosition.CenterScreen
 
         ' --- Seitenleiste
@@ -78,8 +81,25 @@ Public Class MainForm
         })
         Zeile(leiste, NavEintrag("Filament", Theme.SymSpule, filamentSeite))
         Zeile(leiste, NavEintrag("Drucke", Theme.SymDrucker, druckeSeite))
+        Zeile(leiste, NavEintrag("Nachkauf", Theme.SymGeld, nachkaufSeite))
         Zeile(leiste, NavEintrag("Statistik", Theme.SymDiagramm, statistikSeite))
         Zeile(leiste, NavEintrag("Dateien (CAD / STL)", Theme.SymOrdner, dateienSeite))
+
+        Zeile(leiste, New Label With {
+            .Text = "WERKZEUGE",
+            .Font = Theme.SchriftKopf,
+            .ForeColor = Color.FromArgb(100, 116, 139),
+            .AutoSize = True,
+            .Margin = New Padding(16, 18, 0, 8)
+        })
+        Dim btnSuchen As New WebButton("Spule suchen", Theme.SymSuche, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42, .Margin = New Padding(0, 0, 0, 4)}
+        AddHandler btnSuchen.Click, Sub(s, e) SchnellsucheZeigen()
+        tipps.SetToolTip(btnSuchen, "QR-Code scannen oder ID eingeben und die Spule öffnen (Strg+K)")
+        Zeile(leiste, btnSuchen)
+        Dim btnEtiketten As New WebButton("Etiketten drucken", Theme.SymDrucker, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42, .Margin = New Padding(0, 0, 0, 4)}
+        AddHandler btnEtiketten.Click, Sub(s, e) filamentSeite.EtikettenDrucken()
+        tipps.SetToolTip(btnEtiketten, "Etiketten mit QR-Code für die Spulen drucken")
+        Zeile(leiste, btnEtiketten)
 
         ' Platzhalter schiebt den Datenbank-Bereich nach unten
         leiste.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
@@ -90,6 +110,11 @@ Public Class MainForm
         AddHandler btnSicherungen.Click, Sub(s, e) SicherungenZeigen()
         tipps.SetToolTip(btnSicherungen, "Sicherungen der Datenbank ansehen, jetzt sichern oder wiederherstellen")
         Zeile(leiste, btnSicherungen)
+
+        Dim btnDesign As New WebButton("Design", If(Theme.Dunkel, Theme.SymMond, Theme.SymSonne), KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
+        AddHandler btnDesign.Click, Sub(s, e) DesignMenueZeigen(btnDesign)
+        tipps.SetToolTip(btnDesign, "Helles oder dunkles Design, oder wie in Windows eingestellt")
+        Zeile(leiste, btnDesign)
 
         AddHandler btnUpdate.Click, Sub(s, e) UpdatePruefen(stumm:=False)
         tipps.SetToolTip(btnUpdate, $"Auf GitHub ({GitHubRepo}) nach einer neueren Version suchen")
@@ -146,6 +171,62 @@ Public Class MainForm
     End Function
 
     Private _aktuelleSeite As Control
+
+    Protected Overrides Function ProcessCmdKey(ByRef msg As Message, keyData As Keys) As Boolean
+        If keyData = (Keys.Control Or Keys.K) Then
+            SchnellsucheZeigen()
+            Return True
+        End If
+        Return MyBase.ProcessCmdKey(msg, keyData)
+    End Function
+
+    ''' <summary>Spule per Scan / ID suchen und auf der Filament-Seite öffnen.</summary>
+    Private Sub SchnellsucheZeigen()
+        Dim spulen As List(Of Filament)
+        Try
+            spulen = _db.AlleLaden()
+        Catch ex As Exception
+            MessageBox.Show(Me, ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End Try
+        Using dlg As New SchnellsucheDialog(spulen)
+            If dlg.ShowDialog(Me) <> DialogResult.OK OrElse dlg.Ergebnis Is Nothing Then Return
+            SeiteZeigen(filamentSeite)
+            filamentSeite.SpuleOeffnen(dlg.Ergebnis.Code, dlg.ZumWiegen)
+        End Using
+    End Sub
+
+    ''' <summary>Menü Hell / Dunkel / Wie Windows; das neue Design gilt nach einem Neustart.</summary>
+    Private Sub DesignMenueZeigen(knopf As Control)
+        Dim aktuell = DesignEinstellung.Hell
+        Try
+            aktuell = If(_db.EinstellungLesen(DesignEinstellung.Schluessel), DesignEinstellung.Hell)
+        Catch ex As Exception
+            ' Standard: hell
+        End Try
+        Dim menue As New ContextMenuStrip With {.Font = Theme.Schrift}
+        For Each eintrag In {(DesignEinstellung.Hell, "Hell"), (DesignEinstellung.Dunkel, "Dunkel"), (DesignEinstellung.WieWindows, "Wie Windows")}
+            Dim wert = eintrag.Item1
+            Dim punkt As New ToolStripMenuItem(eintrag.Item2) With {.Checked = aktuell = wert}
+            AddHandler punkt.Click, Sub(s, e) DesignWaehlen(wert, aktuell)
+            menue.Items.Add(punkt)
+        Next
+        AddHandler menue.Closed, Sub(s, e) BeginInvoke(Sub() menue.Dispose())
+        menue.Show(knopf, New Point(knopf.Width, 0), ToolStripDropDownDirection.AboveRight)
+    End Sub
+
+    Private Sub DesignWaehlen(wert As String, bisher As String)
+        If wert = bisher Then Return
+        Try
+            _db.EinstellungSpeichern(DesignEinstellung.Schluessel, wert)
+        Catch ex As Exception
+            MessageBox.Show(Me, ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End Try
+        Dim antwort = MessageBox.Show(Me, "Das neue Design wird nach einem Neustart übernommen. Jetzt neu starten?",
+                                      "Design", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+        If antwort = DialogResult.Yes Then Application.Restart()
+    End Sub
 
     Private Sub SicherungenZeigen()
         Using dlg As New SicherungenDialog(_db)

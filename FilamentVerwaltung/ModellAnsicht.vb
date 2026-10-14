@@ -291,7 +291,7 @@ Public Class ModellAnsicht
         If _bild IsNot Nothing Then
             g.DrawImageUnscaled(_bild, 0, 0)
         Else
-            Using b As New LinearGradientBrush(ClientRectangle, Color.FromArgb(248, 250, 252), Color.FromArgb(226, 232, 240), 90.0F)
+            Using b As New LinearGradientBrush(ClientRectangle, Theme.TabelleKopf, Theme.Rand, 90.0F)
                 g.FillRectangle(b, ClientRectangle)
             End Using
             Dim kreis = Px(Me, 72)
@@ -377,10 +377,12 @@ Public Class ModellAnsicht
                     mx + vx(2) * skala, my - vy(2) * skala, vz(2), c)
         Next
 
-        ' Hintergrund: senkrechter Verlauf
+        ' Hintergrund: senkrechter Verlauf in den Farben des Designs
+        Dim oben = Theme.TabelleKopf, unten = Theme.Rand
         For iy = 0 To h - 1
             Dim a = CSng(iy) / Math.Max(1, h - 1)
-            Dim hg = (255 << 24) Or (CInt(248 - 22 * a) << 16) Or (CInt(250 - 18 * a) << 8) Or CInt(252 - 12 * a)
+            Dim hg = (255 << 24) Or (CInt(oben.R + (CInt(unten.R) - oben.R) * a) << 16) Or
+                     (CInt(oben.G + (CInt(unten.G) - oben.G) * a) << 8) Or CInt(oben.B + (CInt(unten.B) - oben.B) * a)
             Dim zeile = iy * w
             For ix = 0 To w - 1
                 If tiefe(zeile + ix) = Single.MaxValue Then farbe(zeile + ix) = hg

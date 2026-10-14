@@ -31,15 +31,31 @@ Public Class FilamentDialog
     Private ReadOnly numPreis As New NumericUpDown With {.Maximum = 100000, .DecimalPlaces = 2, .Width = 100, .Increment = 0.5D, .ThousandsSeparator = True}
     Private ReadOnly dtpKauf As New DateTimePicker With {.Format = DateTimePickerFormat.Short, .Width = 120}
     Private ReadOnly txtNotiz As New TextBox With {.Width = 280, .Height = 60, .Multiline = True, .AcceptsReturn = True, .ScrollBars = ScrollBars.Vertical}
+    Private ReadOnly cboLagerort As New ComboBox With {.Width = 280, .DropDownStyle = ComboBoxStyle.DropDown,
+                                                       .AutoCompleteMode = AutoCompleteMode.SuggestAppend, .AutoCompleteSource = AutoCompleteSource.ListItems}
+    Private ReadOnly numDuese As New NumericUpDown With {.Maximum = 500, .Width = 70, .Increment = 5}
+    Private ReadOnly numBett As New NumericUpDown With {.Maximum = 200, .Width = 70, .Increment = 5}
+    Private ReadOnly txtTrocknung As New TextBox With {.Width = 280, .PlaceholderText = "z. B. 4 h bei 55 °C"}
+    Private ReadOnly txtShop As New TextBox With {.Width = 280, .PlaceholderText = "https://…"}
+    Private ReadOnly lblVorlage As New Label With {.AutoSize = False, .Size = New Size(200, 20), .ForeColor = Theme.TextLeise,
+                                                   .Font = Theme.SchriftKlein, .Margin = New Padding(8, 7, 0, 0)}
+    ''' <summary>Zuletzt automatisch eingetragenes Leerspulengewicht (wird bei Herstellerwechsel ersetzt, eigene Eingaben nicht).</summary>
+    Private _automatischeSpule As Integer = -1
 
     Public Sub New(f As Filament, db As Datenbank, titel As String,
-                   bekannteHersteller As IEnumerable(Of String), bekannteMaterialien As IEnumerable(Of String))
+                   bekannteHersteller As IEnumerable(Of String), bekannteMaterialien As IEnumerable(Of String),
+                   Optional bekannteLagerorte As IEnumerable(Of String) = Nothing)
         _f = f
         _db = db
         OberflaecheAufbauen(titel)
         Auswahllisten(cboHersteller, StandardHersteller.Concat(bekannteHersteller))
         Auswahllisten(cboMaterial, StandardMaterialien.Concat(bekannteMaterialien))
+        Auswahllisten(cboLagerort, If(bekannteLagerorte, Enumerable.Empty(Of String)()))
         WerteAnzeigen()
+        ' Erst nach der Eingabe anwenden – während des Tippens würde das die Autovervollständigung stören
+        AddHandler cboHersteller.Leave, Sub(s, e) VorlageAnwenden()
+        AddHandler cboHersteller.SelectionChangeCommitted, Sub(s, e) BeginInvoke(Sub() VorlageAnwenden())
+        VorlageAnwenden()
     End Sub
 
     Private Sub OberflaecheAufbauen(titel As String)
@@ -85,9 +101,25 @@ Public Class FilamentDialog
         Zeile(t, "Durchmesser:", cboDurchmesser)
         Zeile(t, "Gewicht (netto, g):", numGewicht)
         Zeile(t, "Restgewicht (g):", numRest)
-        Zeile(t, "Leerspule (g):", numSpule)
+        Dim spuleZeile As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False, .Margin = New Padding(0)}
+        spuleZeile.Controls.Add(numSpule)
+        spuleZeile.Controls.Add(lblVorlage)
+
+        Dim tempZeile As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False, .Margin = New Padding(0)}
+        tempZeile.Controls.Add(New Label With {.Text = "Düse", .AutoSize = True, .Margin = New Padding(0, 6, 4, 0)})
+        tempZeile.Controls.Add(numDuese)
+        tempZeile.Controls.Add(New Label With {.Text = "°C    Bett", .AutoSize = True, .Margin = New Padding(4, 6, 4, 0)})
+        tempZeile.Controls.Add(numBett)
+        tempZeile.Controls.Add(New Label With {.Text = "°C   (0 = keine Angabe)", .AutoSize = True, .ForeColor = Theme.TextLeise,
+                                               .Margin = New Padding(4, 6, 0, 0)})
+
+        Zeile(t, "Leerspule (g):", spuleZeile)
         Zeile(t, "Preis (€):", numPreis)
         Zeile(t, "Kaufdatum:", dtpKauf)
+        Zeile(t, "Lagerort:", cboLagerort)
+        Zeile(t, "Temperaturen:", tempZeile)
+        Zeile(t, "Trocknung:", txtTrocknung)
+        Zeile(t, "Shop-Link:", txtShop)
         Zeile(t, "Notiz:", txtNotiz)
 
         AddHandler numGewicht.ValueChanged, AddressOf Gewicht_ValueChanged
@@ -150,7 +182,39 @@ Public Class FilamentDialog
         numPreis.Value = Begrenzen(_f.Preis, numPreis)
         dtpKauf.Value = If(_f.Kaufdatum < dtpKauf.MinDate OrElse _f.Kaufdatum > dtpKauf.MaxDate, Date.Today, _f.Kaufdatum)
         txtNotiz.Text = _f.Notiz
+        cboLagerort.Text = _f.Lagerort
+        numDuese.Value = Begrenzen(_f.DuesenTemp, numDuese)
+        numBett.Value = Begrenzen(_f.BettTemp, numBett)
+        txtTrocknung.Text = _f.Trocknung
+        txtShop.Text = _f.ShopLink
         _letztesGewicht = CInt(numGewicht.Value)
+    End Sub
+
+    ''' <summary>
+    ''' Trägt das Leerspulengewicht des Herstellers ein, solange das Feld leer ist oder noch den
+    ''' automatisch eingetragenen Wert enthält (eigene Eingaben werden nicht überschrieben).
+    ''' </summary>
+    Private Sub VorlageAnwenden()
+        Dim eigener As Boolean
+        Dim vorlage As Integer? = Nothing
+        Try
+            vorlage = _db.LeerspulenVorlage(cboHersteller.Text, eigener)
+        Catch ex As Exception
+            ' Ohne Vorlage weiterarbeiten
+        End Try
+        If Not vorlage.HasValue Then
+            lblVorlage.Text = ""
+            ' Automatisch eingetragenen Wert eines vorher erkannten Herstellers wieder entfernen
+            If _automatischeSpule > 0 AndAlso CInt(numSpule.Value) = _automatischeSpule Then numSpule.Value = 0
+            _automatischeSpule = -1
+            Return
+        End If
+        lblVorlage.Text = If(eigener, $"zuletzt verwendet: {vorlage.Value} g", $"Richtwert: ca. {vorlage.Value} g")
+        Dim aktuell = CInt(numSpule.Value)
+        If aktuell = 0 OrElse aktuell = _automatischeSpule Then
+            numSpule.Value = Begrenzen(vorlage.Value, numSpule)
+            _automatischeSpule = vorlage.Value
+        End If
     End Sub
 
     Private Shared Function Begrenzen(wert As Decimal, n As NumericUpDown) As Decimal
@@ -181,6 +245,12 @@ Public Class FilamentDialog
             Hinweis("Bitte einen Hersteller angeben.", cboHersteller)
             Return
         End If
+        Dim link = txtShop.Text.Trim()
+        If link.Length > 0 AndAlso Not (link.StartsWith("http://", StringComparison.OrdinalIgnoreCase) OrElse
+                                        link.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) Then
+            Hinweis("Der Shop-Link muss mit http:// oder https:// beginnen.", txtShop)
+            Return
+        End If
         If numRest.Value > numGewicht.Value Then
             Hinweis("Das Restgewicht darf nicht größer als das Gewicht sein.", numRest)
             Return
@@ -207,6 +277,11 @@ Public Class FilamentDialog
         _f.Preis = numPreis.Value
         _f.Kaufdatum = dtpKauf.Value.Date
         _f.Notiz = txtNotiz.Text
+        _f.Lagerort = cboLagerort.Text.Trim()
+        _f.DuesenTemp = CInt(numDuese.Value)
+        _f.BettTemp = CInt(numBett.Value)
+        _f.Trocknung = txtTrocknung.Text.Trim()
+        _f.ShopLink = txtShop.Text.Trim()
 
         DialogResult = DialogResult.OK
     End Sub

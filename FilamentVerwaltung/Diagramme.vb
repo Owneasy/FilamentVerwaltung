@@ -1,4 +1,4 @@
-Imports System.ComponentModel
+﻿Imports System.ComponentModel
 Imports System.Drawing
 Imports System.Drawing.Drawing2D
 Imports System.Windows.Forms
@@ -29,12 +29,12 @@ Public MustInherit Class DiagrammBasis
     Protected _hover As Integer = -1
     ''' <summary>Farbe der Datenreihe (validiert: Kontrast und Helligkeit auf Weiß).</summary>
     Protected ReadOnly Farbe As Color = Theme.Akzent
-    Protected ReadOnly FarbeHover As Color = Theme.AkzentGedrueckt
+    Protected ReadOnly FarbeHover As Color = If(Theme.Dunkel, ColorTranslator.FromHtml("#60A5FA"), Theme.AkzentGedrueckt)
 
     Public Sub New()
         SetStyle(ControlStyles.UserPaint Or ControlStyles.AllPaintingInWmPaint Or ControlStyles.OptimizedDoubleBuffer Or
                  ControlStyles.ResizeRedraw, True)
-        BackColor = Color.White
+        BackColor = Theme.KartenFlaeche
         Font = Theme.SchriftKlein
     End Sub
 
@@ -104,7 +104,9 @@ Public MustInherit Class DiagrammBasis
             g.FillPath(b, schatten)
         End Using
         Using pfad = Abgerundet(r, Px(Me, 8)), stift As New Pen(Theme.Rand)
-            g.FillPath(Brushes.White, pfad)
+            Using fl As New SolidBrush(Theme.KartenFlaeche)
+                g.FillPath(fl, pfad)
+            End Using
             g.DrawPath(stift, pfad)
         End Using
         Dim y = r.Y + pad
@@ -309,7 +311,7 @@ Public Class DiagrammKarte
     Private ReadOnly _tabelle As New WebTabelle()
     Private ReadOnly _quelle As New BindingSource()
     Private ReadOnly _umschalten As New WebButton("Tabelle", Theme.SymSpalten)
-    Private ReadOnly _inhalt As New Panel With {.Dock = DockStyle.Fill, .BackColor = Color.White, .Margin = New Padding(0)}
+    Private ReadOnly _inhalt As New Panel With {.Dock = DockStyle.Fill, .BackColor = Theme.KartenFlaeche, .Margin = New Padding(0)}
 
     Public Sub New(titel As String, untertitel As String, diagramm As DiagrammBasis, wertSpalte As String)
         _diagramm = diagramm

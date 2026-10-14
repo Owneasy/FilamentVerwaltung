@@ -1,4 +1,4 @@
-Imports System.Drawing
+﻿Imports System.Drawing
 Imports System.Drawing.Drawing2D
 Imports System.IO
 Imports System.Text
@@ -12,10 +12,11 @@ Public Class FilamentSeite
     Implements ISeite
 
     Private Const AlleMaterialien As String = "Alle Materialien"
+    Private Const AlleLagerorte As String = "Alle Lagerorte"
     Private Const EinstellungSpalten As String = "Filament.SichtbareSpalten"
 
     ''' <summary>Spalten, die ohne gespeicherte Auswahl ausgeblendet sind.</summary>
-    Private Shared ReadOnly StandardAusgeblendet As String() = {"Spulengewicht"}
+    Private Shared ReadOnly StandardAusgeblendet As String() = {"Spulengewicht", "Temperaturen", "Trocknung"}
 
     ''' <summary>Der Verlauf (Drucke/Buchungen) einer Spule soll angezeigt werden.</summary>
     Public Event VerlaufAnzeigen(filamentId As Long)
@@ -28,6 +29,7 @@ Public Class FilamentSeite
     Private ReadOnly quelle As New BindingSource()
     Private ReadOnly suche As New SuchFeld()
     Private ReadOnly cboMaterial As New ComboBox()
+    Private ReadOnly cboLagerort As New ComboBox()
     Private ReadOnly chkLeere As New CheckBox()
 
     Private ReadOnly kzSpulen As New KennzahlKarte("Spulen", Theme.SymBox, Theme.Akzent)
@@ -82,6 +84,10 @@ Public Class FilamentSeite
         AddHandler btnNeu.Click, Sub(s, e) NeuAnlegen()
         tipps.SetToolTip(btnExport, "Aktuelle Ansicht als CSV-Datei (z. B. für Excel) speichern")
         tipps.SetToolTip(btnNeu, "Neues Filament anlegen (Strg+N)")
+        Dim btnEtiketten As New WebButton("Etiketten", Theme.SymDrucker)
+        AddHandler btnEtiketten.Click, Sub(s, e) EtikettenDrucken()
+        tipps.SetToolTip(btnEtiketten, "Etiketten mit QR-Code drucken (ausgewählte Spule ist vorausgewählt)")
+        kopf.Knoepfe.Controls.Add(btnEtiketten)
         kopf.Knoepfe.Controls.Add(btnSpalten)
         kopf.Knoepfe.Controls.Add(btnExport)
         kopf.Knoepfe.Controls.Add(btnNeu)
@@ -97,14 +103,20 @@ Public Class FilamentSeite
         Dim werkzeug = karte.Werkzeug
 
         suche.Margin = New Padding(0, 0, 8, 4)
-        suche.Width = 240
+        suche.Width = 210
         AddHandler suche.Eingabe.TextChanged, Sub(s, e) AnsichtAktualisieren()
-        tipps.SetToolTip(suche.Eingabe, "Sucht in ID, Hersteller, Material, Farbe und Notiz (Strg+F)")
+        AddHandler suche.Eingabe.KeyDown, AddressOf Suche_KeyDown
+        tipps.SetToolTip(suche.Eingabe, "Sucht in ID, Hersteller, Material, Farbe, Lagerort und Notiz (Strg+F)." & Environment.NewLine &
+                                        "ID scannen oder eintippen + Enter öffnet die Spule zum Wiegen.")
         werkzeug.Controls.Add(suche)
 
-        FilterGestalten(cboMaterial, 160)
+        FilterGestalten(cboMaterial, 140)
         AddHandler cboMaterial.SelectedIndexChanged, Sub(s, e) AnsichtAktualisieren()
         werkzeug.Controls.Add(cboMaterial)
+
+        FilterGestalten(cboLagerort, 140)
+        AddHandler cboLagerort.SelectedIndexChanged, Sub(s, e) AnsichtAktualisieren()
+        werkzeug.Controls.Add(cboLagerort)
 
         chkLeere.Text = "Leere anzeigen"
         chkLeere.Checked = True
@@ -126,6 +138,7 @@ Public Class FilamentSeite
         tipps.SetToolTip(btnDuplizieren, "Gleiches Filament als neue Spule anlegen (Strg+D)")
         tipps.SetToolTip(btnVerbrauch, "Verbrauch abziehen oder Spule nachwiegen (Strg+G) – wird im Verlauf protokolliert")
         tipps.SetToolTip(btnLoeschen, "Ausgewähltes Filament löschen (Entf)")
+        karte.KompaktFaehig(btnBearbeiten, btnDuplizieren, btnVerbrauch, btnLoeschen)
 
         seite.Controls.Add(karte, 0, 2)
         Controls.Add(seite)
@@ -173,6 +186,9 @@ Public Class FilamentSeite
         grid.Spalte("PreisProKg", "Preis/kg", 0, "C2", True, menueName:="Preis pro kg")
         grid.Spalte("Restwert", "Restwert", 0, "C2", True)
         grid.Spalte("Kaufdatum", "Gekauft", 0, "d", True, menueName:="Kaufdatum")
+        grid.Spalte("Lagerort", "Lagerort", 100, minBreite:=80)
+        grid.Spalte("Temperaturen", "Düse / Bett", 0, rechtsbuendig:=True, menueName:="Temperaturen (Düse / Bett)")
+        grid.Spalte("Trocknung", "Trocknung", 90, minBreite:=80)
         grid.Spalte("Notiz", "Notiz", 140, minBreite:=60)
         grid.Columns("RestAnteil").AutoSizeMode = DataGridViewAutoSizeColumnMode.None
         grid.Columns("RestAnteil").Width = Px(Me, 120)
@@ -185,6 +201,7 @@ Public Class FilamentSeite
         menue.Items.Add("Duplizieren", Nothing, Sub(s, e) Duplizieren())
         menue.Items.Add("Verbrauch / Wiegen", Nothing, Sub(s, e) VerbrauchBuchen())
         menue.Items.Add("Verlauf anzeigen", Nothing, Sub(s, e) VerlaufZeigen())
+        menue.Items.Add("Etikett drucken", Nothing, Sub(s, e) EtikettenDrucken())
         menue.Items.Add(New ToolStripSeparator())
         menue.Items.Add("Löschen", Nothing, Sub(s, e) Loeschen()).ForeColor = Theme.Rot
         grid.ContextMenuStrip = menue
@@ -352,8 +369,55 @@ Public Class FilamentSeite
         Next
         Dim index = If(bisher Is Nothing, 0, cboMaterial.Items.IndexOf(bisher))
         cboMaterial.SelectedIndex = If(index < 0, 0, index)
+
+        Dim bisherOrt = TryCast(cboLagerort.SelectedItem, String)
+        cboLagerort.Items.Clear()
+        cboLagerort.Items.Add(AlleLagerorte)
+        For Each ort In BekannteLagerorte().OrderBy(Function(x) x, StringComparer.CurrentCultureIgnoreCase)
+            cboLagerort.Items.Add(ort)
+        Next
+        Dim indexOrt = If(bisherOrt Is Nothing, 0, cboLagerort.Items.IndexOf(bisherOrt))
+        cboLagerort.SelectedIndex = If(indexOrt < 0, 0, indexOrt)
         _filterWirdAktualisiert = False
     End Sub
+
+    Private Function BekannteLagerorte() As IEnumerable(Of String)
+        Return _alle.Select(Function(f) f.Lagerort).Where(Function(x) Not String.IsNullOrWhiteSpace(x)).
+                     Select(Function(x) x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)
+    End Function
+
+    ''' <summary>Enter im Suchfeld: Passt die Eingabe genau auf eine ID (z. B. vom QR-Scanner), Spule zum Wiegen öffnen.</summary>
+    Private Sub Suche_KeyDown(sender As Object, e As KeyEventArgs)
+        If e.KeyCode <> Keys.Enter Then Return
+        e.SuppressKeyPress = True
+        Dim code = suche.Eingabe.Text.Trim()
+        If SpuleOeffnen(code, zumWiegen:=True) Then
+            suche.Eingabe.Clear()
+        ElseIf grid.Rows.Count > 0 Then
+            grid.Focus()
+        End If
+    End Sub
+
+    ''' <summary>
+    ''' Wählt die Spule mit dieser ID aus und öffnet optional den Verbrauch-Dialog.
+    ''' Liefert False, wenn es keine Spule mit genau dieser ID gibt.
+    ''' </summary>
+    Public Function SpuleOeffnen(code As String, zumWiegen As Boolean) As Boolean
+        If String.IsNullOrWhiteSpace(code) Then Return False
+        Dim f = _alle.FirstOrDefault(Function(x) String.Equals(x.Code, code.Trim(), StringComparison.OrdinalIgnoreCase))
+        If f Is Nothing Then Return False
+        ' Filter zurücksetzen, damit die Spule sichtbar ist
+        _filterWirdAktualisiert = True
+        suche.Eingabe.Clear()
+        cboMaterial.SelectedIndex = 0
+        cboLagerort.SelectedIndex = 0
+        chkLeere.Checked = True
+        _filterWirdAktualisiert = False
+        AnsichtAktualisieren(f.Id)
+        grid.Focus()
+        If zumWiegen Then VerbrauchBuchen()
+        Return True
+    End Function
 
     Private Sub AnsichtAktualisieren(Optional auswahlId As Long = 0)
         If _filterWirdAktualisiert Then Return
@@ -371,6 +435,10 @@ Public Class FilamentSeite
         Dim material = TryCast(cboMaterial.SelectedItem, String)
         If material IsNot Nothing AndAlso material <> AlleMaterialien Then
             treffer = treffer.Where(Function(f) String.Equals(f.Material, material, StringComparison.OrdinalIgnoreCase))
+        End If
+        Dim ort = TryCast(cboLagerort.SelectedItem, String)
+        If ort IsNot Nothing AndAlso ort <> AlleLagerorte Then
+            treffer = treffer.Where(Function(f) String.Equals(f.Lagerort.Trim(), ort, StringComparison.OrdinalIgnoreCase))
         End If
         If Not chkLeere.Checked Then treffer = treffer.Where(Function(f) f.Restgewicht > 0)
 
@@ -417,7 +485,7 @@ Public Class FilamentSeite
         Dim leer = f.Restgewicht <= 0
 
         If name = "Material" Then
-            grid.BadgeZeichnen(e, f.Material, If(leer, Theme.Grau, Theme.AkzentGedrueckt), If(leer, Theme.Seite, Hell(Theme.Akzent, 0.1)))
+            grid.BadgeZeichnen(e, f.Material, If(leer, Theme.Grau, Theme.AkzentText), If(leer, Theme.Seite, Hell(Theme.Akzent, If(Theme.Dunkel, 0.22, 0.1))))
             Return
         End If
 
@@ -433,7 +501,7 @@ Public Class FilamentSeite
             If farbe.HasValue Then
                 Dim d = Px(Me, 12)
                 Dim punkt As New Rectangle(x, b.Y + (b.Height - d) \ 2, d, d)
-                Using pinsel As New SolidBrush(farbe.Value), stift As New Pen(Color.FromArgb(60, 0, 0, 0))
+                Using pinsel As New SolidBrush(farbe.Value), stift As New Pen(Color.FromArgb(110, 128, 128, 128))
                     g.FillEllipse(pinsel, punkt)
                     g.DrawEllipse(stift, punkt)
                 End Using
@@ -510,7 +578,7 @@ Public Class FilamentSeite
     End Sub
 
     Private Sub DialogZeigenUndSpeichern(f As Filament, titel As String)
-        Using dlg As New FilamentDialog(f, _db, titel, BekannteHersteller(), BekannteMaterialien())
+        Using dlg As New FilamentDialog(f, _db, titel, BekannteHersteller(), BekannteMaterialien(), BekannteLagerorte())
             If dlg.ShowDialog(Me) = DialogResult.OK AndAlso Speichern(f) Then
                 DatenLaden(f.Id)
             End If
@@ -529,6 +597,14 @@ Public Class FilamentSeite
                 Return
             End Try
             DatenLaden(f.Id)
+        End Using
+    End Sub
+
+    ''' <summary>Etiketten-Dialog; die ausgewählte Spule ist vorausgewählt.</summary>
+    Public Sub EtikettenDrucken()
+        Dim f = Ausgewaehlt()
+        Using dlg As New EtikettenDialog(_db, _alle, If(f IsNot Nothing, {f.Id}, Array.Empty(Of Long)()))
+            dlg.ShowDialog(Me)
         End Using
     End Sub
 

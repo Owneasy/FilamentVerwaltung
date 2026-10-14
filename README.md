@@ -17,6 +17,16 @@ Die Daten liegen in einer lokalen **SQLite-Datenbank** – eine einzige Datei, k
 - **Drucke / Verlauf:** Jede Änderung am Restgewicht wird protokolliert (Druck, Wiegen, Korrektur) – mit Kosten,
   Druckzeit und verknüpfter Datei. Drucke lassen sich erfassen, bearbeiten und mit Rückbuchung löschen.
   Kennzahlen für den laufenden Monat; "Verlauf anzeigen" (Rechtsklick auf eine Spule) filtert nach Spule.
+- **Etiketten mit QR-Code:** A4-Etikettenbögen (z. B. Avery 3474 / 3652 / L7163, auch angebrochene Bögen) oder
+  Etikettendrucker (Brother 62 × 29 mm, Dymo 54 × 25 mm), mit Vorschau. Der QR-Code enthält die Spulen-ID.
+- **Spule scannen:** Strg+K (oder „Spule suchen“) – QR-Code scannen oder ID eintippen, Enter öffnet die Spule zum
+  Wiegen. Funktioniert auch im Suchfeld der Filament-Seite. USB-Scanner brauchen keinen Treiber.
+- **Mehr Infos pro Spule:** Lagerort (mit Filter), Düsen-/Betttemperatur, Trocknungshinweis, Shop-Link.
+- **Leerspulen-Vorlagen:** Beim Hersteller wird das Leerspulengewicht vorgeschlagen (Richtwerte, danach der zuletzt
+  selbst eingetragene Wert).
+- **Nachkauf:** Sorten (gleicher Hersteller/Material/Farbe/Ø), die unter den Mindestbestand fallen oder für weniger
+  als 30 Tage reichen – mit letztem Preis, Shop-Link, „Gekauft – neue Spule anlegen“ und Einkaufsliste zum Kopieren.
+- **Dunkles Design:** Hell, Dunkel oder wie in Windows eingestellt („Design“ in der Seitenleiste).
 - **Statistik:** Verbrauch pro Monat (letzte 12 Monate), Verbrauch nach Material, Ø Verbrauch, Reichweite des
   Lagers, Kosten und Drucke im laufenden Jahr sowie eine Prognose je Spule, wann sie beim bisherigen Verbrauch
   (letzte 90 Tage) leer ist. Jedes Diagramm lässt sich auf eine Tabelle umschalten.
@@ -100,6 +110,9 @@ direkt im Nextcloud-Ordner zu halten, funktioniert, kann aber bei gleichzeitigem
 | `StatistikSeite.vb` | Seite „Statistik“: Kennzahlen, Diagramme, Reichweite je Spule |
 | `Diagramme.vb` | Säulen- und Balkendiagramm (selbst gezeichnet) mit Tooltip und Tabellenansicht |
 | `Sicherung.vb`, `SicherungenDialog.vb` | Automatische und manuelle Sicherungen, Wiederherstellen |
+| `NachkaufSeite.vb` | Seite „Nachkauf“: Bestand und Reichweite je Sorte, Einkaufsliste |
+| `Etiketten.vb`, `EtikettenDialog.vb` | Etikettenformate, QR-Code (QRCoder), Druck und Vorschau |
+| `SchnellsucheDialog.vb` | Spule per Scan / ID finden (Strg+K) |
 | `Updater.vb`, `UpdateDialog.vb` | Updates über GitHub Releases |
 | `ModellAnsicht.vb` | STL/3MF/OBJ laden (`Netz`) und 3D-Vorschau mit eigenem Software-Renderer |
 | `DateiAnalyse.vb` | Druckdaten aus G-Code und geslicten 3MF auslesen |

@@ -33,6 +33,17 @@ Public Module Program
             Return
         End Try
 
+        ' Design (hell / dunkel / wie Windows) vor dem ersten Fenster anwenden
+        Dim design = DesignEinstellung.Hell
+        Try
+            design = If(db.EinstellungLesen(DesignEinstellung.Schluessel), DesignEinstellung.Hell)
+        Catch ex As Exception
+            ' Standard: hell
+        End Try
+        Dim dunkel = design = DesignEinstellung.Dunkel OrElse (design = DesignEinstellung.WieWindows AndAlso Theme.WindowsIstDunkel())
+        Theme.Anwenden(dunkel)
+        Application.SetColorMode(If(dunkel, SystemColorMode.Dark, SystemColorMode.Classic))
+
         ' Einmal pro Tag eine Sicherung anlegen (schlägt das fehl, trotzdem starten und darauf hinweisen)
         Try
             Sicherung.AutomatischSichern(db)

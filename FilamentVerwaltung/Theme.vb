@@ -3,42 +3,91 @@ Imports System.Drawing.Drawing2D
 Imports System.Runtime.InteropServices
 Imports System.Windows.Forms
 
+''' <summary>Gespeicherte Design-Wahl.</summary>
+Public NotInheritable Class DesignEinstellung
+    Public Const Schluessel As String = "Design"
+    Public Const Hell As String = "Hell"
+    Public Const Dunkel As String = "Dunkel"
+    Public Const WieWindows As String = "System"
+
+    Private Sub New()
+    End Sub
+End Class
+
 ''' <summary>
 ''' Farben, Schriften und Zeichenhilfen für die Oberfläche im Web-Dashboard-Stil.
 ''' Alle Farben an einer Stelle – zum Anpassen des Aussehens nur hier ändern.
 ''' </summary>
 Public Module Theme
 
+    ' Die Farben werden beim Start einmal per Anwenden() auf hell oder dunkel gesetzt (vor dem ersten Fenster).
+
     ' --- Flächen
-    Public ReadOnly Seite As Color = ColorTranslator.FromHtml("#F1F5F9")
-    Public ReadOnly KartenFlaeche As Color = Color.White
-    Public ReadOnly Rand As Color = ColorTranslator.FromHtml("#E2E8F0")
-    Public ReadOnly RandEingabe As Color = ColorTranslator.FromHtml("#CBD5E1")
-    Public ReadOnly TabelleKopf As Color = ColorTranslator.FromHtml("#F8FAFC")
-    Public ReadOnly TabelleLinie As Color = ColorTranslator.FromHtml("#EEF2F7")
-    Public ReadOnly Auswahl As Color = ColorTranslator.FromHtml("#EFF6FF")
+    Public Seite As Color = ColorTranslator.FromHtml("#F1F5F9")
+    Public KartenFlaeche As Color = Color.White
+    Public Rand As Color = ColorTranslator.FromHtml("#E2E8F0")
+    Public RandEingabe As Color = ColorTranslator.FromHtml("#CBD5E1")
+    Public TabelleKopf As Color = ColorTranslator.FromHtml("#F8FAFC")
+    Public TabelleLinie As Color = ColorTranslator.FromHtml("#EEF2F7")
+    Public Auswahl As Color = ColorTranslator.FromHtml("#EFF6FF")
 
     ' --- Seitenleiste
-    Public ReadOnly Leiste As Color = ColorTranslator.FromHtml("#0F172A")
-    Public ReadOnly LeisteHover As Color = ColorTranslator.FromHtml("#1E293B")
-    Public ReadOnly LeisteText As Color = ColorTranslator.FromHtml("#94A3B8")
-    Public ReadOnly LeisteTextAktiv As Color = Color.White
+    Public Leiste As Color = ColorTranslator.FromHtml("#0F172A")
+    Public LeisteHover As Color = ColorTranslator.FromHtml("#1E293B")
+    Public LeisteText As Color = ColorTranslator.FromHtml("#94A3B8")
+    Public LeisteTextAktiv As Color = Color.White
 
     ' --- Text
-    Public ReadOnly TextStark As Color = ColorTranslator.FromHtml("#0F172A")
-    Public ReadOnly TextNormal As Color = ColorTranslator.FromHtml("#334155")
-    Public ReadOnly TextLeise As Color = ColorTranslator.FromHtml("#64748B")
+    Public TextStark As Color = ColorTranslator.FromHtml("#0F172A")
+    Public TextNormal As Color = ColorTranslator.FromHtml("#334155")
+    Public TextLeise As Color = ColorTranslator.FromHtml("#64748B")
 
     ' --- Akzente
-    Public ReadOnly Akzent As Color = ColorTranslator.FromHtml("#2563EB")
-    Public ReadOnly AkzentHover As Color = ColorTranslator.FromHtml("#1D4ED8")
-    Public ReadOnly AkzentGedrueckt As Color = ColorTranslator.FromHtml("#1E40AF")
-    Public ReadOnly Gruen As Color = ColorTranslator.FromHtml("#16A34A")
-    Public ReadOnly Gelb As Color = ColorTranslator.FromHtml("#D97706")
-    Public ReadOnly Rot As Color = ColorTranslator.FromHtml("#DC2626")
-    Public ReadOnly RotHell As Color = ColorTranslator.FromHtml("#FEF2F2")
-    Public ReadOnly RotRand As Color = ColorTranslator.FromHtml("#FECACA")
-    Public ReadOnly Grau As Color = ColorTranslator.FromHtml("#94A3B8")
+    Public Akzent As Color = ColorTranslator.FromHtml("#2563EB")
+    Public AkzentHover As Color = ColorTranslator.FromHtml("#1D4ED8")
+    Public AkzentGedrueckt As Color = ColorTranslator.FromHtml("#1E40AF")
+    ''' <summary>Akzent als Textfarbe (Badges, Hinweise) – im dunklen Design heller.</summary>
+    Public AkzentText As Color = ColorTranslator.FromHtml("#1E40AF")
+    Public Gruen As Color = ColorTranslator.FromHtml("#16A34A")
+    Public Gelb As Color = ColorTranslator.FromHtml("#D97706")
+    Public Rot As Color = ColorTranslator.FromHtml("#DC2626")
+    Public RotHell As Color = ColorTranslator.FromHtml("#FEF2F2")
+    Public RotRand As Color = ColorTranslator.FromHtml("#FECACA")
+    Public Grau As Color = ColorTranslator.FromHtml("#94A3B8")
+
+    ''' <summary>True, wenn das dunkle Design aktiv ist.</summary>
+    Public ReadOnly Property Dunkel As Boolean
+        Get
+            Return _dunkel
+        End Get
+    End Property
+    Private _dunkel As Boolean
+
+    ''' <summary>Schaltet alle Farben auf das dunkle Design um (Werte geprüft: Text ≥ 4,5:1 auf den Karten).</summary>
+    Public Sub Anwenden(dunkelDesign As Boolean)
+        _dunkel = dunkelDesign
+        If Not dunkelDesign Then Return
+        Dim c = Function(hex As String) ColorTranslator.FromHtml(hex)
+        Seite = c("#0F172A") : KartenFlaeche = c("#1E293B") : Rand = c("#334155") : RandEingabe = c("#475569")
+        TabelleKopf = c("#1A2436") : TabelleLinie = c("#2A3649") : Auswahl = c("#1E3A5F")
+        Leiste = c("#020617") : LeisteHover = c("#1E293B") : LeisteText = c("#94A3B8")
+        TextStark = c("#F1F5F9") : TextNormal = c("#CBD5E1") : TextLeise = c("#94A3B8")
+        Akzent = c("#3B82F6") : AkzentHover = c("#2563EB") : AkzentGedrueckt = c("#1D4ED8") : AkzentText = c("#93C5FD")
+        Gruen = c("#22C55E") : Gelb = c("#F59E0B") : Rot = c("#F87171") : RotHell = c("#3B1D25") : RotRand = c("#7F1D1D")
+        Grau = c("#64748B") : Tuerkis = c("#2DD4BF") : Lila = c("#A78BFA")
+    End Sub
+
+    ''' <summary>Ist in Windows der dunkle App-Modus eingestellt?</summary>
+    Public Function WindowsIstDunkel() As Boolean
+        Try
+            Using k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey("Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+                Dim wert = k?.GetValue("AppsUseLightTheme")
+                Return wert IsNot Nothing AndAlso Convert.ToInt32(wert) = 0
+            End Using
+        Catch ex As Exception
+            Return False
+        End Try
+    End Function
 
     ' --- Schriften
     Public ReadOnly Schrift As New Font("Segoe UI", 10.0F)
@@ -76,10 +125,12 @@ Public Module Theme
     Public Const SymOeffnen As String = ChrW(&HE8E5)
     Public Const SymDatei As String = ChrW(&HE8A5)
     Public Const SymSicherung As String = ChrW(&HE74E)
+    Public Const SymSonne As String = ChrW(&HE706)
+    Public Const SymMond As String = ChrW(&HE708)
 
     ' --- Farben für Buchungsarten
-    Public ReadOnly Tuerkis As Color = ColorTranslator.FromHtml("#0D9488")
-    Public ReadOnly Lila As Color = ColorTranslator.FromHtml("#7C3AED")
+    Public Tuerkis As Color = ColorTranslator.FromHtml("#0D9488")
+    Public Lila As Color = ColorTranslator.FromHtml("#7C3AED")
 
     Private Function SymbolFont(groesse As Single) As Font
         Dim f As New Font("Segoe Fluent Icons", groesse)
@@ -111,9 +162,11 @@ Public Module Theme
 
     ''' <summary>Mischt eine Farbe mit Weiß (anteil 0 = weiß, 1 = Originalfarbe).</summary>
     Public Function Hell(c As Color, anteil As Double) As Color
-        Return Color.FromArgb(CInt(255 - (255 - c.R) * anteil),
-                              CInt(255 - (255 - c.G) * anteil),
-                              CInt(255 - (255 - c.B) * anteil))
+        ' Mischt mit der Kartenfläche (hell: Weiß, dunkel: dunkles Grau) – ergibt zarte Tönungen für Badges und Kreise
+        Dim f = KartenFlaeche
+        Return Color.FromArgb(CInt(f.R + (CInt(c.R) - f.R) * anteil),
+                              CInt(f.G + (CInt(c.G) - f.G) * anteil),
+                              CInt(f.B + (CInt(c.B) - f.B) * anteil))
     End Function
 
     ' --- Titelleiste einfärben (ab Windows 11, unter Windows 10 ohne Wirkung)

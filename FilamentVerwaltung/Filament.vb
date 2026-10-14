@@ -1,4 +1,4 @@
-''' <summary>
+﻿''' <summary>
 ''' Eine Filament-Spule.
 ''' </summary>
 Public Class Filament
@@ -31,6 +31,36 @@ Public Class Filament
     Public Property Kaufdatum As Date = Date.Today
     Public Property Notiz As String = ""
 
+    ''' <summary>Wo die Spule liegt, z. B. "Trockenbox 2".</summary>
+    Public Property Lagerort As String = ""
+
+    ''' <summary>Düsentemperatur in °C (0 = nicht angegeben).</summary>
+    Public Property DuesenTemp As Integer
+
+    ''' <summary>Betttemperatur in °C (0 = nicht angegeben).</summary>
+    Public Property BettTemp As Integer
+
+    ''' <summary>Trocknungshinweis, z. B. "4 h bei 55 °C".</summary>
+    Public Property Trocknung As String = ""
+
+    ''' <summary>Link zum Shop für den Nachkauf.</summary>
+    Public Property ShopLink As String = ""
+
+    ''' <summary>Temperaturen kompakt, z. B. "215 / 60 °C".</summary>
+    Public ReadOnly Property Temperaturen As String
+        Get
+            If DuesenTemp <= 0 AndAlso BettTemp <= 0 Then Return ""
+            Return $"{If(DuesenTemp > 0, DuesenTemp.ToString(), "–")} / {If(BettTemp > 0, BettTemp.ToString(), "–")} °C"
+        End Get
+    End Property
+
+    ''' <summary>Gleiche Sorte = gleicher Hersteller, Material, Farbe und Durchmesser (für den Nachkauf).</summary>
+    Public ReadOnly Property Sorte As String
+        Get
+            Return String.Join("|", {Hersteller.Trim(), Material.Trim(), Farbe.Trim(), Durchmesser.ToString("0.00")}).ToLowerInvariant()
+        End Get
+    End Property
+
     ''' <summary>Preis pro Kilogramm.</summary>
     Public ReadOnly Property PreisProKg As Decimal
         Get
@@ -61,7 +91,7 @@ Public Class Filament
 
     ''' <summary>Prüft, ob der Suchbegriff in einem der Textfelder vorkommt.</summary>
     Public Function Passt(suchbegriff As String) As Boolean
-        For Each feld In {Code, Hersteller, Material, Farbe, Notiz}
+        For Each feld In {Code, Hersteller, Material, Farbe, Notiz, Lagerort}
             If feld IsNot Nothing AndAlso feld.IndexOf(suchbegriff, StringComparison.OrdinalIgnoreCase) >= 0 Then
                 Return True
             End If

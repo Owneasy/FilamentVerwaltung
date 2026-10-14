@@ -123,14 +123,14 @@ Public Class WebButton
                 hinter = If(_gedrueckt, Theme.AkzentGedrueckt, If(_hover, Theme.AkzentHover, Theme.Akzent))
                 vorder = Color.White
             Case KnopfStil.Gefahr
-                hinter = If(_gedrueckt, Theme.RotRand, If(_hover, Theme.RotHell, Color.White))
+                hinter = If(_gedrueckt, Theme.RotRand, If(_hover, Theme.RotHell, Theme.KartenFlaeche))
                 vorder = Theme.Rot
                 rahmen = Theme.RotRand
             Case KnopfStil.Navigation
                 hinter = If(_aktiv OrElse _hover, Theme.LeisteHover, Color.Empty)
                 vorder = If(_aktiv, Theme.LeisteTextAktiv, If(_hover, Color.FromArgb(226, 232, 240), Theme.LeisteText))
             Case Else
-                hinter = If(_gedrueckt, Theme.Rand, If(_hover, Theme.TabelleKopf, Color.White))
+                hinter = If(_gedrueckt, Theme.Rand, If(_hover, Theme.TabelleKopf, Theme.KartenFlaeche))
                 vorder = Theme.TextNormal
                 rahmen = Theme.RandEingabe
         End Select
@@ -283,14 +283,14 @@ Public Class SuchFeld
         .BorderStyle = BorderStyle.None,
         .Font = Theme.Schrift,
         .ForeColor = Theme.TextStark,
-        .BackColor = Color.White,
+        .BackColor = Theme.KartenFlaeche,
         .PlaceholderText = "Suchen …"
     }
 
     Public Sub New()
         SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.OptimizedDoubleBuffer Or
                  ControlStyles.ResizeRedraw Or ControlStyles.UserPaint, True)
-        BackColor = Color.White
+        BackColor = Theme.KartenFlaeche
         Size = New Size(280, 36)
         Margin = New Padding(0, 0, 8, 0)
         Cursor = Cursors.IBeam
@@ -311,7 +311,9 @@ Public Class SuchFeld
         g.Clear(If(Parent IsNot Nothing, Parent.BackColor, Theme.KartenFlaeche))
         g.SmoothingMode = SmoothingMode.AntiAlias
         Using pfad = Abgerundet(New Rectangle(0, 0, Width - 1, Height - 1), Px(Me, 7))
-            g.FillPath(Brushes.White, pfad)
+            Using fl As New SolidBrush(Theme.KartenFlaeche)
+                g.FillPath(fl, pfad)
+            End Using
             Dim fokus = Eingabe.Focused
             Using p As New Pen(If(fokus, Theme.Akzent, Theme.RandEingabe), If(fokus, Px(Me, 2), 1))
                 g.DrawPath(p, pfad)
@@ -362,7 +364,7 @@ Public Class WebTabelle
         SelectionMode = DataGridViewSelectionMode.FullRowSelect
         MultiSelect = False
         RowHeadersVisible = False
-        BackgroundColor = Color.White
+        BackgroundColor = Theme.KartenFlaeche
         BorderStyle = BorderStyle.None
         CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal
         GridColor = Theme.TabelleLinie
@@ -382,7 +384,7 @@ Public Class WebTabelle
             .WrapMode = DataGridViewTriState.False
         End With
         With DefaultCellStyle
-            .BackColor = Color.White
+            .BackColor = Theme.KartenFlaeche
             .ForeColor = Theme.TextNormal
             .SelectionBackColor = Theme.Auswahl
             .SelectionForeColor = Theme.TextStark
@@ -499,6 +501,21 @@ Public Class WebTabelle
         End If
     End Sub
 
+    ''' <summary>
+    ''' Zellen ohne die eingebauten Rahmen zeichnen und nur die Linie unten ergänzen – die DataGridView zeichnet
+    ''' sonst je nach Windows-Farbmodus zusätzliche senkrechte Rahmen.
+    ''' </summary>
+    Protected Overrides Sub OnCellPainting(e As DataGridViewCellPaintingEventArgs)
+        ' Kantenglättung aus selbst gezeichneten Zellen (Badges, Balken) nicht weitergeben – sonst entstehen an den
+        ' Zellkanten halbtransparente Pixel, die als feine Rahmen sichtbar werden
+        If e.Graphics IsNot Nothing Then e.Graphics.SmoothingMode = SmoothingMode.Default
+        MyBase.OnCellPainting(e)
+        If e.Graphics IsNot Nothing Then e.Graphics.SmoothingMode = SmoothingMode.Default
+        If e.Handled OrElse e.RowIndex < 0 OrElse e.ColumnIndex < 0 Then Return
+        e.Paint(e.ClipBounds, DataGridViewPaintParts.All And Not DataGridViewPaintParts.Border)
+        ZelleAbschliessen(e)
+    End Sub
+
     Private Sub HoverSetzen(zeile As Integer)
         If zeile = _hoverZeile Then Return
         Dim alt = _hoverZeile
@@ -593,6 +610,45 @@ Public Class TabellenKarte
             Dim y = If(unten, c.Height - 1, 0)
             g.DrawLine(p, 0, y, c.Width, y)
         End Using
+    End Sub
+
+    Private ReadOnly _kompakt As New List(Of (Knopf As WebButton, Text As String))
+
+    ''' <summary>
+    ''' Diese Knöpfe zeigen nur ihr Symbol, wenn die Werkzeugleiste sonst in eine zweite Zeile umbrechen würde
+    ''' (die Tooltips erklären sie weiterhin).
+    ''' </summary>
+    Public Sub KompaktFaehig(ParamArray knoepfe As WebButton())
+        For Each b In knoepfe
+            _kompakt.Add((b, b.Text))
+        Next
+        AddHandler Werkzeug.SizeChanged, Sub(s, e) KompaktAnpassen()
+        KompaktAnpassen()
+    End Sub
+
+    Private Sub KompaktAnpassen()
+        If _kompakt.Count = 0 OrElse Werkzeug.ClientSize.Width <= 0 Then Return
+        ' Benötigte Breite mit vollen Beschriftungen
+        Dim noetig = Werkzeug.Padding.Horizontal
+        For Each c As Control In Werkzeug.Controls
+            If Not c.Visible Then Continue For
+            Dim kompaktKnopf = _kompakt.FirstOrDefault(Function(k) k.Knopf Is c)
+            Dim breite As Integer
+            If kompaktKnopf.Knopf IsNot Nothing Then
+                Dim aktuell = c.Text
+                c.Text = kompaktKnopf.Text
+                breite = c.GetPreferredSize(Size.Empty).Width
+                c.Text = aktuell
+            Else
+                breite = If(c.AutoSize, c.GetPreferredSize(Size.Empty).Width, c.Width)
+            End If
+            noetig += breite + c.Margin.Horizontal
+        Next
+        Dim kompakt = noetig > Werkzeug.ClientSize.Width
+        For Each k In _kompakt
+            Dim soll = If(kompakt, "", k.Text)
+            If k.Knopf.Text <> soll Then k.Knopf.Text = soll
+        Next
     End Sub
 
 End Class

@@ -77,10 +77,57 @@ CREATE TABLE IF NOT EXISTS Buchung (
     Kosten      REAL    NOT NULL DEFAULT 0,
     Notiz       TEXT    NOT NULL DEFAULT ''
 );
-CREATE INDEX IF NOT EXISTS IX_Buchung_Filament ON Buchung (FilamentId);"
+CREATE INDEX IF NOT EXISTS IX_Buchung_Filament ON Buchung (FilamentId);
+CREATE TABLE IF NOT EXISTS SpulenVorlage (
+    Hersteller TEXT    PRIMARY KEY COLLATE NOCASE,
+    Gewicht    INTEGER NOT NULL
+);"
+            cmd.ExecuteNonQuery()
+
+            ' Spalten, die nach Version 0.0.2 dazugekommen sind
+            SpalteErgaenzen(c, "Filament", "Lagerort", "TEXT NOT NULL DEFAULT ''")
+            SpalteErgaenzen(c, "Filament", "DuesenTemp", "INTEGER NOT NULL DEFAULT 0")
+            SpalteErgaenzen(c, "Filament", "BettTemp", "INTEGER NOT NULL DEFAULT 0")
+            SpalteErgaenzen(c, "Filament", "Trocknung", "TEXT NOT NULL DEFAULT ''")
+            SpalteErgaenzen(c, "Filament", "ShopLink", "TEXT NOT NULL DEFAULT ''")
+        End Using
+    End Sub
+
+    ''' <summary>Fügt eine Spalte hinzu, falls sie noch fehlt (Datenbanken älterer Versionen).</summary>
+    Private Shared Sub SpalteErgaenzen(c As SqliteConnection, tabelle As String, spalte As String, definition As String)
+        Using cmd = c.CreateCommand()
+            cmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{tabelle}') WHERE name = $name"
+            cmd.Parameters.AddWithValue("$name", spalte)
+            If Convert.ToInt64(cmd.ExecuteScalar()) > 0 Then Return
+            cmd.CommandText = $"ALTER TABLE {tabelle} ADD COLUMN {spalte} {definition}"
+            cmd.Parameters.Clear()
             cmd.ExecuteNonQuery()
         End Using
     End Sub
+
+    ' ------------------------------------------------------------------ Leerspulen-Vorlagen
+
+    ''' <summary>Richtwerte für leere Spulen (werden durch eigene Werte überschrieben, sobald man eine Spule speichert).</summary>
+    Public Shared ReadOnly StandardLeerspulen As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase) From {
+        {"3DJake", 230}, {"Anycubic", 180}, {"Bambu Lab", 250}, {"Creality", 160}, {"Das Filament", 230},
+        {"Elegoo", 160}, {"eSun", 220}, {"Extrudr", 230}, {"Fiberlogy", 250}, {"Geeetech", 170},
+        {"Jayo", 160}, {"Overture", 170}, {"Polymaker", 140}, {"Prusament", 200}, {"Sunlu", 160}}
+
+    ''' <summary>Leerspulengewicht für einen Hersteller: eigener gespeicherter Wert, sonst Richtwert, sonst Nothing.</summary>
+    Public Function LeerspulenVorlage(hersteller As String, ByRef eigenerWert As Boolean) As Integer?
+        eigenerWert = False
+        If String.IsNullOrWhiteSpace(hersteller) Then Return Nothing
+        Using c = Oeffnen()
+            Dim wert = Befehl(c, Nothing, "SELECT Gewicht FROM SpulenVorlage WHERE Hersteller = $h", "$h", hersteller.Trim()).ExecuteScalar()
+            If wert IsNot Nothing Then
+                eigenerWert = True
+                Return Convert.ToInt32(wert)
+            End If
+        End Using
+        Dim standard As Integer
+        If StandardLeerspulen.TryGetValue(hersteller.Trim(), standard) Then Return standard
+        Return Nothing
+    End Function
 
     ''' <summary>Liest eine gespeicherte Einstellung (Nothing, wenn sie noch nicht existiert).</summary>
     Public Function EinstellungLesen(schluessel As String) As String
@@ -105,7 +152,8 @@ CREATE INDEX IF NOT EXISTS IX_Buchung_Filament ON Buchung (FilamentId);"
         Dim liste As New List(Of Filament)
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText = "SELECT Id, Code, Hersteller, Material, Farbe, Durchmesser, Gewicht, Restgewicht, " &
-                              "Spulengewicht, Preis, Kaufdatum, Notiz FROM Filament ORDER BY Code"
+                              "Spulengewicht, Preis, Kaufdatum, Notiz, Lagerort, DuesenTemp, BettTemp, Trocknung, ShopLink " &
+                              "FROM Filament ORDER BY Code"
             Using r = cmd.ExecuteReader()
                 While r.Read()
                     liste.Add(New Filament With {
@@ -120,7 +168,12 @@ CREATE INDEX IF NOT EXISTS IX_Buchung_Filament ON Buchung (FilamentId);"
                         .Spulengewicht = r.GetInt32(8),
                         .Preis = Math.Round(CDec(r.GetDouble(9)), 2),
                         .Kaufdatum = DatumLesen(Text(r, 10)),
-                        .Notiz = Text(r, 11)
+                        .Notiz = Text(r, 11),
+                        .Lagerort = Text(r, 12),
+                        .DuesenTemp = r.GetInt32(13),
+                        .BettTemp = r.GetInt32(14),
+                        .Trocknung = Text(r, 15),
+                        .ShopLink = Text(r, 16)
                     })
                 End While
             End Using
@@ -144,13 +197,15 @@ CREATE INDEX IF NOT EXISTS IX_Buchung_Filament ON Buchung (FilamentId);"
             If f.Id = 0 Then
                 cmd.CommandText =
                     "INSERT INTO Filament (Code, Hersteller, Material, Farbe, Durchmesser, Gewicht, Restgewicht, " &
-                    "Spulengewicht, Preis, Kaufdatum, Notiz) VALUES ($code, $hersteller, $material, $farbe, " &
-                    "$durchmesser, $gewicht, $rest, $spule, $preis, $kauf, $notiz); SELECT last_insert_rowid();"
+                    "Spulengewicht, Preis, Kaufdatum, Notiz, Lagerort, DuesenTemp, BettTemp, Trocknung, ShopLink) " &
+                    "VALUES ($code, $hersteller, $material, $farbe, $durchmesser, $gewicht, $rest, $spule, $preis, $kauf, " &
+                    "$notiz, $lagerort, $duese, $bett, $trocknung, $shop); SELECT last_insert_rowid();"
             Else
                 cmd.CommandText =
                     "UPDATE Filament SET Code = $code, Hersteller = $hersteller, Material = $material, Farbe = $farbe, " &
                     "Durchmesser = $durchmesser, Gewicht = $gewicht, Restgewicht = $rest, Spulengewicht = $spule, " &
-                    "Preis = $preis, Kaufdatum = $kauf, Notiz = $notiz WHERE Id = $id"
+                    "Preis = $preis, Kaufdatum = $kauf, Notiz = $notiz, Lagerort = $lagerort, DuesenTemp = $duese, " &
+                    "BettTemp = $bett, Trocknung = $trocknung, ShopLink = $shop WHERE Id = $id"
                 cmd.Parameters.AddWithValue("$id", f.Id)
             End If
 
@@ -165,11 +220,23 @@ CREATE INDEX IF NOT EXISTS IX_Buchung_Filament ON Buchung (FilamentId);"
             cmd.Parameters.AddWithValue("$preis", CDbl(f.Preis))
             cmd.Parameters.AddWithValue("$kauf", f.Kaufdatum.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
             cmd.Parameters.AddWithValue("$notiz", If(f.Notiz, ""))
+            cmd.Parameters.AddWithValue("$lagerort", If(f.Lagerort, "").Trim())
+            cmd.Parameters.AddWithValue("$duese", Math.Max(0, f.DuesenTemp))
+            cmd.Parameters.AddWithValue("$bett", Math.Max(0, f.BettTemp))
+            cmd.Parameters.AddWithValue("$trocknung", If(f.Trocknung, "").Trim())
+            cmd.Parameters.AddWithValue("$shop", If(f.ShopLink, "").Trim())
 
             If f.Id = 0 Then
                 f.Id = Convert.ToInt64(cmd.ExecuteScalar())
             Else
                 cmd.ExecuteNonQuery()
+            End If
+
+            ' Leerspulengewicht als Vorlage für diesen Hersteller merken
+            If f.Spulengewicht > 0 AndAlso Not String.IsNullOrWhiteSpace(f.Hersteller) Then
+                Befehl(c, t, "INSERT INTO SpulenVorlage (Hersteller, Gewicht) VALUES ($h, $g) " &
+                             "ON CONFLICT(Hersteller) DO UPDATE SET Gewicht = excluded.Gewicht",
+                       "$h", f.Hersteller.Trim(), "$g", f.Spulengewicht).ExecuteNonQuery()
             End If
 
             If altRest.HasValue AndAlso altRest.Value <> f.Restgewicht Then
