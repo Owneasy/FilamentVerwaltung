@@ -1,4 +1,4 @@
-Imports System.Drawing
+﻿Imports System.Drawing
 Imports System.IO
 Imports System.Threading
 Imports System.Windows.Forms
@@ -19,6 +19,7 @@ Public Class SendenDialog
     Private _filamente As New List(Of Filament)
     Private _abbruch As CancellationTokenSource
     Private _laeuft As Boolean
+    Private ReadOnly _beschriftungen As New List(Of Label)
     Private ReadOnly _fachAuswahl As New List(Of (Filament As PlattenFilament, Auswahl As ComboBox, Slots As List(Of Integer)))
 
     Private ReadOnly cboDrucker As New ComboBox With {.Width = 380, .DropDownStyle = ComboBoxStyle.DropDownList}
@@ -111,8 +112,9 @@ Public Class SendenDialog
         PerformLayout()
     End Sub
 
-    Private Shared Sub Zeile(t As TableLayoutPanel, beschriftung As String, steuerelement As Control)
+    Private Sub Zeile(t As TableLayoutPanel, beschriftung As String, steuerelement As Control)
         Dim l As New Label With {.Text = beschriftung, .AutoSize = True, .Anchor = AnchorStyles.Left, .Margin = New Padding(3, 7, 12, 3)}
+        _beschriftungen.Add(l)
         steuerelement.Anchor = AnchorStyles.Left
         t.Controls.Add(l, 0, t.RowCount)
         t.Controls.Add(steuerelement, 1, t.RowCount)
@@ -252,6 +254,25 @@ Public Class SendenDialog
             _fachAuswahl.Add((pf, auswahl, slots))
         Next
         faecher.ResumeLayout()
+        SpaltenAngleichen()
+    End Sub
+
+    ''' <summary>
+    ''' Drucker-, Platten- und Filament-Zeilen liegen in verschachtelten Tabellen. Damit alle Auswahlfelder
+    ''' untereinander stehen, bekommt die Beschriftungsspalte überall dieselbe Breite (die der längsten Beschriftung).
+    ''' </summary>
+    Private Sub SpaltenAngleichen()
+        Dim tabellen = {DirectCast(Controls(0), TableLayoutPanel), bambuBereich, faecher}
+        Dim labels = _beschriftungen.Concat(faecher.Controls.OfType(Of Label)())
+        Dim breite = labels.Max(Function(l) l.PreferredSize.Width + l.Margin.Horizontal)
+        For Each t In tabellen
+            t.ColumnStyles(0) = New ColumnStyle(SizeType.Absolute, breite)
+        Next
+    End Sub
+
+    Protected Overrides Sub OnLoad(e As EventArgs)
+        MyBase.OnLoad(e)
+        SpaltenAngleichen()   ' nach der DPI-Skalierung neu messen
     End Sub
 
     Private Async Sub Starten_Click(sender As Object, e As EventArgs)

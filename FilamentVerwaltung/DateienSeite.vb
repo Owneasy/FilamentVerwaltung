@@ -337,7 +337,10 @@ Public Class DateienSeite
         btnBuchen.Stil = If(sliceBar, KnopfStil.Sekundaer, KnopfStil.Primaer)
         btnSlicen.Invalidate()
         btnBuchen.Invalidate()
-        ' Feste Reihenfolge erzwingen (beim Ein-/Ausblenden kann sie sonst durcheinandergeraten)
+        btnImSlicer.Visible = d IsNot Nothing AndAlso Not Datei.GcodeTypen.Contains(d.Typ)
+        ' Senden: geslicte 3MF (Bambu) oder G-Code (Klipper, OctoPrint, PrusaLink)
+        btnSenden.Visible = d IsNot Nothing AndAlso (d.HatDruckdaten OrElse Datei.GcodeTypen.Contains(d.Typ) OrElse d.Typ = "BGCODE")
+        ' Feste Reihenfolge erzwingen – erst nach dem Ein-/Ausblenden, weil ein erstmals sichtbarer Knopf sonst ans Ende rutscht
         Dim leiste = btnBuchen.Parent
         If leiste IsNot Nothing Then
             Dim reihenfolge = {btnBuchen, btnSlicen, btnSenden, btnImSlicer, btnOeffnen, btnImOrdner, btnLoeschen}
@@ -346,9 +349,6 @@ Public Class DateienSeite
             Next
             leiste.PerformLayout()
         End If
-        btnImSlicer.Visible = d IsNot Nothing AndAlso Not Datei.GcodeTypen.Contains(d.Typ)
-        ' Senden: geslicte 3MF (Bambu) oder G-Code (Klipper, OctoPrint, PrusaLink)
-        btnSenden.Visible = d IsNot Nothing AndAlso (d.HatDruckdaten OrElse Datei.GcodeTypen.Contains(d.Typ) OrElse d.Typ = "BGCODE")
         VorschauLaden(d)
     End Sub
 
