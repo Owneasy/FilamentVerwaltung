@@ -98,13 +98,22 @@ Public Class DruckerKarte
     Private _fachSignatur As String = Nothing
     Private _filamente As New List(Of Filament)
     Private _aktualisiert As Boolean
+    Private ReadOnly _protokoll As DruckerProtokoll
+    Private _kamera As BambuKamera
+    Private _kameraAn As Boolean
+    Private ReadOnly kameraBild As New PictureBox With {.Dock = DockStyle.Fill, .Height = 227, .SizeMode = PictureBoxSizeMode.Zoom,
+                                                         .BackColor = Color.Black, .Margin = New Padding(0, 8, 0, 2), .Visible = False}
+    Private ReadOnly lblKamera As New Label With {.AutoSize = True, .MaximumSize = New Size(400, 0), .ForeColor = Theme.TextLeise,
+                                                  .Font = Theme.SchriftKlein, .Margin = New Padding(0, 0, 0, 6), .Visible = False}
+    Private btnKamera As WebButton
 
     Public Event BearbeitenGeklickt(d As Drucker)
     Public Event ProtokollGeklickt(d As Drucker)
 
-    Public Sub New(d As Drucker, db As Datenbank)
+    Public Sub New(d As Drucker, db As Datenbank, Optional protokoll As DruckerProtokoll = Nothing)
         _Drucker = d
         _db = db
+        _protokoll = protokoll
         Width = 440
         AutoSize = True
         AutoSizeMode = AutoSizeMode.GrowAndShrink
@@ -134,6 +143,8 @@ Public Class DruckerKarte
         spulen.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
         spulen.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
         t.Controls.Add(spulen)
+        t.Controls.Add(kameraBild)
+        t.Controls.Add(lblKamera)
 
         Dim knoepfe As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False, .Margin = New Padding(0, 10, 0, 0)}
         Dim btnBearbeiten As New WebButton("Bearbeiten", Theme.SymBearbeiten)
@@ -142,6 +153,11 @@ Public Class DruckerKarte
         AddHandler btnProtokoll.Click, Sub(s, e) RaiseEvent ProtokollGeklickt(Drucker)
         knoepfe.Controls.Add(btnBearbeiten)
         knoepfe.Controls.Add(btnProtokoll)
+        If d.Typ = Drucker.TypBambu Then
+            btnKamera = New WebButton("Kamera", Theme.SymKamera)
+            AddHandler btnKamera.Click, Sub(s, e) KameraUmschalten()
+            knoepfe.Controls.Add(btnKamera)
+        End If
         t.Controls.Add(knoepfe)
         Controls.Add(t)
 
@@ -284,6 +300,94 @@ Public Class DruckerKarte
         spulen.ResumeLayout()
     End Sub
 
+    ' ---------- Kamera (Bambu) ----------
+
+    Private Sub KameraUmschalten()
+        _kameraAn = Not _kameraAn
+        btnKamera.Text = If(_kameraAn, "Kamera aus", "Kamera")
+        kameraBild.Visible = _kameraAn
+        lblKamera.Visible = _kameraAn
+        If _kameraAn Then
+            lblKamera.Text = "Verbinde …"
+            KameraStarten()
+        Else
+            KameraStoppen()
+            Dim alt = kameraBild.Image
+            kameraBild.Image = Nothing
+            alt?.Dispose()
+        End If
+    End Sub
+
+    Private Sub KameraStarten()
+        If _kamera Is Nothing Then
+            _kamera = New BambuKamera(Drucker, _protokoll)
+            AddHandler _kamera.BildEmpfangen, AddressOf KameraBildEmpfangen
+            AddHandler _kamera.StatusGeaendert, AddressOf KameraStatusGeaendert
+        End If
+        _kamera.Starten()
+    End Sub
+
+    Private Sub KameraStoppen()
+        _kamera?.Stoppen()
+    End Sub
+
+    ''' <summary>Aus dem Hintergrund-Thread: Bild dort dekodieren, dann im UI-Thread anzeigen.</summary>
+    Private Sub KameraBildEmpfangen(jpeg As Byte())
+        Dim bild As Bitmap
+        Try
+            Using ms As New IO.MemoryStream(jpeg), roh = Image.FromStream(ms)
+                bild = New Bitmap(roh)
+            End Using
+        Catch ex As Exception
+            Return   ' unvollständiges Bild – überspringen
+        End Try
+        If IsDisposed OrElse Not IsHandleCreated Then
+            bild.Dispose()
+            Return
+        End If
+        UiAusfuehren(Sub()
+                        If IsDisposed OrElse Not _kameraAn Then
+                            bild.Dispose()
+                            Return
+                        End If
+                        Dim alt = kameraBild.Image
+                        kameraBild.Image = bild
+                        alt?.Dispose()
+                        lblKamera.Text = $"Live · {bild.Width} × {bild.Height} · {Date.Now:HH:mm:ss}"
+                    End Sub)
+    End Sub
+
+    Private Sub KameraStatusGeaendert(text As String)
+        If IsDisposed OrElse Not IsHandleCreated Then Return
+        UiAusfuehren(Sub()
+                        If Not IsDisposed AndAlso _kameraAn Then lblKamera.Text = text
+                    End Sub)
+    End Sub
+
+    Private Sub UiAusfuehren(aktion As Action)
+        Try
+            BeginInvoke(aktion)
+        Catch ex As InvalidOperationException
+            ' Karte wurde inzwischen geschlossen
+        End Try
+    End Sub
+
+    ''' <summary>Kamera nur laufen lassen, solange die Karte sichtbar ist (z. B. nicht auf einer anderen Seite).</summary>
+    Protected Overrides Sub OnVisibleChanged(e As EventArgs)
+        MyBase.OnVisibleChanged(e)
+        If Not _kameraAn Then Return
+        If Visible Then KameraStarten() Else KameraStoppen()
+    End Sub
+
+    Protected Overrides Sub Dispose(disposing As Boolean)
+        If disposing Then
+            _kamera?.Dispose()
+            _kamera = Nothing
+            kameraBild.Image?.Dispose()
+        End If
+        MyBase.Dispose(disposing)
+    End Sub
+
 End Class
 
 ''' <summary>
@@ -344,7 +448,7 @@ Public Class DruckerSeite
             k.Dispose()
         Next
         For Each d In drucker
-            Dim karte As New DruckerKarte(d, _db)
+            Dim karte As New DruckerKarte(d, _db, _ueberwachung.Protokoll(d.Id))
             AddHandler karte.BearbeitenGeklickt, Sub(x) Bearbeiten(x.Kopie(), "Drucker bearbeiten")
             AddHandler karte.ProtokollGeklickt, AddressOf ProtokollZeigen
             karte.Aktualisieren(If(d.Aktiv, _ueberwachung.Status(d.Id), Nothing), _filamente)

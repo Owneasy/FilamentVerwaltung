@@ -130,6 +130,7 @@ Public Module Theme
     Public Const SymScanner As String = ChrW(&HEC5A)
     Public Const SymMond As String = ChrW(&HE708)
     Public Const SymStart As String = ChrW(&HE80F)
+    Public Const SymKamera As String = ChrW(&HE722)
 
     ' --- Farben für Buchungsarten
     Public Tuerkis As Color = ColorTranslator.FromHtml("#0D9488")
