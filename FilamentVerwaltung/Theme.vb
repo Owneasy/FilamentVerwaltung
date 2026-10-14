@@ -75,6 +75,7 @@ Public Module Theme
     Public Const SymHinzufuegen As String = ChrW(&HE8F4)
     Public Const SymOeffnen As String = ChrW(&HE8E5)
     Public Const SymDatei As String = ChrW(&HE8A5)
+    Public Const SymSicherung As String = ChrW(&HE74E)
 
     ' --- Farben für Buchungsarten
     Public ReadOnly Tuerkis As Color = ColorTranslator.FromHtml("#0D9488")

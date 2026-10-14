@@ -368,6 +368,58 @@ CREATE INDEX IF NOT EXISTS IX_Buchung_Filament ON Buchung (FilamentId);"
         Return cmd
     End Function
 
+    ' ------------------------------------------------------------------ Sicherung
+
+    ''' <summary>Schreibt eine konsistente Kopie der Datenbank (SQLite-Backup, auch während Zugriffen sicher).</summary>
+    Public Sub SichernNach(zielPfad As String)
+        Using quelle = Oeffnen(), ziel As New SqliteConnection(Verbindung(zielPfad, SqliteOpenMode.ReadWriteCreate))
+            ziel.Open()
+            quelle.BackupDatabase(ziel)
+        End Using
+    End Sub
+
+    ''' <summary>Ersetzt den Inhalt der Datenbank durch den einer Sicherung.</summary>
+    Public Sub WiederherstellenAus(sicherungPfad As String)
+        Using quelle As New SqliteConnection(Verbindung(sicherungPfad, SqliteOpenMode.ReadOnly)), ziel = Oeffnen()
+            quelle.Open()
+            quelle.BackupDatabase(ziel)
+        End Using
+        ' Sicherungen älterer Versionen: fehlende Tabellen ergänzen
+        TabelleAnlegen()
+    End Sub
+
+    ''' <summary>Prüft, ob die Datei eine unbeschädigte Datenbank dieser Anwendung ist.</summary>
+    Public Shared Function IstGueltigeSicherung(pfad As String, ByRef grund As String) As Boolean
+        Try
+            Using c As New SqliteConnection(Verbindung(pfad, SqliteOpenMode.ReadOnly))
+                c.Open()
+                Using cmd = c.CreateCommand()
+                    cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'Filament'"
+                    If Convert.ToInt64(cmd.ExecuteScalar()) = 0 Then
+                        grund = "Die Datei enthält keine Filament-Daten."
+                        Return False
+                    End If
+                    cmd.CommandText = "PRAGMA quick_check"
+                    Dim ergebnis = Convert.ToString(cmd.ExecuteScalar())
+                    If Not String.Equals(ergebnis, "ok", StringComparison.OrdinalIgnoreCase) Then
+                        grund = "Die Datei ist beschädigt (" & ergebnis & ")."
+                        Return False
+                    End If
+                End Using
+            End Using
+            grund = ""
+            Return True
+        Catch ex As Exception
+            grund = ex.Message
+            Return False
+        End Try
+    End Function
+
+    ''' <summary>Verbindung ohne Pooling, damit die Datei danach sofort wieder frei ist.</summary>
+    Private Shared Function Verbindung(pfad As String, modus As SqliteOpenMode) As String
+        Return New SqliteConnectionStringBuilder With {.DataSource = pfad, .Mode = modus, .Pooling = False}.ToString()
+    End Function
+
     ' ------------------------------------------------------------------ Dateien (CAD, STL, G-Code …)
 
     ''' <summary>Ordner neben der Datenbank, in den hinzugefügte Dateien kopiert werden.</summary>

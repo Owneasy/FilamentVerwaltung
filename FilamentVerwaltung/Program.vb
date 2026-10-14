@@ -33,6 +33,15 @@ Public Module Program
             Return
         End Try
 
+        ' Einmal pro Tag eine Sicherung anlegen (schlägt das fehl, trotzdem starten und darauf hinweisen)
+        Try
+            Sicherung.AutomatischSichern(db)
+        Catch ex As Exception
+            MessageBox.Show("Die automatische Sicherung der Datenbank ist fehlgeschlagen:" & Environment.NewLine &
+                            ex.Message & Environment.NewLine & Environment.NewLine & "Das Programm startet trotzdem.",
+                            "Filament-Verwaltung", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+        End Try
+
         Application.Run(New MainForm(db))
     End Sub
 

@@ -75,7 +75,11 @@ Ein anderer Pfad kann als Startparameter übergeben werden:
 FilamentVerwaltung.exe "D:\Daten\filament.db"
 ```
 
-Tipp: Für ein Backup die `.db`-Datei **und den Ordner `Dateien`** daneben kopieren (bei geschlossenem Programm). Die Datei während der Nutzung
+**Sicherungen:** Beim Start wird einmal pro Tag automatisch eine Sicherung im Ordner `Backups` neben der Datenbank
+angelegt (die letzten 10 automatischen bleiben erhalten, manuelle werden nie automatisch gelöscht). Über
+„Sicherungen“ in der Seitenleiste: jetzt sichern, wiederherstellen (der aktuelle Stand wird vorher gesichert),
+Ordner öffnen. Der Ordner `Dateien` (STL, G-Code …) wird nicht mitgesichert – für ein vollständiges Backup ihn
+zusätzlich kopieren. Die Datei während der Nutzung
 direkt im Nextcloud-Ordner zu halten, funktioniert, kann aber bei gleichzeitigem Zugriff von zwei PCs Konflikte erzeugen.
 
 ## Projektaufbau

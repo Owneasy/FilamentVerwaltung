@@ -83,10 +83,10 @@ Public Class MainForm
         leiste.Controls.Add(New Panel With {.Margin = New Padding(0)}, 0, leiste.RowCount)
         leiste.RowCount += 1
 
-        Dim btnDb As New WebButton("Datenbank-Ordner", Theme.SymOrdnerOffen, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
-        AddHandler btnDb.Click, Sub(s, e) DbOrdnerOeffnen()
-        tipps.SetToolTip(btnDb, "Ordner mit der Datenbankdatei öffnen (für Backups)")
-        Zeile(leiste, btnDb)
+        Dim btnSicherungen As New WebButton("Sicherungen", Theme.SymSicherung, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
+        AddHandler btnSicherungen.Click, Sub(s, e) SicherungenZeigen()
+        tipps.SetToolTip(btnSicherungen, "Sicherungen der Datenbank ansehen, jetzt sichern oder wiederherstellen")
+        Zeile(leiste, btnSicherungen)
 
         AddHandler btnUpdate.Click, Sub(s, e) UpdatePruefen(stumm:=False)
         tipps.SetToolTip(btnUpdate, $"Auf GitHub ({GitHubRepo}) nach einer neueren Version suchen")
@@ -101,7 +101,9 @@ Public Class MainForm
             .Height = 20,
             .Margin = New Padding(16, 2, 4, 0)
         }
-        tipps.SetToolTip(lblPfad, _db.Pfad)
+        lblPfad.Cursor = Cursors.Hand
+        AddHandler lblPfad.Click, Sub(s, e) DbOrdnerOeffnen()
+        tipps.SetToolTip(lblPfad, _db.Pfad & Environment.NewLine & "Klicken, um den Ordner zu öffnen")
         Zeile(leiste, lblPfad)
         Zeile(leiste, New Label With {
             .Text = $"Version {AktuelleVersion}",
@@ -140,7 +142,18 @@ Public Class MainForm
         Return b
     End Function
 
+    Private _aktuelleSeite As Control
+
+    Private Sub SicherungenZeigen()
+        Using dlg As New SicherungenDialog(_db)
+            dlg.ShowDialog(Me)
+            ' Nach einer Wiederherstellung die angezeigte Seite neu laden
+            If dlg.Wiederhergestellt AndAlso _aktuelleSeite IsNot Nothing Then SeiteZeigen(_aktuelleSeite)
+        End Using
+    End Sub
+
     Private Sub SeiteZeigen(seite As Control)
+        _aktuelleSeite = seite
         For Each eintrag In navigation
             eintrag.Knopf.Aktiv = eintrag.Seite Is seite
         Next
