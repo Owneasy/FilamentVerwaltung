@@ -211,3 +211,5 @@ dd { margin: 0; color: var(--text-normal); }
 .etikett .text > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.33; }
 .etikett .klein { color: #555; }
 .etikett .punkt { display: inline-block; border-radius: 50%; border: 0.15mm solid rgb(0 0 0 / 47%); vertical-align: -0.1em; margin-right: 1mm; box-sizing: border-box; }
+.bilder { display: grid; gap: 10px; margin-top: 12px; }
+.bilder img { display: block; width: 100%; height: auto; border: 1px solid var(--rand); border-radius: 6px; background: #fff; }

@@ -589,7 +589,8 @@ async function etikettenDialog(spulen, ausgewaehlt) {
       <div class="auswahl">${spulen.map(f => `<label class="schalter"><input type="checkbox" value="${f.id}" ${ausgewaehlt.has(f.id) ? 'checked' : ''}>
         <span><b>${esc(f.code)}</b> <span class="leise">${esc(spulenText(f))}</span></span></label>`).join('')}</div>` : ''}
     <p class="leise" id="eInfo"></p>
-    <div class="knoepfe"><button class="primaer" id="eDrucken">Drucken</button></div>`);
+    <div class="knoepfe"><button class="knopf" id="eBild">Als Bild</button><button class="primaer" id="eDrucken">Drucken</button></div>
+    <div id="eBilder"></div>`);
 
   const format = () => ETIKETT_FORMATE[+$('#eFormat').value];
   const auswahl = () => spulen.length > 1
@@ -613,6 +614,17 @@ async function etikettenDialog(spulen, ausgewaehlt) {
     document.querySelectorAll('.auswahl input').forEach(b => b.onchange = info);
   }
   info();
+
+  $('#eBild').onclick = async () => {
+    const liste = auswahl();
+    if (!liste.length) return toast('Bitte mindestens eine Spule auswählen.', true);
+    $('#eBild').disabled = true;
+    try {
+      schicken('einstellungen/Etiketten.Format', 'PUT', { wert: String($('#eFormat').value) }).catch(() => {});
+      await etikettenBilderZeigen(liste, format(), $('#eRahmen').checked);
+    } catch (e) { fehler(e); }
+    $('#eBild').disabled = false;
+  };
 
   $('#eDrucken').onclick = async () => {
     const liste = auswahl();
@@ -689,6 +701,108 @@ async function etikettenDrucken(liste, fmt, start, rahmen) {
   await pause(100);   // Layout fertig werden lassen
   window.print();
   if (navigator.standalone) toast('Erscheint kein Druckdialog: die Seite einmal direkt in Safari öffnen und dort drucken.');
+}
+
+
+// ------------------------------------------------------------------ Etiketten als Bild (für andere Drucker / Apps)
+// Gleicher Aufbau wie etikettHtml, aber auf eine Leinwand in 300 dpi gezeichnet → PNG in Etikettengröße.
+
+const BILD_DPI = 300;
+
+function textKuerzen(g, text, breite) {
+  if (g.measureText(text).width <= breite) return text;
+  while (text.length > 1 && g.measureText(text + '…').width > breite) text = text.slice(0, -1);
+  return text + '…';
+}
+
+function etikettBild(f, qr, fmt, rahmen) {
+  const pxProMm = BILD_DPI / 25.4, mm = v => v * pxProMm;
+  const leinwand = document.createElement('canvas');
+  leinwand.width = Math.round(mm(fmt.breite));
+  leinwand.height = Math.round(mm(fmt.hoehe));
+  const g = leinwand.getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, leinwand.width, leinwand.height);
+  if (rahmen) { g.strokeStyle = '#c8c8c8'; g.lineWidth = mm(0.2); g.strokeRect(mm(0.1), mm(0.1), leinwand.width - mm(0.2), leinwand.height - mm(0.2)); }
+
+  const pad = Math.max(1.8, fmt.hoehe * 0.07), skala = fmt.hoehe / 37;
+  const qrGroesse = fmt.hoehe - 2 * pad, modul = mm(qrGroesse) / qr.length;
+  g.fillStyle = '#000';
+  qr.forEach((zeile, y) => {
+    for (let x = 0; x < zeile.length; x++) {
+      if (zeile[x] === '1') g.fillRect(mm(pad * 0.6) + x * modul, mm(pad) + y * modul, modul + 0.6, modul + 0.6);
+    }
+  });
+
+  const tx = mm(pad * 0.6 + qrGroesse + pad * 0.8), breite = mm(fmt.breite - pad) - tx, unterkante = mm(fmt.hoehe - pad * 0.5);
+  const pxVonPt = pt => pt * skala * 0.352778 * pxProMm;
+  let y = mm(pad * 0.9);
+  const zeile = (text, pt, fett, farbe, x = tx, b = breite) => {
+    const px = pxVonPt(pt), hoehe = px * 1.33;
+    if (text) {
+      g.font = `${fett ? 600 : 400} ${px}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+      g.fillStyle = farbe;
+      g.textBaseline = 'middle';
+      g.fillText(textKuerzen(g, text, b), x, y + hoehe / 2);
+    }
+    y += hoehe;
+  };
+  zeile(f.code, 13, true, '#000');
+  y += mm(0.4 * skala);
+  zeile(f.hersteller, 8.5, true, '#000');
+  const farbe = farbeZuName(f.farbe), hoeheNormal = pxVonPt(8) * 1.33;
+  let einzug = 0;
+  if (farbe) {
+    const d = hoeheNormal * 0.62;
+    g.beginPath();
+    g.arc(tx + d / 2, y + hoeheNormal / 2, d / 2, 0, Math.PI * 2);
+    g.fillStyle = farbe;
+    g.fill();
+    g.lineWidth = mm(0.15);
+    g.strokeStyle = 'rgba(0,0,0,0.47)';
+    g.stroke();
+    einzug = d + mm(1);
+  }
+  zeile([f.material, f.farbe].filter(Boolean).join(' · '), 8, false, '#000', tx + einzug, breite - einzug);
+  const details = [`Ø ${Number(f.durchmesser || 1.75).toFixed(2).replace('.', ',')} mm`, `${zahl(f.gewicht)} g`];
+  if (f.temperaturen) details.push(f.temperaturen);
+  y += mm(0.3 * skala);
+  zeile(details.join(' · '), 6.5, false, '#555');
+  const kauf = f.kaufdatum ? new Date(f.kaufdatum) : null;
+  const unten = [f.lagerort, kauf && kauf.getFullYear() > 1 ? `gekauft ${String(kauf.getMonth() + 1).padStart(2, '0')}/${kauf.getFullYear()}` : '']
+    .filter(Boolean).join(' · ');
+  if (unten && y + pxVonPt(6.5) * 1.33 <= unterkante) zeile(unten, 6.5, false, '#555');
+
+  return new Promise((ok, fehlschlag) => leinwand.toBlob(b => b ? ok(b) : fehlschlag(new Error('Das Bild konnte nicht erzeugt werden.')), 'image/png'));
+}
+
+let etikettBildUrls = [];
+
+async function etikettenBilderZeigen(liste, fmt, rahmen) {
+  const qr = await (await schicken('qr', 'POST', liste.map(f => f.code))).json();
+  const dateien = [];
+  for (const f of liste) {
+    const bild = await etikettBild(f, qr[f.code], fmt, rahmen);
+    dateien.push(new File([bild], `Etikett ${f.code}.png`, { type: 'image/png' }));
+  }
+  etikettBildUrls.forEach(u => URL.revokeObjectURL(u));
+  etikettBildUrls = dateien.map(d => URL.createObjectURL(d));
+  // Teilen erst auf einen eigenen Fingertipp – Safari erlaubt navigator.share nur direkt nach einer Berührung
+  const teilenGeht = !!(navigator.canShare && navigator.canShare({ files: dateien }));
+  $('#eBilder').innerHTML = `<p class="leise">${dateien.length} Bild${dateien.length === 1 ? '' : 'er'} · ${fmt.breite} × ${fmt.hoehe} mm · ${BILD_DPI} dpi.
+      ${teilenGeht ? 'Teilen z. B. an die App des Etikettendruckers, per AirDrop oder in Fotos/Dateien.' : 'Zum Speichern ein Bild antippen.'}
+      Auf dem iPhone kannst du ein Bild auch lange drücken und sichern.</p>
+    <div class="knoepfe"><button class="primaer" id="eTeilen">${teilenGeht ? 'Teilen / Sichern' : 'Herunterladen'}</button></div>
+    <div class="bilder">${etikettBildUrls.map((u, i) => `<a href="${u}" download="${esc(dateien[i].name)}"><img src="${u}" alt="${esc(dateien[i].name)}"></a>`).join('')}</div>`;
+  $('#eTeilen').onclick = async () => {
+    if (teilenGeht) {
+      try { await navigator.share({ files: dateien, title: 'Spulen-Etiketten' }); }
+      catch (e) { if (e.name !== 'AbortError') toast('Teilen nicht möglich: ' + e.message, true); }
+    } else {
+      document.querySelectorAll('#eBilder .bilder a').forEach(a => a.click());
+    }
+  };
+  $('#eBilder').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 starten();
