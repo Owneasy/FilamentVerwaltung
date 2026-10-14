@@ -28,6 +28,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $wurzel = $PSScriptRoot
 $projekt = Join-Path $wurzel 'FilamentVerwaltung\FilamentVerwaltung.vbproj'
+$serverProjekt = Join-Path $wurzel 'FilamentVerwaltung.Server\FilamentVerwaltung.Server.vbproj'
 $ziel = Join-Path $wurzel "artefakte\$Version"
 
 function GitAusfuehren {
@@ -57,18 +58,20 @@ if (-not $OhneGit) {
     }
 }
 
-# --- Version im Projekt setzen
-$inhalt = [System.IO.File]::ReadAllText($projekt)
-$neu = [regex]::Replace($inhalt, '<Version>[^<]*</Version>', "<Version>$Version</Version>")
-if ($neu -ne $inhalt) {
-    [System.IO.File]::WriteAllText($projekt, $neu, (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host "Version im Projekt auf $Version gesetzt."
+# --- Version in App und Server setzen (der Server meldet sie unter /api/info; GitHub baut das Image nach dem Push)
+foreach ($datei in $projekt, $serverProjekt) {
+    $inhalt = [System.IO.File]::ReadAllText($datei)
+    $neu = [regex]::Replace($inhalt, '<Version>[^<]*</Version>', "<Version>$Version</Version>")
+    if ($neu -ne $inhalt) {
+        [System.IO.File]::WriteAllText($datei, $neu, (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host "Version in $([System.IO.Path]::GetFileName($datei)) auf $Version gesetzt."
+    }
 }
 
 # --- Committen und pushen, damit der Release-Tag auf diesen Stand zeigt
 if (-not $OhneGit) {
     if (GitAusfuehren status --porcelain) {
-        GitAusfuehren add -- $projekt | Out-Null
+        GitAusfuehren add -- $projekt $serverProjekt | Out-Null
         GitAusfuehren commit --quiet -m "Version $Version" | Out-Null
         Write-Host "Commit ""Version $Version"" angelegt."
     }
