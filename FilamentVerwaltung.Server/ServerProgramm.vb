@@ -64,8 +64,9 @@ Public Module ServerProgramm
         Dim app = builder.Build()
         app.UseMiddleware(Of FehlerAlsText)()
         app.UseMiddleware(Of TokenPruefung)()
-        ' Webseite fürs Handy (wwwroot) – ohne Daten, daher ohne Token; nicht zwischenspeichern, damit Updates sofort ankommen
-        app.UseDefaultFiles()
+        ' Webseite fürs Handy (wwwroot) – ohne Daten, daher ohne Token. Die Startseite kommt mit Versionskennung an
+        ' app.js/app.css (neue Adresse nach jedem Update, egal was Browser oder Cloudflare zwischenspeichern).
+        app.UseMiddleware(Of StartseiteMitVersion)()
         app.UseStaticFiles(New StaticFileOptions With {
             .OnPrepareResponse = Sub(c) c.Context.Response.Headers.CacheControl = "no-cache"})
         app.MapControllers()
@@ -179,6 +180,40 @@ Public Class FehlerAlsText
         ctx.Response.StatusCode = StatusCodes.Status500InternalServerError
         ctx.Response.ContentType = "text/plain; charset=utf-8"
         Await ctx.Response.WriteAsync(fehler.Message)
+    End Function
+
+End Class
+''' <summary>
+''' Liefert index.html aus und hängt an app.js und app.css eine Kennung aus ihrem Inhalt an (?v=…).
+''' So holt jedes Gerät nach einem Update sicher die neuen Dateien; die Startseite selbst wird nie zwischengespeichert.
+''' </summary>
+Public Class StartseiteMitVersion
+
+    Private ReadOnly _weiter As RequestDelegate
+    Private ReadOnly _html As String
+
+    Public Sub New(weiter As RequestDelegate, umgebung As IWebHostEnvironment)
+        _weiter = weiter
+        Dim wurzel = If(umgebung.WebRootPath, "")
+        Dim index = Path.Combine(wurzel, "index.html")
+        If Not File.Exists(index) Then Return
+        Dim html = File.ReadAllText(index)
+        For Each name In {"app.js", "app.css"}
+            Dim datei = Path.Combine(wurzel, name)
+            If Not File.Exists(datei) Then Continue For
+            Dim kennung = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(datei))).Substring(0, 10).ToLowerInvariant()
+            html = html.Replace($"""{name}""", $"""{name}?v={kennung}""")
+        Next
+        _html = html
+    End Sub
+
+    Public Function InvokeAsync(ctx As HttpContext) As Task
+        Dim pfad = ctx.Request.Path.Value
+        If _html Is Nothing OrElse Not HttpMethods.IsGet(ctx.Request.Method) OrElse
+           Not (pfad = "/" OrElse String.Equals(pfad, "/index.html", StringComparison.OrdinalIgnoreCase)) Then Return _weiter(ctx)
+        ctx.Response.ContentType = "text/html; charset=utf-8"
+        ctx.Response.Headers.CacheControl = "no-store"
+        Return ctx.Response.WriteAsync(_html)
     End Function
 
 End Class
