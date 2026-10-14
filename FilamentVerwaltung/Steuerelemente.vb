@@ -1,0 +1,636 @@
+﻿Imports System.ComponentModel
+Imports System.Drawing
+Imports System.Drawing.Drawing2D
+Imports System.Windows.Forms
+
+Public Enum KnopfStil
+    Primaer
+    Sekundaer
+    Gefahr
+    Navigation
+End Enum
+
+''' <summary>
+''' Flacher Knopf mit abgerundeten Ecken und optionalem Symbol – wie ein Button auf einer Webseite.
+''' Erbt von Button, damit DialogResult, AcceptButton und Tastaturbedienung weiter funktionieren.
+''' </summary>
+Public Class WebButton
+    Inherits Button
+
+    Private _hover As Boolean
+    Private _gedrueckt As Boolean
+    Private _aktiv As Boolean
+    Private _symbol As String = ""
+
+    Public Sub New(beschriftung As String, Optional symbol As String = "", Optional stil As KnopfStil = KnopfStil.Sekundaer)
+        SetStyle(ControlStyles.UserPaint Or ControlStyles.AllPaintingInWmPaint Or
+                 ControlStyles.OptimizedDoubleBuffer Or ControlStyles.ResizeRedraw, True)
+        FlatStyle = FlatStyle.Flat
+        FlatAppearance.BorderSize = 0
+        Cursor = Cursors.Hand
+        Font = If(stil = KnopfStil.Navigation, Theme.Schrift, Theme.SchriftFett)
+        Me.Stil = stil
+        _symbol = symbol
+        Text = beschriftung
+        AutoSize = stil <> KnopfStil.Navigation
+        Margin = New Padding(0, 0, 8, 0)
+    End Sub
+
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property Stil As KnopfStil
+
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property Symbol As String
+        Get
+            Return _symbol
+        End Get
+        Set(value As String)
+            _symbol = If(value, "")
+            Invalidate()
+        End Set
+    End Property
+
+    ''' <summary>Markiert den aktuell gewählten Eintrag in der Navigation.</summary>
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property Aktiv As Boolean
+        Get
+            Return _aktiv
+        End Get
+        Set(value As Boolean)
+            _aktiv = value
+            Invalidate()
+        End Set
+    End Property
+
+    Private ReadOnly Property Innenabstand As Integer
+        Get
+            Return Px(Me, If(Stil = KnopfStil.Navigation, 16, 14))
+        End Get
+    End Property
+
+    Private ReadOnly Property SymbolBreite As Integer
+        Get
+            Return If(_symbol.Length > 0, Px(Me, 18), 0)
+        End Get
+    End Property
+
+    Private ReadOnly Property Abstand As Integer
+        Get
+            Return If(_symbol.Length > 0 AndAlso Text.Length > 0, Px(Me, If(Stil = KnopfStil.Navigation, 12, 8)), 0)
+        End Get
+    End Property
+
+    Public Overrides Function GetPreferredSize(proposedSize As Size) As Size
+        Dim textBreite = TextRenderer.MeasureText(Text, Font, Size.Empty, TextFormatFlags.NoPadding Or TextFormatFlags.NoPrefix).Width
+        Return New Size(Math.Max(MinimumSize.Width, Innenabstand * 2 + SymbolBreite + Abstand + textBreite),
+                        Math.Max(MinimumSize.Height, Px(Me, 36)))
+    End Function
+
+    Protected Overrides Sub OnMouseEnter(e As EventArgs)
+        _hover = True
+        Invalidate()
+        MyBase.OnMouseEnter(e)
+    End Sub
+
+    Protected Overrides Sub OnMouseLeave(e As EventArgs)
+        _hover = False
+        _gedrueckt = False
+        Invalidate()
+        MyBase.OnMouseLeave(e)
+    End Sub
+
+    Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
+        If e.Button = MouseButtons.Left Then _gedrueckt = True
+        Invalidate()
+        MyBase.OnMouseDown(e)
+    End Sub
+
+    Protected Overrides Sub OnMouseUp(e As MouseEventArgs)
+        _gedrueckt = False
+        Invalidate()
+        MyBase.OnMouseUp(e)
+    End Sub
+
+    Protected Overrides Sub OnEnabledChanged(e As EventArgs)
+        Cursor = If(Enabled, Cursors.Hand, Cursors.Default)
+        MyBase.OnEnabledChanged(e)
+    End Sub
+
+    Private Sub Farben(ByRef hinter As Color, ByRef vorder As Color, ByRef rahmen As Color)
+        rahmen = Color.Empty
+        Select Case Stil
+            Case KnopfStil.Primaer
+                hinter = If(_gedrueckt, Theme.AkzentGedrueckt, If(_hover, Theme.AkzentHover, Theme.Akzent))
+                vorder = Color.White
+            Case KnopfStil.Gefahr
+                hinter = If(_gedrueckt, Theme.RotRand, If(_hover, Theme.RotHell, Color.White))
+                vorder = Theme.Rot
+                rahmen = Theme.RotRand
+            Case KnopfStil.Navigation
+                hinter = If(_aktiv OrElse _hover, Theme.LeisteHover, Color.Empty)
+                vorder = If(_aktiv, Theme.LeisteTextAktiv, If(_hover, Color.FromArgb(226, 232, 240), Theme.LeisteText))
+            Case Else
+                hinter = If(_gedrueckt, Theme.Rand, If(_hover, Theme.TabelleKopf, Color.White))
+                vorder = Theme.TextNormal
+                rahmen = Theme.RandEingabe
+        End Select
+        If Not Enabled Then
+            If Stil = KnopfStil.Primaer Then hinter = Hell(Theme.Akzent, 0.4)
+            vorder = If(Stil = KnopfStil.Primaer, Color.White, Theme.Grau)
+            If Not rahmen.IsEmpty Then rahmen = Theme.Rand
+        End If
+    End Sub
+
+    Protected Overrides Sub OnPaint(e As PaintEventArgs)
+        Dim g = e.Graphics
+        g.Clear(If(Parent IsNot Nothing, Parent.BackColor, Theme.Seite))
+        g.SmoothingMode = SmoothingMode.AntiAlias
+
+        Dim hinter, vorder, rahmen As Color
+        Farben(hinter, vorder, rahmen)
+
+        Dim r As New Rectangle(0, 0, Width - 1, Height - 1)
+        Using pfad = Abgerundet(r, Px(Me, 7))
+            If Not hinter.IsEmpty Then
+                Using b As New SolidBrush(hinter)
+                    g.FillPath(b, pfad)
+                End Using
+            End If
+            If Not rahmen.IsEmpty Then
+                Using p As New Pen(rahmen)
+                    g.DrawPath(p, pfad)
+                End Using
+            End If
+            If Focused AndAlso ShowFocusCues AndAlso Stil <> KnopfStil.Navigation Then
+                Using p As New Pen(Hell(Theme.Akzent, 0.5), Px(Me, 2))
+                    g.DrawPath(p, pfad)
+                End Using
+            End If
+        End Using
+
+        If Stil = KnopfStil.Navigation AndAlso _aktiv Then
+            Using b As New SolidBrush(Color.FromArgb(59, 130, 246))
+                g.FillRectangle(b, 0, Px(Me, 8), Px(Me, 3), Height - Px(Me, 16))
+            End Using
+        End If
+
+        ' Inhalt: links bündig in der Navigation, sonst zentriert
+        Dim textBreite = TextRenderer.MeasureText(g, Text, Font, Size.Empty, TextFormatFlags.NoPadding Or TextFormatFlags.NoPrefix).Width
+        Dim inhalt = SymbolBreite + Abstand + textBreite
+        Dim x = If(Stil = KnopfStil.Navigation, Innenabstand, Math.Max(Innenabstand \ 2, (Width - inhalt) \ 2))
+        If _symbol.Length > 0 Then
+            TextRenderer.DrawText(g, _symbol, Theme.SymbolSchrift, New Rectangle(x, 0, SymbolBreite, Height), vorder,
+                                  TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding)
+            x += SymbolBreite + Abstand
+        End If
+        TextRenderer.DrawText(g, Text, Font, New Rectangle(x, 0, Math.Max(0, Width - x - Innenabstand \ 2), Height), vorder,
+                              TextFormatFlags.Left Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding Or
+                              TextFormatFlags.EndEllipsis Or TextFormatFlags.SingleLine Or TextFormatFlags.NoPrefix)
+    End Sub
+
+End Class
+
+''' <summary>
+''' Weiße Fläche mit abgerundeten Ecken und feinem Rahmen (wie eine "Card" auf Webseiten).
+''' </summary>
+Public Class Karte
+    Inherits Panel
+
+    Public Sub New()
+        SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.OptimizedDoubleBuffer Or
+                 ControlStyles.ResizeRedraw Or ControlStyles.UserPaint, True)
+        BackColor = Theme.KartenFlaeche
+        Padding = New Padding(1)
+        Margin = New Padding(0)
+    End Sub
+
+    Protected Overrides Sub OnPaintBackground(e As PaintEventArgs)
+        Dim g = e.Graphics
+        g.Clear(If(Parent IsNot Nothing, Parent.BackColor, Theme.Seite))
+        g.SmoothingMode = SmoothingMode.AntiAlias
+        Using pfad = Abgerundet(New Rectangle(0, 0, Width - 1, Height - 1), Px(Me, 10))
+            Using b As New SolidBrush(BackColor)
+                g.FillPath(b, pfad)
+            End Using
+            Using p As New Pen(Theme.Rand)
+                g.DrawPath(p, pfad)
+            End Using
+        End Using
+    End Sub
+
+End Class
+
+''' <summary>
+''' Kennzahl-Kachel: Titel, großer Wert, Hinweiszeile und Symbol.
+''' </summary>
+Public Class KennzahlKarte
+    Inherits Karte
+
+    Private _wert As String = "–"
+    Private _hinweis As String = ""
+    Private ReadOnly _titel As String
+    Private ReadOnly _symbol As String
+    Private ReadOnly _farbe As Color
+
+    Public Sub New(titel As String, symbol As String, farbe As Color)
+        _titel = titel
+        _symbol = symbol
+        _farbe = farbe
+        Dock = DockStyle.Fill
+    End Sub
+
+    Public Sub Setzen(wert As String, hinweis As String)
+        _wert = wert
+        _hinweis = hinweis
+        Invalidate()
+    End Sub
+
+    Protected Overrides Sub OnPaint(e As PaintEventArgs)
+        MyBase.OnPaint(e)
+        Dim g = e.Graphics
+        g.SmoothingMode = SmoothingMode.AntiAlias
+        Dim rand = Px(Me, 18)
+        Dim kreis = Px(Me, 40)
+
+        ' Symbol im farbigen Kreis rechts oben
+        Dim k As New Rectangle(Width - rand - kreis, rand, kreis, kreis)
+        Using b As New SolidBrush(Hell(_farbe, 0.12))
+            g.FillEllipse(b, k)
+        End Using
+        TextRenderer.DrawText(g, _symbol, Theme.SymbolSchriftGross, k, _farbe,
+                              TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding)
+
+        Dim textBreite = Math.Max(0, k.Left - rand - Px(Me, 8))
+        Dim flags = TextFormatFlags.Left Or TextFormatFlags.NoPadding Or TextFormatFlags.EndEllipsis Or TextFormatFlags.SingleLine
+        Dim y = rand - Px(Me, 2)
+        TextRenderer.DrawText(g, _titel, Theme.SchriftKlein, New Rectangle(rand, y, textBreite, Px(Me, 18)), Theme.TextLeise, flags)
+        y += Px(Me, 22)
+        Dim hoehe = TextRenderer.MeasureText(g, "0", Theme.SchriftKennzahl, Size.Empty, TextFormatFlags.NoPadding).Height
+        TextRenderer.DrawText(g, _wert, Theme.SchriftKennzahl, New Rectangle(rand, y, textBreite, hoehe), Theme.TextStark, flags)
+        y += hoehe + Px(Me, 2)
+        TextRenderer.DrawText(g, _hinweis, Theme.SchriftKlein, New Rectangle(rand, y, Width - 2 * rand, Px(Me, 18)), Theme.TextLeise, flags)
+    End Sub
+
+End Class
+
+''' <summary>
+''' Suchfeld mit Lupe und abgerundetem Rahmen.
+''' </summary>
+Public Class SuchFeld
+    Inherits Panel
+
+    Public ReadOnly Eingabe As New TextBox With {
+        .BorderStyle = BorderStyle.None,
+        .Font = Theme.Schrift,
+        .ForeColor = Theme.TextStark,
+        .BackColor = Color.White,
+        .PlaceholderText = "Suchen …"
+    }
+
+    Public Sub New()
+        SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.OptimizedDoubleBuffer Or
+                 ControlStyles.ResizeRedraw Or ControlStyles.UserPaint, True)
+        BackColor = Color.White
+        Size = New Size(280, 36)
+        Margin = New Padding(0, 0, 8, 0)
+        Cursor = Cursors.IBeam
+        Controls.Add(Eingabe)
+        AddHandler Eingabe.GotFocus, Sub(s, e) Invalidate()
+        AddHandler Eingabe.LostFocus, Sub(s, e) Invalidate()
+        AddHandler Click, Sub(s, e) Eingabe.Focus()
+    End Sub
+
+    Protected Overrides Sub OnLayout(levent As LayoutEventArgs)
+        MyBase.OnLayout(levent)
+        Dim links = Px(Me, 36)
+        Eingabe.SetBounds(links, (Height - Eingabe.Height) \ 2, Math.Max(10, Width - links - Px(Me, 10)), Eingabe.Height)
+    End Sub
+
+    Protected Overrides Sub OnPaintBackground(e As PaintEventArgs)
+        Dim g = e.Graphics
+        g.Clear(If(Parent IsNot Nothing, Parent.BackColor, Theme.KartenFlaeche))
+        g.SmoothingMode = SmoothingMode.AntiAlias
+        Using pfad = Abgerundet(New Rectangle(0, 0, Width - 1, Height - 1), Px(Me, 7))
+            g.FillPath(Brushes.White, pfad)
+            Dim fokus = Eingabe.Focused
+            Using p As New Pen(If(fokus, Theme.Akzent, Theme.RandEingabe), If(fokus, Px(Me, 2), 1))
+                g.DrawPath(p, pfad)
+            End Using
+        End Using
+        TextRenderer.DrawText(g, Theme.SymSuche, Theme.SymbolSchrift, New Rectangle(0, 0, Px(Me, 36), Height), Theme.TextLeise,
+                              TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding)
+    End Sub
+
+End Class
+
+''' <summary>
+''' Gemeinsame Schnittstelle der Seiten im Hauptfenster.
+''' </summary>
+Public Interface ISeite
+    ''' <summary>Daten neu laden (wird beim Anzeigen der Seite aufgerufen).</summary>
+    Sub Neuladen()
+    ''' <summary>Fokus auf das wichtigste Steuerelement setzen.</summary>
+    Sub Aktivieren()
+End Interface
+
+''' <summary>
+''' Tabelle im Web-Stil: helle Kopfzeile, Linien nur zwischen den Zeilen, Hover-Effekt,
+''' Sortierung per Klick auf den Spaltenkopf und Hilfen zum Zeichnen von Badges.
+''' </summary>
+Public Class WebTabelle
+    Inherits DataGridView
+
+    Private _hoverZeile As Integer = -1
+
+    ''' <summary>Wird ausgelöst, wenn per Klick auf einen Spaltenkopf die Sortierung geändert wurde.</summary>
+    Public Event SortierungGeaendert As EventHandler
+
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property SortSpalte As String = ""
+
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property SortAufsteigend As Boolean = True
+
+    Public Sub New()
+        Dock = DockStyle.Fill
+        Margin = New Padding(0)
+        AutoGenerateColumns = False
+        [ReadOnly] = True
+        AllowUserToAddRows = False
+        AllowUserToDeleteRows = False
+        AllowUserToResizeRows = False
+        SelectionMode = DataGridViewSelectionMode.FullRowSelect
+        MultiSelect = False
+        RowHeadersVisible = False
+        BackgroundColor = Color.White
+        BorderStyle = BorderStyle.None
+        CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal
+        GridColor = Theme.TabelleLinie
+        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+        EnableHeadersVisualStyles = False
+        ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None
+        ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize
+        RowTemplate.Height = Px(Me, 40)
+
+        With ColumnHeadersDefaultCellStyle
+            .BackColor = Theme.TabelleKopf
+            .ForeColor = Theme.TextLeise
+            .SelectionBackColor = Theme.TabelleKopf
+            .SelectionForeColor = Theme.TextLeise
+            .Font = Theme.SchriftKopf
+            .Padding = New Padding(6, 10, 6, 10)
+            .WrapMode = DataGridViewTriState.False
+        End With
+        With DefaultCellStyle
+            .BackColor = Color.White
+            .ForeColor = Theme.TextNormal
+            .SelectionBackColor = Theme.Auswahl
+            .SelectionForeColor = Theme.TextStark
+            .Font = Theme.Schrift
+            .Padding = New Padding(6, 0, 6, 0)
+        End With
+    End Sub
+
+    ''' <summary>
+    ''' Fügt eine Spalte hinzu. breite = 0: Breite passt sich dem Inhalt an, sonst Anteil am Restplatz.
+    ''' </summary>
+    Public Function Spalte(eigenschaft As String, titel As String, breite As Single,
+                           Optional zahlenformat As String = Nothing, Optional rechtsbuendig As Boolean = False,
+                           Optional minBreite As Integer = 70, Optional menueName As String = Nothing) As DataGridViewColumn
+        Dim s As New DataGridViewTextBoxColumn With {
+            .DataPropertyName = eigenschaft,
+            .Name = eigenschaft,
+            .HeaderText = titel,
+            .ToolTipText = If(menueName, titel),
+            .Tag = If(menueName, titel),
+            .SortMode = DataGridViewColumnSortMode.Programmatic
+        }
+        If breite > 0 Then
+            s.FillWeight = breite
+            s.MinimumWidth = Px(Me, minBreite)
+        Else
+            s.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells
+        End If
+        If zahlenformat IsNot Nothing Then s.DefaultCellStyle.Format = zahlenformat
+        If rechtsbuendig Then
+            s.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+            s.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleRight
+        End If
+        Columns.Add(s)
+        Return s
+    End Function
+
+    ''' <summary>Sortiert die Einträge nach SortSpalte und setzt das Sortiersymbol im Spaltenkopf.</summary>
+    Public Function Sortieren(Of T)(eintraege As IEnumerable(Of T)) As List(Of T)
+        For Each sp As DataGridViewColumn In Columns
+            sp.HeaderCell.SortGlyphDirection = If(sp.DataPropertyName = SortSpalte,
+                                                  If(SortAufsteigend, SortOrder.Ascending, SortOrder.Descending),
+                                                  SortOrder.None)
+        Next
+        Dim eigenschaft = If(String.IsNullOrEmpty(SortSpalte), Nothing, GetType(T).GetProperty(SortSpalte))
+        If eigenschaft Is Nothing Then Return eintraege.ToList()
+        If SortAufsteigend Then Return eintraege.OrderBy(Function(x) eigenschaft.GetValue(x)).ToList()
+        Return eintraege.OrderByDescending(Function(x) eigenschaft.GetValue(x)).ToList()
+    End Function
+
+    Public Function Eintrag(Of T As Class)(zeile As Integer) As T
+        If zeile < 0 OrElse zeile >= Rows.Count Then Return Nothing
+        Return TryCast(Rows(zeile).DataBoundItem, T)
+    End Function
+
+    Public Function Ausgewaehlt(Of T As Class)() As T
+        If CurrentRow Is Nothing Then Return Nothing
+        Return TryCast(CurrentRow.DataBoundItem, T)
+    End Function
+
+    ''' <summary>Wählt die Zeile aus, deren Eintrag die Bedingung erfüllt.</summary>
+    Public Sub Auswaehlen(Of T As Class)(bedingung As Func(Of T, Boolean))
+        For Each zeile As DataGridViewRow In Rows
+            Dim e = TryCast(zeile.DataBoundItem, T)
+            If e IsNot Nothing AndAlso bedingung(e) Then
+                Dim ersteSichtbare = Columns.GetFirstColumn(DataGridViewElementStates.Visible)
+                If ersteSichtbare IsNot Nothing Then CurrentCell = zeile.Cells(ersteSichtbare.Index)
+                Return
+            End If
+        Next
+    End Sub
+
+
+    Protected Overrides Sub OnColumnHeaderMouseClick(e As DataGridViewCellMouseEventArgs)
+        MyBase.OnColumnHeaderMouseClick(e)
+        If e.Button <> MouseButtons.Left Then Return
+        Dim eigenschaft = Columns(e.ColumnIndex).DataPropertyName
+        If eigenschaft = SortSpalte Then
+            SortAufsteigend = Not SortAufsteigend
+        Else
+            SortSpalte = eigenschaft
+            SortAufsteigend = True
+        End If
+        RaiseEvent SortierungGeaendert(Me, EventArgs.Empty)
+    End Sub
+
+    Protected Overrides Sub OnCellMouseDown(e As DataGridViewCellMouseEventArgs)
+        ' Rechtsklick wählt die Zeile aus, damit sich das Kontextmenü auf sie bezieht
+        If e.Button = MouseButtons.Right AndAlso e.RowIndex >= 0 Then
+            CurrentCell = Rows(e.RowIndex).Cells(Math.Max(0, e.ColumnIndex))
+        End If
+        MyBase.OnCellMouseDown(e)
+    End Sub
+
+    Protected Overrides Sub OnCellMouseEnter(e As DataGridViewCellEventArgs)
+        MyBase.OnCellMouseEnter(e)
+        HoverSetzen(e.RowIndex)
+    End Sub
+
+    Protected Overrides Sub OnMouseLeave(e As EventArgs)
+        MyBase.OnMouseLeave(e)
+        HoverSetzen(-1)
+    End Sub
+
+    Protected Overrides Sub OnDataBindingComplete(e As DataGridViewBindingCompleteEventArgs)
+        _hoverZeile = -1
+        MyBase.OnDataBindingComplete(e)
+    End Sub
+
+    Protected Overrides Sub OnCellFormatting(e As DataGridViewCellFormattingEventArgs)
+        MyBase.OnCellFormatting(e)
+        If e.RowIndex >= 0 AndAlso e.RowIndex = _hoverZeile AndAlso e.CellStyle IsNot Nothing Then
+            e.CellStyle.BackColor = Theme.TabelleKopf
+        End If
+    End Sub
+
+    Private Sub HoverSetzen(zeile As Integer)
+        If zeile = _hoverZeile Then Return
+        Dim alt = _hoverZeile
+        _hoverZeile = zeile
+        If alt >= 0 AndAlso alt < RowCount Then InvalidateRow(alt)
+        If zeile >= 0 AndAlso zeile < RowCount Then InvalidateRow(zeile)
+    End Sub
+
+    ''' <summary>Zeichnet den Zellinhalt als abgerundetes Badge (z. B. Material, Dateityp).</summary>
+    Public Sub BadgeZeichnen(e As DataGridViewCellPaintingEventArgs, text As String, vorder As Color, hinter As Color)
+        e.PaintBackground(e.CellBounds, True)
+        Dim g = e.Graphics
+        If Not String.IsNullOrEmpty(text) Then
+            g.SmoothingMode = SmoothingMode.AntiAlias
+            Dim b = e.CellBounds
+            Dim pad = e.CellStyle.Padding.Left
+            Dim groesse = TextRenderer.MeasureText(g, text, Theme.SchriftKopf, Size.Empty, TextFormatFlags.NoPadding)
+            Dim h = groesse.Height + Px(Me, 6)
+            Dim w = Math.Min(groesse.Width + Px(Me, 16), b.Width - 2 * pad)
+            Dim r As New Rectangle(b.X + pad, b.Y + (b.Height - h) \ 2, w, h)
+            Using pfad = Abgerundet(r, h \ 2), pinsel As New SolidBrush(hinter)
+                g.FillPath(pinsel, pfad)
+            End Using
+            TextRenderer.DrawText(g, text, Theme.SchriftKopf, r, vorder,
+                                  TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or
+                                  TextFormatFlags.NoPadding Or TextFormatFlags.EndEllipsis)
+        End If
+        ZelleAbschliessen(e)
+    End Sub
+
+    ''' <summary>Zeichnet die Trennlinie unter einer selbst gezeichneten Zelle und markiert sie als erledigt.</summary>
+    Public Sub ZelleAbschliessen(e As DataGridViewCellPaintingEventArgs)
+        Using p As New Pen(GridColor)
+            e.Graphics.DrawLine(p, e.CellBounds.Left, e.CellBounds.Bottom - 1, e.CellBounds.Right, e.CellBounds.Bottom - 1)
+        End Using
+        e.Handled = True
+    End Sub
+
+End Class
+
+''' <summary>
+''' Karte mit Werkzeugleiste oben, Inhalt (meist eine WebTabelle) in der Mitte und Fußzeile unten.
+''' </summary>
+Public Class TabellenKarte
+    Inherits Karte
+
+    Public ReadOnly Werkzeug As New FlowLayoutPanel With {
+        .Dock = DockStyle.Fill,
+        .AutoSize = True,
+        .WrapContents = True,
+        .Padding = New Padding(16, 14, 16, 14),
+        .Margin = New Padding(0)
+    }
+    Public ReadOnly FussLinks As New Label With {
+        .Dock = DockStyle.Left, .AutoSize = True, .TextAlign = ContentAlignment.MiddleLeft,
+        .ForeColor = Theme.TextLeise, .Font = Theme.SchriftKlein
+    }
+    Public ReadOnly FussRechts As New Label With {
+        .Dock = DockStyle.Right, .AutoSize = True, .TextAlign = ContentAlignment.MiddleRight,
+        .ForeColor = Theme.Grau, .Font = Theme.SchriftKlein
+    }
+
+    Public Sub New(inhalt As Control)
+        Dock = DockStyle.Fill
+        Dim t As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 1, .RowCount = 3, .Margin = New Padding(0)}
+        t.RowStyles.Add(New RowStyle(SizeType.AutoSize))
+        t.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
+        t.RowStyles.Add(New RowStyle(SizeType.Absolute, 44))
+
+        AddHandler Werkzeug.Paint, Sub(s, e) Linie(e.Graphics, Werkzeug, unten:=True)
+
+        Dim fuss As New Panel With {.Dock = DockStyle.Fill, .Margin = New Padding(0), .Padding = New Padding(16, 1, 16, 0)}
+        AddHandler fuss.Paint, Sub(s, e) Linie(e.Graphics, fuss, unten:=False)
+        fuss.Controls.Add(FussLinks)
+        fuss.Controls.Add(FussRechts)
+        ' AutoSize-Labels mit Dock brauchen die volle Höhe für die vertikale Zentrierung
+        AddHandler fuss.Resize, Sub(s, e)
+                                    FussLinks.MinimumSize = New Size(0, fuss.ClientSize.Height)
+                                    FussRechts.MinimumSize = New Size(0, fuss.ClientSize.Height)
+                                End Sub
+
+        inhalt.Dock = DockStyle.Fill
+        inhalt.Margin = New Padding(0)
+        t.Controls.Add(Werkzeug, 0, 0)
+        t.Controls.Add(inhalt, 0, 1)
+        t.Controls.Add(fuss, 0, 2)
+        Controls.Add(t)
+    End Sub
+
+    Private Shared Sub Linie(g As Graphics, c As Control, unten As Boolean)
+        Using p As New Pen(Theme.Rand)
+            Dim y = If(unten, c.Height - 1, 0)
+            g.DrawLine(p, 0, y, c.Width, y)
+        End Using
+    End Sub
+
+End Class
+
+''' <summary>
+''' Kopfbereich einer Seite: großer Titel, Untertitel und rechts optionale Knöpfe.
+''' </summary>
+Public Class SeitenKopf
+    Inherits TableLayoutPanel
+
+    Public ReadOnly Knoepfe As New FlowLayoutPanel With {
+        .AutoSize = True,
+        .WrapContents = False,
+        .Anchor = AnchorStyles.Right,
+        .Margin = New Padding(0)
+    }
+
+    Public Sub New(titel As String, untertitel As String)
+        ColumnCount = 2
+        RowCount = 1
+        AutoSize = True
+        Dock = DockStyle.Fill
+        Margin = New Padding(0, 0, 0, 20)
+        ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
+        ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
+
+        Dim texte As New FlowLayoutPanel With {
+            .FlowDirection = FlowDirection.TopDown,
+            .WrapContents = False,
+            .AutoSize = True,
+            .Margin = New Padding(0)
+        }
+        texte.Controls.Add(New Label With {.Text = titel, .Font = Theme.SchriftTitel, .ForeColor = Theme.TextStark,
+                                           .AutoSize = True, .Margin = New Padding(0)})
+        texte.Controls.Add(New Label With {.Text = untertitel, .Font = Theme.Schrift, .ForeColor = Theme.TextLeise,
+                                           .AutoSize = True, .Margin = New Padding(1, 2, 0, 0)})
+        Controls.Add(texte, 0, 0)
+        Controls.Add(Knoepfe, 1, 0)
+    End Sub
+
+End Class
