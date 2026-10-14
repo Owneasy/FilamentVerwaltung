@@ -1,0 +1,183 @@
+/* Filament-Verwaltung – Handy-Ansicht. Farben wie in der Windows-App; Design (hell/dunkel) aus den Einstellungen. */
+:root {
+  --seite: #f1f5f9;
+  --karte: #ffffff;
+  --rand: #e2e8f0;
+  --text: #0f172a;
+  --text-normal: #334155;
+  --leise: #64748b;
+  --akzent: #2563eb;
+  --akzent-hell: #dbeafe;
+  --gruen: #16a34a;
+  --gelb: #ca8a04;
+  --rot: #dc2626;
+  --grau: #64748b;
+  --leiste: #0f172a;
+  --leiste-text: #94a3b8;
+  --schatten: 0 1px 2px rgb(15 23 42 / 6%), 0 1px 3px rgb(15 23 42 / 8%);
+  color-scheme: light;
+}
+:root[data-design="dunkel"] {
+  --seite: #0b1120;
+  --karte: #111827;
+  --rand: #1f2937;
+  --text: #f1f5f9;
+  --text-normal: #cbd5e1;
+  --leise: #94a3b8;
+  --akzent: #3b82f6;
+  --akzent-hell: #1e3a5f;
+  --leiste: #020617;
+  --schatten: none;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-design="hell"]):not([data-design="dunkel"]) {
+    --seite: #0b1120;
+    --karte: #111827;
+    --rand: #1f2937;
+    --text: #f1f5f9;
+    --text-normal: #cbd5e1;
+    --leise: #94a3b8;
+    --akzent: #3b82f6;
+    --akzent-hell: #1e3a5f;
+    --leiste: #020617;
+    --schatten: none;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--seite);
+  color: var(--text-normal);
+  padding-bottom: calc(68px + env(safe-area-inset-bottom));
+  -webkit-tap-highlight-color: transparent;
+}
+h1, h2 { color: var(--text); margin: 0; }
+h1 { font-size: 20px; }
+h2 { font-size: 16px; }
+small { font-size: 12.5px; }
+.leise { color: var(--leise); }
+.fehler { color: var(--rot); font-size: 13.5px; margin-top: 6px; }
+.gelb-text { color: var(--gelb); }
+
+/* Kopf und untere Leiste */
+.kopf {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+  background: var(--seite);
+  border-bottom: 1px solid var(--rand);
+}
+.status { width: 10px; height: 10px; border-radius: 50%; background: var(--grau); }
+.status.ok { background: var(--gruen); }
+.status.weg { background: var(--rot); }
+
+.leiste {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
+  display: flex; background: var(--leiste);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.leiste button {
+  flex: 1; position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 9px 0 8px; border: 0; background: none;
+  color: var(--leiste-text); font: inherit; font-size: 12px;
+}
+.leiste button.aktiv { color: #fff; }
+.leiste svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.zahl {
+  position: absolute; top: 4px; left: calc(50% + 6px);
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--rot); color: #fff; font-size: 11px; line-height: 18px; text-align: center;
+}
+
+main { padding: 12px 12px 16px; max-width: 720px; margin: 0 auto; }
+.leer { text-align: center; color: var(--leise); margin: 48px 16px; }
+
+/* Karten */
+.karte {
+  display: block; background: var(--karte); border: 1px solid var(--rand); border-radius: 12px;
+  box-shadow: var(--schatten); padding: 14px 16px; margin-bottom: 12px; color: inherit; text-decoration: none;
+}
+.zeile { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.datei { font-weight: 600; color: var(--text-normal); margin: 10px 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phase { color: var(--akzent); font-weight: 600; margin-top: 4px; }
+.werte { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; }
+.werte small { color: var(--leise); }
+.werte b { color: var(--text); }
+
+.badge {
+  flex: none; border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  background: color-mix(in srgb, var(--farbe) 15%, transparent); color: var(--farbe);
+}
+.badge.grau { --farbe: var(--grau); }
+.badge.blau { --farbe: var(--akzent); }
+.badge.gruen { --farbe: var(--gruen); }
+.badge.gelb { --farbe: var(--gelb); }
+.badge.rot { --farbe: var(--rot); }
+
+.balken { height: 8px; border-radius: 4px; background: var(--rand); overflow: hidden; margin: 6px 0; }
+.balken > div { height: 100%; background: var(--akzent); border-radius: 4px; }
+.balken.knapp > div { background: var(--rot); }
+.balken.leer > div { background: var(--grau); }
+
+/* Knöpfe und Eingaben */
+button { font: inherit; cursor: pointer; }
+.knopf, .primaer {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 42px; padding: 8px 16px; border-radius: 9px; font-weight: 600;
+  border: 1px solid var(--rand); background: var(--karte); color: var(--text-normal);
+}
+.primaer { background: var(--akzent); border-color: var(--akzent); color: #fff; }
+.knopf svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.knoepfe { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.knoepfe > * { flex: 1; }
+.karte .knopf { margin-top: 10px; }
+.karte .knoepfe .knopf { margin-top: 0; }
+
+label { display: block; margin: 12px 0 0; font-size: 13.5px; color: var(--leise); }
+input, select {
+  display: block; width: 100%; margin-top: 4px; min-height: 44px; padding: 8px 12px;
+  font: inherit; font-size: 16px; /* 16px verhindert das Hineinzoomen auf dem iPhone */
+  color: var(--text); background: var(--karte); border: 1px solid var(--rand); border-radius: 9px;
+}
+input:focus, select:focus { outline: 2px solid var(--akzent); outline-offset: -1px; border-color: transparent; }
+.modi label, .schalter { display: flex; align-items: center; gap: 10px; color: var(--text-normal); font-size: 15px; margin: 8px 0; }
+.modi input, .schalter input { width: 20px; min-height: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--akzent); }
+
+.suche { display: flex; gap: 8px; }
+.suche input { margin: 0; }
+.suche .knopf { flex: none; width: 48px; padding: 0; margin: 0; }
+
+/* Spulen */
+.spule { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; padding: 12px 14px; }
+.spule .rest { text-align: right; font-weight: 700; color: var(--text); }
+.spule .balken { grid-column: 1 / -1; margin-bottom: 0; }
+.gross { font-size: 28px; font-weight: 700; color: var(--text); margin-top: 6px; }
+.gross small { font-size: 14px; font-weight: 400; color: var(--leise); }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 12px 0 0; }
+dt { color: var(--leise); }
+dd { margin: 0; color: var(--text-normal); }
+.vorschau { margin: 10px 0 2px; font-weight: 700; color: var(--akzent); }
+
+/* Blatt (von unten) */
+.blatt { position: fixed; inset: 0; z-index: 20; }
+.blatt-hinter { position: absolute; inset: 0; background: rgb(0 0 0 / 45%); }
+.blatt-flaeche {
+  position: absolute; left: 0; right: 0; bottom: 0; max-height: 92vh; overflow: auto;
+  background: var(--karte); border-radius: 16px 16px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  max-width: 720px; margin: 0 auto; animation: hoch .18s ease-out;
+}
+@keyframes hoch { from { transform: translateY(30px); opacity: .5; } }
+.kamera img, .blatt video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; border-radius: 10px; margin-top: 12px; }
+.kamera .leise { margin-top: 6px; }
+
+.toast {
+  position: fixed; left: 16px; right: 16px; bottom: calc(80px + env(safe-area-inset-bottom)); z-index: 30;
+  max-width: 520px; margin: 0 auto; padding: 12px 16px; border-radius: 10px;
+  background: #0f172a; color: #fff; box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+}
+.toast.fehler { background: var(--rot); color: #fff; margin-top: 0; font-size: 15px; }

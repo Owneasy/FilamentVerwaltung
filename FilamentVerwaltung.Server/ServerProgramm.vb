@@ -64,6 +64,10 @@ Public Module ServerProgramm
         Dim app = builder.Build()
         app.UseMiddleware(Of FehlerAlsText)()
         app.UseMiddleware(Of TokenPruefung)()
+        ' Webseite fürs Handy (wwwroot) – ohne Daten, daher ohne Token; nicht zwischenspeichern, damit Updates sofort ankommen
+        app.UseDefaultFiles()
+        app.UseStaticFiles(New StaticFileOptions With {
+            .OnPrepareResponse = Sub(c) c.Context.Response.Headers.CacheControl = "no-cache"})
         app.MapControllers()
 
         app.Logger.LogInformation("Filament-Verwaltung Server {Version} – Daten in {Ordner}", ServerVersion(), optionen.DatenOrdner)
@@ -96,7 +100,7 @@ Public Module ServerProgramm
 
 End Module
 
-''' <summary>Lässt nur Anfragen mit gültigem Token durch ("Authorization: Bearer &lt;Token&gt;"); /api/info ist frei.</summary>
+''' <summary>Lässt API-Anfragen nur mit gültigem Token durch ("Authorization: Bearer &lt;Token&gt;"); /api/info und die Webseite sind frei.</summary>
 Public Class TokenPruefung
 
     Private ReadOnly _weiter As RequestDelegate
@@ -108,7 +112,8 @@ Public Class TokenPruefung
     End Sub
 
     Public Function InvokeAsync(ctx As HttpContext) As Task
-        If ctx.Request.Path.Equals("/api/info", StringComparison.OrdinalIgnoreCase) Then Return _weiter(ctx)
+        If Not ctx.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) OrElse
+           ctx.Request.Path.Equals("/api/info", StringComparison.OrdinalIgnoreCase) Then Return _weiter(ctx)
         Dim kopf = ctx.Request.Headers.Authorization.ToString()
         Dim gesendet = If(kopf.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase), kopf.Substring(7).Trim(), "")
         If Not CryptographicOperations.FixedTimeEquals(Text.Encoding.UTF8.GetBytes(gesendet), _erwartet) Then

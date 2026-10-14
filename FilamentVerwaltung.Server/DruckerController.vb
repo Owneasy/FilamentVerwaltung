@@ -75,6 +75,35 @@ Public Class DruckerController
         Return New WertAnfrage With {.Wert = If(_db.DruckEndeErledigt(id), "1", "0")}
     End Function
 
+    ''' <summary>Buchungsvorschlag wie in der App (Spule aus der Fach-Zuordnung, Gewicht, Datei, Druckzeit).</summary>
+    <HttpGet("druckenden/{id:long}/vorschlag")>
+    Public Function Vorschlag(id As Long) As ActionResult(Of Buchung)
+        Dim ende = _db.OffeneDruckEnden().FirstOrDefault(Function(x) x.Id = id)
+        If ende Is Nothing Then Return NotFound("Dieser Druck wurde schon gebucht oder verworfen.")
+        Return BuchungVorschlagen(ende, _db.AlleLaden(), _db.DateienLaden(), _db.SpulenZuordnung(ende.DruckerId))
+    End Function
+
+    ''' <summary>
+    ''' Bucht den Druck in einem Schritt (für die Webseite): beansprucht das Druckende und speichert die Buchung.
+    ''' 409, wenn es schon jemand anderes gebucht oder verworfen hat; scheitert das Speichern, bleibt es offen.
+    ''' </summary>
+    <HttpPost("druckenden/{id:long}/buchen")>
+    Public Function Buchen(id As Long, <FromBody> b As Buchung) As ActionResult(Of Buchung)
+        Dim ende = _db.OffeneDruckEnden().FirstOrDefault(Function(x) x.Id = id)
+        If ende Is Nothing OrElse Not _db.DruckEndeErledigt(id) Then
+            Return Conflict("Dieser Druck wurde schon an einem anderen Gerät gebucht oder verworfen.")
+        End If
+        Try
+            b.Id = 0
+            b.Art = Buchung.ArtDruck
+            _db.DruckSpeichern(b)
+            Return b
+        Catch
+            _db.DruckEndeSpeichern(ende)
+            Throw
+        End Try
+    End Function
+
     ''' <summary>Buchen abgebrochen: Druckende wieder offen legen (bekommt eine neue Nummer).</summary>
     <HttpPost("druckenden")>
     Public Function DruckEndeZuruecklegen(<FromBody> ende As DruckEnde) As DruckEnde

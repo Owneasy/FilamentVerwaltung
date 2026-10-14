@@ -151,7 +151,13 @@ bei einem Verbindungsabbruch automatisch. Die Verbindung wird nur auf dem PC ges
 Token und Secret mit Windows verschlüsselt); alle anderen Einstellungen (Design, Spalten, Slicer-Profile …) liegen auf dem
 Server und sind damit auf jedem PC gleich. Dateien vom Server werden für Vorschau, Slicen und Senden in
 `%LocalAppData%\FilamentVerwaltung\Dateien` zwischengespeichert. Ist der Server beim Start nicht erreichbar, erscheint der
-Verbindungsdialog.## Projektaufbau
+Verbindungsdialog.**Webseite fürs Handy:** Der Server liefert unter `/` eine schlanke Seite aus (z. B. `https://filament.meinedomain.de/`):
+Drucker live mit Kamera, fertige Drucke buchen oder verwerfen, Spulen suchen (auch per QR-Code mit der Handykamera –
+nur über https) und nachwiegen. Beim ersten Öffnen das Zugangs-Token eingeben; das Design (hell/dunkel) kommt aus den
+Einstellungen. Im Browser-Menü „Zum Startbildschirm hinzufügen“ legt sie wie eine App ab. Ist die Domain mit
+Cloudflare Access (Service-Token) geschützt, braucht der Browser zusätzlich eine Regel mit Anmeldung, z. B. Action
+„Allow“ mit der eigenen E-Mail-Adresse (Einmal-Code per Mail) – als zweite Policy neben „Service Auth“.
+## Projektaufbau
 
 Drei Projekte: `FilamentVerwaltung` (Windows-App), `FilamentVerwaltung.Kern` (Modelle, Datenbank, Drucker-Anbindung, Dateianalyse –
 ohne Windows-Abhängigkeiten, von App und Server genutzt; Schnittstellen `IDatenquelle` / `IDruckerDienst` in `Schnittstellen.vb`)
