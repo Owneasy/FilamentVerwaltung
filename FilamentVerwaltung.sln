@@ -7,6 +7,8 @@ Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "FilamentVerwaltung", "Filam
 EndProject
 Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "FilamentVerwaltung.Kern", "FilamentVerwaltung.Kern\FilamentVerwaltung.Kern.vbproj", "{DB63C66D-6D14-44DB-A0EB-791F9227122F}"
 EndProject
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "FilamentVerwaltung.Server", "FilamentVerwaltung.Server\FilamentVerwaltung.Server.vbproj", "{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +43,18 @@ Global
 		{DB63C66D-6D14-44DB-A0EB-791F9227122F}.Release|x64.Build.0 = Release|Any CPU
 		{DB63C66D-6D14-44DB-A0EB-791F9227122F}.Release|x86.ActiveCfg = Release|Any CPU
 		{DB63C66D-6D14-44DB-A0EB-791F9227122F}.Release|x86.Build.0 = Release|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Debug|x64.Build.0 = Debug|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Debug|x86.Build.0 = Debug|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Release|x64.ActiveCfg = Release|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Release|x64.Build.0 = Release|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Release|x86.ActiveCfg = Release|Any CPU
+		{6BF1DF5F-93FF-4C3F-9533-0794FDEC294E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

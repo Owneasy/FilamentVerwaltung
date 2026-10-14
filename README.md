@@ -1,4 +1,4 @@
-﻿# Filament-Verwaltung (VB.NET)
+# Filament-Verwaltung (VB.NET)
 
 Windows-Desktop-App (VB.NET, Windows Forms, .NET 10) zur Verwaltung von 3D-Drucker-Filament.
 Die Daten liegen in einer lokalen **SQLite-Datenbank** – eine einzige Datei, kein Datenbankserver nötig.
@@ -112,7 +112,34 @@ Ordner öffnen. Der Ordner `Dateien` (STL, G-Code …) wird nicht mitgesichert �
 zusätzlich kopieren. Die Datei während der Nutzung
 direkt im Nextcloud-Ordner zu halten, funktioniert, kann aber bei gleichzeitigem Zugriff von zwei PCs Konflikte erzeugen.
 
+## Server (Docker / Unraid) – im Aufbau
+
+Statt der lokalen Datenbank kann ein Server die Daten halten (Datenbank, Dateien, Sicherungen), damit mehrere PCs
+und auch unterwegs dieselben Daten nutzen. Stand: Der Server mit REST-API ist fertig, die Anbindung der App folgt.
+
+**Bauen und starten (z. B. im Unraid-Terminal):**
+
+```
+git clone https://github.com/Owneasy/FilamentVerwaltung.git /mnt/user/appdata/filament-src
+cd /mnt/user/appdata/filament-src
+docker build -t filament-server .
+docker run -d --name filament-server --restart unless-stopped -p 8080:8080 \
+  -v /mnt/user/appdata/filament:/data filament-server
+```
+
+- **Daten:** alles liegt im Volume `/data` (`filament.db`, `Dateien/`, `Backups/`). Einmal pro Tag wird automatisch gesichert.
+- **Zugangs-Token:** Jede Anfrage braucht `Authorization: Bearer <Token>`. Ohne `FILAMENT_TOKEN` erzeugt der Server
+  beim ersten Start eins und speichert es in `/data/token.txt` (steht auch im Container-Log).
+- **Umgebungsvariablen:** `FILAMENT_TOKEN` (eigenes Token), `FILAMENT_DATEN` (Standard `/data`), `ASPNETCORE_HTTP_PORTS` (Standard `8080`).
+- **Von unterwegs (Cloudflare-Tunnel):** Im Tunnel einen Public Hostname auf `http://<Unraid-IP>:8080` anlegen und
+  zusätzlich per Cloudflare Access (Service-Token) schützen. Große Dateien werden in 16-MB-Stücken hochgeladen
+  (Cloudflare lässt höchstens 100 MB pro Anfrage zu).
+- **Test:** `http://<Unraid-IP>:8080/api/info` liefert Name und Version (ohne Token).
 ## Projektaufbau
+
+Drei Projekte: `FilamentVerwaltung` (Windows-App), `FilamentVerwaltung.Kern` (Modelle, Datenbank, Drucker-Anbindung, Dateianalyse –
+ohne Windows-Abhängigkeiten, von App und Server genutzt; Schnittstellen `IDatenquelle` / `IDruckerDienst` in `Schnittstellen.vb`)
+und `FilamentVerwaltung.Server` (ASP.NET Core, `DatenController.vb` = REST-API).
 
 | Datei | Inhalt |
 |---|---|
