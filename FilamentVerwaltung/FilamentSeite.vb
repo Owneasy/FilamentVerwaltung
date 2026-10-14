@@ -4,6 +4,13 @@ Imports System.IO
 Imports System.Text
 Imports System.Windows.Forms
 
+''' <summary>Ansicht der Filament-Seite (Untermenü in der Navigation).</summary>
+Public Enum FilamentBestand
+    Alle
+    Vorhanden
+    Leer
+End Enum
+
 ''' <summary>
 ''' Seite "Filament": Kennzahlen, Suche/Filter und Tabelle aller Spulen mit Bearbeitung.
 ''' </summary>
@@ -20,6 +27,24 @@ Public Class FilamentSeite
 
     ''' <summary>Der Verlauf (Drucke/Buchungen) einer Spule soll angezeigt werden.</summary>
     Public Event VerlaufAnzeigen(filamentId As Long)
+    ''' <summary>Anzahl Spulen je Ansicht (für die Zahlen im Untermenü).</summary>
+    Public Event AnzahlGeaendert(alle As Integer, vorhanden As Integer, leer As Integer)
+    ''' <summary>Die Ansicht (Alle / Vorhanden / Leer) wurde von der Seite selbst gewechselt.</summary>
+    Public Event BestandGeaendert()
+
+    ''' <summary>Aktuelle Ansicht: alle Spulen, nur mit Restbestand oder nur leere.</summary>
+    Public ReadOnly Property Bestand As FilamentBestand
+        Get
+            Return _bestand
+        End Get
+    End Property
+
+    Public Sub BestandZeigen(b As FilamentBestand)
+        _bestand = b
+        kopf.Untertitel = If(b = FilamentBestand.Vorhanden, "Spulen mit Restbestand",
+                          If(b = FilamentBestand.Leer, "Leere Spulen – zum Aufräumen oder Nachkaufen", "Spulen, Restbestand und Verbrauch im Überblick"))
+        AnsichtAktualisieren()
+    End Sub
 
     Private ReadOnly _db As Datenbank
     Private _alle As New List(Of Filament)
@@ -30,7 +55,8 @@ Public Class FilamentSeite
     Private ReadOnly suche As New SuchFeld()
     Private ReadOnly cboMaterial As New ComboBox()
     Private ReadOnly cboLagerort As New ComboBox()
-    Private ReadOnly chkLeere As New CheckBox()
+    Private _bestand As FilamentBestand = FilamentBestand.Alle
+    Private kopf As SeitenKopf
 
     Private ReadOnly kzSpulen As New KennzahlKarte("Spulen", Theme.SymBox, Theme.Akzent)
     Private ReadOnly kzBestand As New KennzahlKarte("Restbestand", Theme.SymDiagramm, Theme.Gruen)
@@ -74,7 +100,7 @@ Public Class FilamentSeite
         seite.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
 
         ' --- Kopf
-        Dim kopf As New SeitenKopf("Filament", "Spulen, Restbestand und Verbrauch im Überblick")
+        kopf = New SeitenKopf("Filament", "Spulen, Restbestand und Verbrauch im Überblick")
         Dim btnSpalten As New WebButton("Spalten", Theme.SymSpalten)
         AddHandler btnSpalten.Click, Sub(s, e) spaltenMenue.Show(btnSpalten, New Point(0, btnSpalten.Height + 2))
         tipps.SetToolTip(btnSpalten, "Auswählen, welche Spalten in der Tabelle angezeigt werden (auch per Rechtsklick auf einen Spaltenkopf)")
@@ -118,13 +144,6 @@ Public Class FilamentSeite
         AddHandler cboLagerort.SelectedIndexChanged, Sub(s, e) AnsichtAktualisieren()
         werkzeug.Controls.Add(cboLagerort)
 
-        chkLeere.Text = "Leere anzeigen"
-        chkLeere.Checked = True
-        chkLeere.AutoSize = True
-        chkLeere.ForeColor = Theme.TextNormal
-        chkLeere.Margin = New Padding(4, 8, 16, 4)
-        AddHandler chkLeere.CheckedChanged, Sub(s, e) AnsichtAktualisieren()
-        werkzeug.Controls.Add(chkLeere)
 
         For Each b In {btnBearbeiten, btnDuplizieren, btnVerbrauch, btnLoeschen}
             b.Margin = New Padding(0, 0, 8, 4)
@@ -411,7 +430,11 @@ Public Class FilamentSeite
         suche.Eingabe.Clear()
         cboMaterial.SelectedIndex = 0
         cboLagerort.SelectedIndex = 0
-        chkLeere.Checked = True
+        If Not PasstZumBestand(f) Then
+            _bestand = FilamentBestand.Alle
+            kopf.Untertitel = "Spulen, Restbestand und Verbrauch im Überblick"
+            RaiseEvent BestandGeaendert()
+        End If
         _filterWirdAktualisiert = False
         AnsichtAktualisieren(f.Id)
         grid.Focus()
@@ -440,7 +463,7 @@ Public Class FilamentSeite
         If ort IsNot Nothing AndAlso ort <> AlleLagerorte Then
             treffer = treffer.Where(Function(f) String.Equals(f.Lagerort.Trim(), ort, StringComparison.OrdinalIgnoreCase))
         End If
-        If Not chkLeere.Checked Then treffer = treffer.Where(Function(f) f.Restgewicht > 0)
+        treffer = treffer.Where(AddressOf PasstZumBestand)
 
         Dim liste = grid.Sortieren(treffer)
         quelle.DataSource = liste
@@ -463,7 +486,17 @@ Public Class FilamentSeite
                       If(fastLeer.Count = 0, "alle Spulen über 15 %",
                          String.Join(", ", fastLeer.Take(3).Select(Function(f) f.Code)) & If(fastLeer.Count > 3, " …", "")))
         karte.FussLinks.Text = $"{liste.Count:N0} von {_alle.Count:N0} Spulen angezeigt"
+        Dim vorhanden = _alle.Where(Function(f) f.Restgewicht > 0).Count()
+        RaiseEvent AnzahlGeaendert(_alle.Count, vorhanden, _alle.Count - vorhanden)
     End Sub
+
+    Private Function PasstZumBestand(f As Filament) As Boolean
+        Select Case _bestand
+            Case FilamentBestand.Vorhanden : Return f.Restgewicht > 0
+            Case FilamentBestand.Leer : Return f.Restgewicht <= 0
+            Case Else : Return True
+        End Select
+    End Function
 
     Private Function Ausgewaehlt() As Filament
         Return grid.Ausgewaehlt(Of Filament)()

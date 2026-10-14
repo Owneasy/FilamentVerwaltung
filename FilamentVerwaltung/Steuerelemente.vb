@@ -62,8 +62,37 @@ Public Class WebButton
         End Set
     End Property
 
+    Private _unterpunkt As Boolean
+    Private _zahl As String = ""
+
+    ''' <summary>Navigation: eingerückter Unterpunkt (Text bündig mit dem Text des übergeordneten Eintrags).</summary>
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property Unterpunkt As Boolean
+        Get
+            Return _unterpunkt
+        End Get
+        Set(value As Boolean)
+            _unterpunkt = value
+            Invalidate()
+        End Set
+    End Property
+
+    ''' <summary>Navigation: Zahl rechtsbündig (z. B. Anzahl Einträge), leer = keine.</summary>
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property Zahl As String
+        Get
+            Return _zahl
+        End Get
+        Set(value As String)
+            If _zahl = If(value, "") Then Return
+            _zahl = If(value, "")
+            Invalidate()
+        End Set
+    End Property
+
     Private ReadOnly Property Innenabstand As Integer
         Get
+            If _unterpunkt Then Return Px(Me, 16 + 18 + 12)
             Return Px(Me, If(Stil = KnopfStil.Navigation, 16, 14))
         End Get
     End Property
@@ -127,7 +156,7 @@ Public Class WebButton
                 vorder = Theme.Rot
                 rahmen = Theme.RotRand
             Case KnopfStil.Navigation
-                hinter = If(_aktiv OrElse _hover, Theme.LeisteHover, Color.Empty)
+                hinter = If((_aktiv AndAlso Not _unterpunkt) OrElse _hover, Theme.LeisteHover, Color.Empty)
                 vorder = If(_aktiv, Theme.LeisteTextAktiv, If(_hover, Color.FromArgb(226, 232, 240), Theme.LeisteText))
             Case Else
                 hinter = If(_gedrueckt, Theme.Rand, If(_hover, Theme.TabelleKopf, Theme.KartenFlaeche))
@@ -170,8 +199,21 @@ Public Class WebButton
 
         If Stil = KnopfStil.Navigation AndAlso _aktiv Then
             Using b As New SolidBrush(Color.FromArgb(59, 130, 246))
-                g.FillRectangle(b, 0, Px(Me, 8), Px(Me, 3), Height - Px(Me, 16))
+                If _unterpunkt Then
+                    ' Unterpunkt: kleiner Punkt vor dem Text statt Balken
+                    Dim d = Px(Me, 6)
+                    g.FillEllipse(b, Innenabstand - Px(Me, 14), (Height - d) \ 2, d, d)
+                Else
+                    g.FillRectangle(b, 0, Px(Me, 8), Px(Me, 3), Height - Px(Me, 16))
+                End If
             End Using
+        End If
+        Dim zahlBreite = 0
+        If Stil = KnopfStil.Navigation AndAlso _zahl.Length > 0 Then
+            zahlBreite = TextRenderer.MeasureText(g, _zahl, Theme.SchriftKlein, Size.Empty, TextFormatFlags.NoPadding).Width + Px(Me, 12)
+            TextRenderer.DrawText(g, _zahl, Theme.SchriftKlein, New Rectangle(0, 0, Width - Px(Me, 12), Height),
+                                  If(_aktiv, Theme.LeisteTextAktiv, Theme.LeisteText),
+                                  TextFormatFlags.Right Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding Or TextFormatFlags.SingleLine)
         End If
 
         ' Inhalt: links bündig in der Navigation, sonst zentriert
@@ -183,7 +225,8 @@ Public Class WebButton
                                   TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding)
             x += SymbolBreite + Abstand
         End If
-        TextRenderer.DrawText(g, Text, Font, New Rectangle(x, 0, Math.Max(0, Width - x - Innenabstand \ 2), Height), vorder,
+        Dim rechts = If(_unterpunkt, Px(Me, 8), Innenabstand \ 2) + zahlBreite
+        TextRenderer.DrawText(g, Text, Font, New Rectangle(x, 0, Math.Max(0, Width - x - rechts), Height), vorder,
                               TextFormatFlags.Left Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding Or
                               TextFormatFlags.EndEllipsis Or TextFormatFlags.SingleLine Or TextFormatFlags.NoPrefix)
     End Sub

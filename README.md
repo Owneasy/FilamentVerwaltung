@@ -13,7 +13,8 @@ Die Daten liegen in einer lokalen **SQLite-Datenbank** – eine einzige Datei, k
 - Berechnet: Rest in %, Preis pro kg, Restwert
 - Verbrauch buchen: Gramm abziehen, Spule nachwiegen (Leerspule wird abgezogen) oder Rest direkt eingeben
 - Spalten ein-/ausblenden über „Spalten“ oder Rechtsklick auf einen Spaltenkopf (wird in der Datenbank gespeichert)
-- Suche, Materialfilter, leere Spulen ausblenden, Sortierung per Klick auf die Spaltenköpfe
+- Suche, Material- und Lagerortfilter, Sortierung per Klick auf die Spaltenköpfe
+- Untermenü in der Seitenleiste: **Alle**, **Vorhanden** (mit Restbestand) und **Leer** – jeweils mit Anzahl
 - Oberfläche im Web-Dashboard-Stil: Seitenleiste, Kennzahl-Kacheln, Füllstandsbalken (rot < 15 %, leere Spulen grau)
 - Kennzahlen: Anzahl, Restbestand in kg, Restwert, fast leere Spulen
 - **Drucke / Verlauf:** Jede Änderung am Restgewicht wird protokolliert (Druck, Wiegen, Korrektur) – mit Kosten,

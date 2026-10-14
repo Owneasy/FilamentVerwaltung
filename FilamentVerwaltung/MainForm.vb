@@ -14,6 +14,8 @@ Public Class MainForm
     Private ReadOnly _db As Datenbank
     Private ReadOnly inhalt As New Panel With {.Dock = DockStyle.Fill, .BackColor = Theme.Seite}
     Private ReadOnly navigation As New List(Of (Knopf As WebButton, Seite As Control))
+    ''' <summary>Untermenü unter "Filament": Alle / Vorhanden / Leer (nur sichtbar, solange die Filament-Seite offen ist).</summary>
+    Private ReadOnly filamentUntermenue As New List(Of (Knopf As WebButton, Bestand As FilamentBestand))
     Private ReadOnly uebersichtSeite As UebersichtSeite
     Private ReadOnly filamentSeite As FilamentSeite
     Private ReadOnly druckeSeite As DruckeSeite
@@ -56,6 +58,12 @@ Public Class MainForm
         uebersichtSeite = New UebersichtSeite(db, _ueberwachung)
         AddHandler uebersichtSeite.SeiteOeffnen, AddressOf UebersichtZiel
         AddHandler _ueberwachung.DruckBeendet, AddressOf DruckBeendet
+        AddHandler filamentSeite.AnzahlGeaendert, Sub(alle, vorhanden, leer)
+                                                      filamentUntermenue(0).Knopf.Zahl = alle.ToString("N0")
+                                                      filamentUntermenue(1).Knopf.Zahl = vorhanden.ToString("N0")
+                                                      filamentUntermenue(2).Knopf.Zahl = leer.ToString("N0")
+                                                  End Sub
+        AddHandler filamentSeite.BestandGeaendert, Sub() UntermenueAktualisieren()
         AddHandler filamentSeite.VerlaufAnzeigen, Sub(id)
                                                       druckeSeite.SpuleFiltern(id)
                                                       SeiteZeigen(druckeSeite)
@@ -85,7 +93,7 @@ Public Class MainForm
         }
         leiste.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
 
-        Dim logo As New Panel With {.Height = 44, .Dock = DockStyle.Fill, .Margin = New Padding(0, 0, 0, 22)}
+        Dim logo As New Panel With {.Height = 44, .Dock = DockStyle.Fill, .Margin = New Padding(0, 0, 0, 16)}
         AddHandler logo.Paint, Sub(s, e) LogoZeichnen(e.Graphics, logo)
         Zeile(leiste, logo)
 
@@ -97,7 +105,21 @@ Public Class MainForm
             .Margin = New Padding(16, 0, 0, 8)
         })
         Zeile(leiste, NavEintrag("Übersicht", Theme.SymStart, uebersichtSeite))
-        Zeile(leiste, NavEintrag("Filament", Theme.SymSpule, filamentSeite))
+        Dim navFilament = NavEintrag("Filament", Theme.SymSpule, filamentSeite)
+        AddHandler navFilament.Click, Sub(s, e) FilamentAnsicht(FilamentBestand.Alle)
+        Zeile(leiste, navFilament)
+        For Each eintrag In {("Alle", FilamentBestand.Alle), ("Vorhanden", FilamentBestand.Vorhanden), ("Leer", FilamentBestand.Leer)}
+            Dim bestand = eintrag.Item2
+            Dim knopf As New WebButton(eintrag.Item1, "", KnopfStil.Navigation) With {
+                .Unterpunkt = True, .Dock = DockStyle.Fill, .Height = 30, .Margin = New Padding(0), .Visible = False}
+            AddHandler knopf.Click, Sub(s, e) FilamentAnsicht(bestand)
+            filamentUntermenue.Add((knopf, bestand))
+            Zeile(leiste, knopf)
+        Next
+        filamentUntermenue.Last().Knopf.Margin = New Padding(0, 0, 0, 4)
+        tipps.SetToolTip(filamentUntermenue(0).Knopf, "Alle Spulen")
+        tipps.SetToolTip(filamentUntermenue(1).Knopf, "Nur Spulen mit Restbestand")
+        tipps.SetToolTip(filamentUntermenue(2).Knopf, "Nur leere Spulen")
         Zeile(leiste, NavEintrag("Drucke", Theme.SymDrucker, druckeSeite))
         Zeile(leiste, NavEintrag("Drucker", Theme.SymNetzDrucker, druckerSeite))
         Zeile(leiste, NavEintrag("Nachkauf", Theme.SymGeld, nachkaufSeite))
@@ -109,7 +131,7 @@ Public Class MainForm
             .Font = Theme.SchriftKopf,
             .ForeColor = Color.FromArgb(100, 116, 139),
             .AutoSize = True,
-            .Margin = New Padding(16, 18, 0, 8)
+            .Margin = New Padding(16, 12, 0, 8)
         })
         Dim btnSuchen As New WebButton("Spule suchen", Theme.SymScanner, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42, .Margin = New Padding(0, 0, 0, 4)}
         AddHandler btnSuchen.Click, Sub(s, e) SchnellsucheZeigen()
@@ -272,6 +294,21 @@ Public Class MainForm
             inhalt.ResumeLayout()
         End If
         s?.Aktivieren()
+        UntermenueAktualisieren()
+    End Sub
+
+    Private Sub FilamentAnsicht(bestand As FilamentBestand)
+        If _aktuelleSeite IsNot filamentSeite Then SeiteZeigen(filamentSeite)
+        filamentSeite.BestandZeigen(bestand)
+        UntermenueAktualisieren()
+    End Sub
+
+    Private Sub UntermenueAktualisieren()
+        Dim offen = _aktuelleSeite Is filamentSeite
+        For Each eintrag In filamentUntermenue
+            eintrag.Knopf.Visible = offen
+            eintrag.Knopf.Aktiv = offen AndAlso filamentSeite.Bestand = eintrag.Bestand
+        Next
     End Sub
 
     ''' <summary>"Alle anzeigen" auf der Übersicht.</summary>
