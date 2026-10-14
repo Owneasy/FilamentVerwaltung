@@ -352,7 +352,8 @@ Public Class BambuVerbindung
                                                                  NachrichtVerarbeiten(e.ApplicationMessage.ConvertPayloadToString())
                                                                  Return Task.CompletedTask
                                                              End Function
-        ' Der Drucker hat ein selbst ausgestelltes Zertifikat – im Heimnetz akzeptieren
+        ' Der Drucker hat ein selbst ausgestelltes Zertifikat – im Heimnetz akzeptieren.
+        ' Bambu-Drucker sprechen nur MQTT 3.1.1 (MQTTnet würde sonst MQTT 5 verwenden und abgelehnt werden).
         Dim optionen = New MqttClientOptionsBuilder().
             WithTcpServer(Host, Port).
             WithCredentials("bblp", Drucker.Zugang).
@@ -361,6 +362,7 @@ Public Class BambuVerbindung
             WithTimeout(TimeSpan.FromSeconds(8)).
             WithKeepAlivePeriod(TimeSpan.FromSeconds(30)).
             WithCleanSession().
+            WithProtocolVersion(Formatter.MqttProtocolVersion.V311).
             Build()
         Protokoll.Schreiben($"MQTT verbinde mit {Host}:{Port} …")
         Dim ergebnis = Await _client.ConnectAsync(optionen, abbruch)
