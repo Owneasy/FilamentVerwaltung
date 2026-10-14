@@ -17,6 +17,11 @@ Die Daten liegen in einer lokalen **SQLite-Datenbank** – eine einzige Datei, k
 - **Drucke / Verlauf:** Jede Änderung am Restgewicht wird protokolliert (Druck, Wiegen, Korrektur) – mit Kosten,
   Druckzeit und verknüpfter Datei. Drucke lassen sich erfassen, bearbeiten und mit Rückbuchung löschen.
   Kennzahlen für den laufenden Monat; "Verlauf anzeigen" (Rechtsklick auf eine Spule) filtert nach Spule.
+- **Slicen mit Bambu Studio:** In „Dateien“ ein STL/3MF/OBJ/STEP mit „Slicen …“ in der installierten Bambu Studio
+  slicen – Drucker-, Prozess- und Filamentprofil (auch eigene Profile) und Druckplatte wählen, optional die Spule
+  (Filamentprofil und Farbe werden vorgeschlagen). Das Ergebnis (3MF mit G-Code, Gewicht, Druckzeit) landet in
+  „Dateien“. Die Profil-Vererbung wird von der App aufgelöst, weil die Bambu-Studio-Kommandozeile das nicht
+  vollständig tut (sonst Gewicht 0 g). „Im Slicer öffnen“ öffnet Dateien in Bambu Studio, OrcaSlicer, PrusaSlicer oder Cura.
 - **Drucker-Anbindung:** Bambu Lab (LAN, MQTT), Prusa (PrusaLink), Klipper (Moonraker) und OctoPrint. Live-Status je
   Drucker (Datei, Fortschritt, Restzeit), Spulen-Zuordnung je Drucker bzw. je AMS-Fach. Ist ein Druck fertig oder
   abgebrochen, erscheint ein Hinweis zum Buchen – Spule, Gewicht, Druckzeit und Datei sind vorausgefüllt
@@ -122,6 +127,8 @@ direkt im Nextcloud-Ordner zu halten, funktioniert, kann aber bei gleichzeitigem
 | `DruckerVerbindungen.vb` | Verbindungen: Moonraker, OctoPrint, PrusaLink (HTTP), Bambu Lab (MQTT/TLS, MQTTnet) |
 | `DruckerUeberwachung.vb` | Regelmäßige Abfrage, Erkennung von Druckende, Buchungsvorschlag |
 | `DruckerSeite.vb`, `DruckerDialog.vb` | Seite „Drucker“ mit Live-Karten, Drucker hinzufügen / testen |
+| `Slicer.vb` | Slicer finden, Bambu-Studio-Profile lesen/auflösen, Slicen über die Kommandozeile |
+| `SlicerDialog.vb` | Dialog „Slicen mit Bambu Studio“ |
 | `Updater.vb`, `UpdateDialog.vb` | Updates über GitHub Releases |
 | `ModellAnsicht.vb` | STL/3MF/OBJ laden (`Netz`) und 3D-Vorschau mit eigenem Software-Renderer |
 | `DateiAnalyse.vb` | Druckdaten aus G-Code und geslicten 3MF auslesen |

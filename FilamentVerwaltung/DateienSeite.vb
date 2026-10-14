@@ -38,6 +38,13 @@ Public Class DateienSeite
                                                    .PlaceholderText = "Notiz zur Datei (wird beim Verlassen gespeichert)"}
     Private ReadOnly btnBuchen As New WebButton("Als Druck buchen", Theme.SymDrucker, KnopfStil.Primaer)
     Private ReadOnly btnOeffnen As New WebButton("Öffnen", Theme.SymOeffnen)
+    Private ReadOnly btnSlicen As New WebButton("Slicen …", Theme.SymWuerfel)
+    Private ReadOnly btnImSlicer As New WebButton("Im Slicer öffnen", Theme.SymOeffnen)
+    Private _slicer As List(Of SlicerInstallation)
+    Private _bambu As BambuStudio
+    Private _bambuGesucht As Boolean
+    ''' <summary>Dateitypen, die sich slicen lassen.</summary>
+    Private Shared ReadOnly SliceTypen As String() = {"STL", "3MF", "OBJ", "STEP", "STP"}
     Private ReadOnly btnImOrdner As New WebButton("Im Ordner", Theme.SymOrdnerOffen)
     Private ReadOnly btnLoeschen As New WebButton("Löschen", Theme.SymLoeschen, KnopfStil.Gefahr)
     Private details As Panel
@@ -124,12 +131,16 @@ Public Class DateienSeite
         infos.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
 
         Dim knoepfe As New FlowLayoutPanel With {.AutoSize = True, .Dock = DockStyle.Top, .WrapContents = True, .Margin = New Padding(0, 10, 0, 0)}
-        For Each b In {btnBuchen, btnOeffnen, btnImOrdner, btnLoeschen}
+        For Each b In {btnBuchen, btnSlicen, btnImSlicer, btnOeffnen, btnImOrdner, btnLoeschen}
             b.Margin = New Padding(0, 0, 8, 6)
             knoepfe.Controls.Add(b)
         Next
         AddHandler btnBuchen.Click, Sub(s, e) AlsDruckBuchen()
         AddHandler btnOeffnen.Click, Sub(s, e) Oeffnen()
+        AddHandler btnSlicen.Click, Sub(s, e) Slicen()
+        AddHandler btnImSlicer.Click, Sub(s, e) ImSlicerOeffnen(btnImSlicer)
+        tipps.SetToolTip(btnSlicen, "Mit Bambu Studio slicen – das Ergebnis (mit Gewicht und Druckzeit) landet hier in Dateien")
+        tipps.SetToolTip(btnImSlicer, "Datei in einem installierten Slicer öffnen (Bambu Studio, OrcaSlicer, PrusaSlicer, Cura)")
         AddHandler btnImOrdner.Click, Sub(s, e) OrdnerOeffnen(_angezeigt)
         AddHandler btnLoeschen.Click, Sub(s, e) Loeschen()
         tipps.SetToolTip(btnBuchen, "Druck mit dieser Datei erfassen – Gewicht und Druckzeit werden aus der Datei übernommen")
@@ -168,6 +179,8 @@ Public Class DateienSeite
 
         Dim menue As New ContextMenuStrip With {.Font = Theme.Schrift, .ShowImageMargin = False}
         menue.Items.Add("Als Druck buchen", Nothing, Sub(s, e) AlsDruckBuchen())
+        menue.Items.Add("Slicen …", Nothing, Sub(s, e) Slicen())
+        menue.Items.Add("Im Slicer öffnen", Nothing, Sub(s, e) ImSlicerOeffnen(Nothing))
         menue.Items.Add("Öffnen", Nothing, Sub(s, e) Oeffnen())
         menue.Items.Add("Im Ordner anzeigen", Nothing, Sub(s, e) OrdnerOeffnen(_angezeigt))
         menue.Items.Add(New ToolStripSeparator())
@@ -311,6 +324,23 @@ Public Class DateienSeite
         For Each b In {btnBuchen, btnOeffnen, btnImOrdner, btnLoeschen}
             b.Visible = d IsNot Nothing
         Next
+        Dim sliceBar = d IsNot Nothing AndAlso SliceTypen.Contains(d.Typ) AndAlso Not d.HatDruckdaten
+        btnSlicen.Visible = sliceBar
+        ' Der sinnvolle nächste Schritt wird hervorgehoben: erst slicen, dann buchen
+        btnSlicen.Stil = If(sliceBar, KnopfStil.Primaer, KnopfStil.Sekundaer)
+        btnBuchen.Stil = If(sliceBar, KnopfStil.Sekundaer, KnopfStil.Primaer)
+        btnSlicen.Invalidate()
+        btnBuchen.Invalidate()
+        ' Feste Reihenfolge erzwingen (beim Ein-/Ausblenden kann sie sonst durcheinandergeraten)
+        Dim leiste = btnBuchen.Parent
+        If leiste IsNot Nothing Then
+            Dim reihenfolge = {btnBuchen, btnSlicen, btnImSlicer, btnOeffnen, btnImOrdner, btnLoeschen}
+            For i = 0 To reihenfolge.Length - 1
+                leiste.Controls.SetChildIndex(reihenfolge(i), i)
+            Next
+            leiste.PerformLayout()
+        End If
+        btnImSlicer.Visible = d IsNot Nothing AndAlso Not Datei.GcodeTypen.Contains(d.Typ)
         VorschauLaden(d)
     End Sub
 
@@ -446,6 +476,70 @@ Public Class DateienSeite
             _angezeigt = Nothing
             DatenLaden(d.Id)
         End If
+    End Sub
+
+    ''' <summary>Bambu Studio einmal suchen (die Profile werden erst im Slicer-Dialog gelesen).</summary>
+    Private Function BambuFinden() As BambuStudio
+        If Not _bambuGesucht Then
+            _bambu = BambuStudio.Finden()
+            _bambuGesucht = True
+        End If
+        Return _bambu
+    End Function
+
+    Private Sub Slicen()
+        Dim d = Ausgewaehlt()
+        If d Is Nothing Then Return
+        Dim bambu = BambuFinden()
+        If bambu Is Nothing Then
+            MessageBox.Show(Me, "Bambu Studio wurde nicht gefunden. Slicen aus der App heraus funktioniert mit einer installierten Bambu Studio " &
+                            "(Standardordner C:\Program Files\Bambu Studio). Andere Slicer kannst du über ""Im Slicer öffnen"" verwenden.",
+                            "Slicen", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        Dim spulen As List(Of Filament)
+        Try
+            spulen = _db.AlleLaden()
+        Catch ex As Exception
+            Fehler("Die Spulen konnten nicht geladen werden.", ex)
+            Return
+        End Try
+        Using dlg As New SlicerDialog(_db, bambu, d, _db.DateiPfad(d), spulen)
+            If dlg.ShowDialog(Me) = DialogResult.OK AndAlso dlg.Ergebnis IsNot Nothing Then
+                _angezeigt = Nothing
+                DatenLaden(dlg.Ergebnis.Id)
+            End If
+        End Using
+    End Sub
+
+    ''' <summary>Datei in einem installierten Slicer öffnen; bei mehreren Slicern Auswahlmenü.</summary>
+    Private Sub ImSlicerOeffnen(knopf As Control)
+        Dim d = Ausgewaehlt()
+        If d Is Nothing Then Return
+        If _slicer Is Nothing Then _slicer = SlicerSuche.Installierte()
+        If _slicer.Count = 0 Then
+            MessageBox.Show(Me, "Es wurde kein Slicer gefunden (Bambu Studio, OrcaSlicer, PrusaSlicer oder Cura).", "Im Slicer öffnen",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+        Dim starten = Sub(s As SlicerInstallation)
+                          Try
+                              SlicerSuche.Oeffnen(s, _db.DateiPfad(d))
+                          Catch ex As Exception
+                              Fehler($"{s.Name} konnte nicht gestartet werden.", ex)
+                          End Try
+                      End Sub
+        If _slicer.Count = 1 Then
+            starten(_slicer(0))
+            Return
+        End If
+        Dim menue As New ContextMenuStrip With {.Font = Theme.Schrift, .ShowImageMargin = False}
+        For Each s In _slicer
+            Dim slicer = s
+            menue.Items.Add(slicer.Name, Nothing, Sub(x, y) starten(slicer))
+        Next
+        AddHandler menue.Closed, Sub(x, y) BeginInvoke(Sub() menue.Dispose())
+        If knopf IsNot Nothing Then menue.Show(knopf, New Point(0, knopf.Height)) Else menue.Show(Cursor.Position)
     End Sub
 
     Private Sub Oeffnen()
