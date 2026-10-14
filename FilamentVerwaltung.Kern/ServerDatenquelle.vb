@@ -347,16 +347,43 @@ Public Class ServerDatenquelle
 
     ''' <summary>Lokale Kopie der Datei; wird beim ersten Zugriff heruntergeladen (Dateien ändern sich nicht).</summary>
     Public Function DateiPfad(d As Datei) As String Implements IDatenquelle.DateiPfad
+        Return Herunterladen(d, Nothing, Threading.CancellationToken.None)
+    End Function
+
+    Public Function DateiVorhanden(d As Datei) As Boolean Implements IDatenquelle.DateiVorhanden
         Dim ziel = KopiePfad(d)
-        If File.Exists(ziel) AndAlso New FileInfo(ziel).Length = d.Groesse Then Return ziel
+        Return File.Exists(ziel) AndAlso New FileInfo(ziel).Length = d.Groesse
+    End Function
+
+    Public Function DateiLadenAsync(d As Datei, fortschritt As IProgress(Of Double), abbruch As Threading.CancellationToken) As Task(Of String) Implements IDatenquelle.DateiLadenAsync
+        If DateiVorhanden(d) Then Return Task.FromResult(KopiePfad(d))
+        Return Task.Run(Function() Herunterladen(d, fortschritt, abbruch), abbruch)
+    End Function
+
+    Private Function Herunterladen(d As Datei, fortschritt As IProgress(Of Double), abbruch As Threading.CancellationToken) As String
+        Dim ziel = KopiePfad(d)
+        If DateiVorhanden(d) Then Return ziel
         Directory.CreateDirectory(_zwischenspeicher)
-        Dim temp = ziel & ".laden"
-        Using antwort = Senden(HttpMethod.Get, $"dateien/{d.Id}/inhalt"),
-              quelle = antwort.Content.ReadAsStream(),
-              datei As New FileStream(temp, FileMode.Create, FileAccess.Write)
-            quelle.CopyTo(datei)
-        End Using
-        File.Move(temp, ziel, overwrite:=True)
+        Dim temp = ziel & "." & Guid.NewGuid().ToString("N").Substring(0, 6) & ".laden"
+        Try
+            Using antwort = Senden(HttpMethod.Get, $"dateien/{d.Id}/inhalt"),
+                  quelle = antwort.Content.ReadAsStream(),
+                  datei As New FileStream(temp, FileMode.Create, FileAccess.Write)
+                Dim puffer(81919) As Byte
+                Dim gesamt As Long = 0
+                Do
+                    abbruch.ThrowIfCancellationRequested()
+                    Dim n = quelle.Read(puffer, 0, puffer.Length)
+                    If n = 0 Then Exit Do
+                    datei.Write(puffer, 0, n)
+                    gesamt += n
+                    If d.Groesse > 0 Then fortschritt?.Report(Math.Min(1.0, gesamt / CDbl(d.Groesse)))
+                Loop
+            End Using
+            File.Move(temp, ziel, overwrite:=True)
+        Finally
+            If File.Exists(temp) Then File.Delete(temp)
+        End Try
         Return ziel
     End Function
 
@@ -437,6 +464,21 @@ Public Class ServerDatenquelle
     Public Sub DruckEndeErledigt(id As Long)
         Schicken(HttpMethod.Delete, $"druckenden/{id}")
     End Sub
+
+    ''' <summary>Beansprucht das Druckende zum Buchen; False, wenn es schon weg ist (anderer PC war schneller).</summary>
+    Public Function DruckEndeUebernehmen(id As Long) As Boolean
+        Return Schicken(Of WertAnfrage)(HttpMethod.Post, $"druckenden/{id}/uebernehmen", New Object()).Wert = "1"
+    End Function
+
+    ''' <summary>Legt ein Druckende wieder offen (Buchen abgebrochen); liefert die neue Nummer.</summary>
+    Public Function DruckEndeZuruecklegen(ende As DruckEnde) As Long
+        Return Schicken(Of DruckEnde)(HttpMethod.Post, "druckenden", ende).Id
+    End Function
+
+    ''' <summary>Verbindungstest vom Server aus (der Server spricht mit dem Drucker).</summary>
+    Public Function DruckerTesten(d As Drucker) As DruckerStatus
+        Return Schicken(Of DruckerStatus)(HttpMethod.Post, "drucker/testen", d)
+    End Function
 
     ''' <summary>Neuestes Kamerabild; ohne Bild (noch keins da oder Fehler) steht im Status, warum.</summary>
     Public Function KameraBild(druckerId As Long) As (Bild As Byte(), Status As String)

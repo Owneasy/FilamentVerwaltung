@@ -1,4 +1,4 @@
-Imports System.Drawing
+﻿Imports System.Drawing
 Imports System.Windows.Forms
 
 ''' <summary>Lokale Datenbank oder Server wählen, mit Verbindungstest.</summary>
@@ -171,60 +171,62 @@ Public Class VerbindungDialog
         Return v
     End Function
 
-    ''' <summary>Prüft die Eingaben; beim Server wird eine echte Verbindung aufgebaut.</summary>
-    Private Function Pruefen(v As Verbindung, ByRef meldung As String) As Boolean
+    ''' <summary>
+    ''' Prüft die Eingaben; beim Server wird eine echte Verbindung aufgebaut. Läuft im Hintergrund
+    ''' (kein Zugriff auf die Oberfläche), damit das Fenster nicht einfriert.
+    ''' </summary>
+    Private Shared Function Pruefen(v As Verbindung) As (Ok As Boolean, Meldung As String)
         If Not v.IstServer Then
             If v.DatenbankPfad.Length > 0 AndAlso Not IO.Path.IsPathFullyQualified(v.DatenbankPfad) Then
-                meldung = "Bitte einen vollständigen Pfad zur Datenbankdatei angeben."
-                Return False
+                Return (False, "Bitte einen vollständigen Pfad zur Datenbankdatei angeben.")
             End If
-            meldung = "Lokale Datenbank: " & If(v.DatenbankPfad.Length > 0, v.DatenbankPfad, Verbindung.StandardDatenbank)
-            Return True
+            Return (True, "Lokale Datenbank: " & If(v.DatenbankPfad.Length > 0, v.DatenbankPfad, Verbindung.StandardDatenbank))
         End If
-        If v.Intern.Length = 0 AndAlso v.Extern.Length = 0 Then
-            meldung = "Bitte mindestens eine Server-Adresse eintragen."
-            Return False
-        End If
-        If v.Token.Length = 0 Then
-            meldung = "Bitte das Zugangs-Token eintragen."
-            Return False
-        End If
+        If v.Intern.Length = 0 AndAlso v.Extern.Length = 0 Then Return (False, "Bitte mindestens eine Server-Adresse eintragen.")
+        If v.Token.Length = 0 Then Return (False, "Bitte das Zugangs-Token eintragen.")
         Using server As New ServerDatenquelle(v.Zugang(), Verbindung.Zwischenspeicher)
             Try
                 Dim version = server.Verbinden()
-                meldung = $"Verbunden mit {server.Basis} (Server-Version {version})"
-                Return True
+                Return (True, $"Verbunden mit {server.Basis} (Server-Version {version})")
             Catch ex As Exception
-                meldung = ex.Message
-                Return False
+                Return (False, ex.Message)
             End Try
         End Using
     End Function
 
-    Private Sub Testen()
+    Private _pruefeGerade As Boolean
+
+    ''' <summary>Prüfen im Hintergrund; währenddessen sind Testen/Speichern gesperrt.</summary>
+    Private Async Function PruefenAsync(v As Verbindung) As Task(Of (Ok As Boolean, Meldung As String))
+        _pruefeGerade = True
         btnTesten.Enabled = False
-        Cursor = Cursors.WaitCursor
+        UseWaitCursor = True
         lblTest.ForeColor = Theme.TextLeise
-        lblTest.Text = "Verbinde …"
-        lblTest.Refresh()
-        Dim meldung = ""
-        Dim ok = Pruefen(AusFeldern(), meldung)
-        lblTest.ForeColor = If(ok, Theme.Gruen, Theme.Rot)
-        lblTest.Text = If(ok, "✓ ", "✗ ") & meldung
-        Cursor = Cursors.Default
-        btnTesten.Enabled = True
+        lblTest.Text = If(v.IstServer, "Verbinde mit dem Server …", "Prüfe …")
+        Try
+            Dim ergebnis = Await Task.Run(Function() Pruefen(v))
+            lblTest.ForeColor = If(ergebnis.Ok, Theme.Gruen, Theme.Rot)
+            lblTest.Text = If(ergebnis.Ok, "✓ ", "✗ ") & ergebnis.Meldung
+            Return ergebnis
+        Finally
+            UseWaitCursor = False
+            btnTesten.Enabled = True
+            _pruefeGerade = False
+        End Try
+    End Function
+
+    Private Async Sub Testen()
+        If _pruefeGerade Then Return
+        Await PruefenAsync(AusFeldern())
     End Sub
 
-    Private Sub Ok()
+    Private Async Sub Ok()
+        If _pruefeGerade Then Return
         Dim v = AusFeldern()
-        Cursor = Cursors.WaitCursor
-        Dim meldung = ""
-        Dim ok = Pruefen(v, meldung)
-        Cursor = Cursors.Default
-        If Not ok Then
-            lblTest.ForeColor = Theme.Rot
-            lblTest.Text = "✗ " & meldung
-            If MessageBox.Show(Me, meldung & Environment.NewLine & Environment.NewLine & "Trotzdem speichern?", "Verbindung",
+        Dim ergebnis = Await PruefenAsync(v)
+        If IsDisposed Then Return
+        If Not ergebnis.Ok Then
+            If MessageBox.Show(Me, ergebnis.Meldung & Environment.NewLine & Environment.NewLine & "Trotzdem speichern?", "Verbindung",
                                MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) <> DialogResult.Yes Then Return
         End If
         Try
@@ -237,5 +239,4 @@ Public Class VerbindungDialog
         _Ergebnis = v
         DialogResult = DialogResult.OK
     End Sub
-
 End Class

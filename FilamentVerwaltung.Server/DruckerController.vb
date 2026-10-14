@@ -66,6 +66,30 @@ Public Class DruckerController
         Return If(_db.DruckEndeErledigt(id), CType(Ok(), IActionResult), NotFound())
     End Function
 
+    ''' <summary>
+    ''' Ein PC will buchen: entfernt das Druckende, falls es noch offen ist ("1"), sonst "0" – so kann nur ein PC buchen.
+    ''' SQLite führt das DELETE atomar aus.
+    ''' </summary>
+    <HttpPost("druckenden/{id:long}/uebernehmen")>
+    Public Function DruckEndeUebernehmen(id As Long) As WertAnfrage
+        Return New WertAnfrage With {.Wert = If(_db.DruckEndeErledigt(id), "1", "0")}
+    End Function
+
+    ''' <summary>Buchen abgebrochen: Druckende wieder offen legen (bekommt eine neue Nummer).</summary>
+    <HttpPost("druckenden")>
+    Public Function DruckEndeZuruecklegen(<FromBody> ende As DruckEnde) As DruckEnde
+        _db.DruckEndeSpeichern(ende)
+        Return ende
+    End Function
+
+    ' ---------- Verbindungstest
+
+    ''' <summary>Fragt einen (noch nicht gespeicherten) Drucker einmal vom Server aus ab.</summary>
+    <HttpPost("drucker/testen")>
+    Public Async Function Testen(<FromBody> d As Drucker) As Task(Of DruckerStatus)
+        Return Await DruckerTest.AbfragenAsync(d, HttpContext.RequestAborted)
+    End Function
+
     ' ---------- Kamera
 
     ''' <summary>Neuestes JPEG; 204 mit Kopfzeile X-Kamera-Status, solange (noch) kein Bild da ist.</summary>

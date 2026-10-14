@@ -7,6 +7,7 @@ Public Class DruckerDialog
     Inherits Form
 
     Private ReadOnly _d As Drucker
+    Private ReadOnly _dienst As IDruckerDienst
 
     Private ReadOnly txtName As New TextBox With {.Width = 320, .PlaceholderText = "z. B. X1 Carbon Werkstatt"}
     Private ReadOnly cboTyp As New ComboBox With {.Width = 320, .DropDownStyle = ComboBoxStyle.DropDownList}
@@ -27,8 +28,9 @@ Public Class DruckerDialog
     ''' <summary>True, wenn der Drucker gelöscht werden soll.</summary>
     Public ReadOnly Property Loeschen As Boolean
 
-    Public Sub New(d As Drucker, titel As String)
+    Public Sub New(d As Drucker, titel As String, dienst As IDruckerDienst)
         _d = d
+        _dienst = dienst
         OberflaecheAufbauen(titel)
         For Each t In Drucker.Typen
             cboTyp.Items.Add(t.Name)
@@ -96,7 +98,7 @@ Public Class DruckerDialog
         t.RowCount += 1
 
         t.Controls.Add(New Label With {
-            .Text = "Hinweis: Die Zugangsdaten werden in der Datenbank gespeichert (die auch über Nextcloud synchronisiert wird).",
+            .Text = "Hinweis: Die Zugangsdaten werden in der Datenbank gespeichert (im Server-Betrieb auf dem Server).",
             .AutoSize = True, .MaximumSize = New Size(440, 0), .ForeColor = Theme.TextLeise, .Font = Theme.SchriftKlein,
             .Margin = New Padding(3, 14, 3, 0)}, 1, t.RowCount)
         t.RowCount += 1
@@ -195,11 +197,10 @@ Public Class DruckerDialog
         End If
         btnTesten.Enabled = False
         lblTest.ForeColor = Theme.TextLeise
-        lblTest.Text = "Verbinde …"
-        Dim protokoll As New DruckerProtokoll()
-        Using verbindung = DruckerVerbindung.Erstellen(d, protokoll), zeitlimit As New CancellationTokenSource(TimeSpan.FromSeconds(20))
+        lblTest.Text = If(TypeOf _dienst Is ServerDruckerDienst, "Der Server verbindet sich mit dem Drucker …", "Verbinde …")
+        Using abbruch As New CancellationTokenSource(TimeSpan.FromSeconds(30))
             Try
-                Dim s = Await verbindung.AbfragenAsync(zeitlimit.Token)
+                Dim s = Await _dienst.TestenAsync(d, abbruch.Token)
                 lblTest.ForeColor = Theme.Gruen
                 lblTest.Text = $"✓ Verbunden: {DruckerStatus.ZustandText(s.Zustand)}" &
                                If(s.Datei.Length > 0, $" · {s.Datei}", "") &

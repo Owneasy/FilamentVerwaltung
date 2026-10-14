@@ -352,23 +352,47 @@ Public Class DateienSeite
         VorschauLaden(d)
     End Sub
 
+    Private _vorschauAbbruch As Threading.CancellationTokenSource
+
     Private Async Sub VorschauLaden(d As Datei)
         _ladeNummer += 1
         Dim nummer = _ladeNummer
+        _vorschauAbbruch?.Cancel()   ' Download für die vorige Auswahl abbrechen
         vorschau.Netz = Nothing
         If d Is Nothing Then
             vorschau.Hinweis = If(_alle.Count = 0, "Hier erscheint die 3D-Vorschau von STL-, 3MF- und OBJ-Dateien.",
                                   "Datei auswählen, um die Vorschau zu sehen.")
             Return
         End If
-        Dim pfad = _db.DateiPfad(d)
-        If Not File.Exists(pfad) Then
-            vorschau.Hinweis = "Die Datei wurde im Dateien-Ordner nicht gefunden."
-            Return
-        End If
-        If Not Netz.KannLaden(pfad) Then
+        ' Dateien ohne Vorschau (G-Code, STEP …) gar nicht erst vom Server laden
+        If Not Netz.KannLaden(d.Name) Then
             vorschau.Hinweis = If(Datei.GcodeTypen.Contains(d.Typ), "G-Code hat keine 3D-Vorschau – die Druckdaten stehen unten.",
                                   $"Für {d.Typ}-Dateien gibt es keine Vorschau. Mit ""Öffnen"" im passenden Programm ansehen.")
+            Return
+        End If
+        Dim pfad As String
+        If _db.DateiVorhanden(d) Then
+            pfad = _db.DateiPfad(d)
+        Else
+            ' Vom Server im Hintergrund laden; eine neue Auswahl bricht das Laden ab
+            _vorschauAbbruch = New Threading.CancellationTokenSource()
+            Dim abbruch = _vorschauAbbruch.Token
+            vorschau.Hinweis = "Lade Datei vom Server …"
+            Dim fortschritt As New Progress(Of Double)(Sub(w)
+                                                           If nummer = _ladeNummer Then vorschau.Hinweis = $"Lade Datei vom Server … {w:P0}"
+                                                       End Sub)
+            Try
+                pfad = Await _db.DateiLadenAsync(d, fortschritt, abbruch)
+            Catch ex As OperationCanceledException
+                Return
+            Catch ex As Exception
+                If nummer = _ladeNummer Then vorschau.Hinweis = "Die Datei konnte nicht vom Server geladen werden: " & ex.Message
+                Return
+            End Try
+            If nummer <> _ladeNummer Then Return
+        End If
+        If Not File.Exists(pfad) Then
+            vorschau.Hinweis = "Die Datei wurde im Dateien-Ordner nicht gefunden."
             Return
         End If
         vorschau.Hinweis = "Lade Vorschau …"
@@ -512,7 +536,9 @@ Public Class DateienSeite
             Fehler("Die Spulen konnten nicht geladen werden.", ex)
             Return
         End Try
-        Using dlg As New SlicerDialog(_db, bambu, d, _db.DateiPfad(d), spulen)
+        Dim pfad = LadeDialog.DateiHolen(Me, _db, d)
+        If pfad Is Nothing Then Return
+        Using dlg As New SlicerDialog(_db, bambu, d, pfad, spulen)
             If dlg.ShowDialog(Me) = DialogResult.OK AndAlso dlg.Ergebnis IsNot Nothing Then
                 _angezeigt = Nothing
                 DatenLaden(dlg.Ergebnis.Id)
@@ -523,7 +549,9 @@ Public Class DateienSeite
     Private Sub Senden()
         Dim d = Ausgewaehlt()
         If d Is Nothing Then Return
-        Using dlg As New SendenDialog(_db, _ueberwachung, d, _db.DateiPfad(d))
+        Dim pfad = LadeDialog.DateiHolen(Me, _db, d)
+        If pfad Is Nothing Then Return
+        Using dlg As New SendenDialog(_db, _ueberwachung, d, pfad)
             If dlg.ShowDialog(Me) = DialogResult.OK Then
                 MessageBox.Show(Me, "Der Auftrag wurde an den Drucker gesendet. Den Fortschritt siehst du auf der Seite ""Drucker""; " &
                                 "nach dem Druck wird der Verbrauch mit dieser Datei zum Buchen vorgeschlagen.", "An Drucker senden",
@@ -543,8 +571,10 @@ Public Class DateienSeite
             Return
         End If
         Dim starten = Sub(s As SlicerInstallation)
+                          Dim pfad = LadeDialog.DateiHolen(Me, _db, d)
+                          If pfad Is Nothing Then Return
                           Try
-                              SlicerSuche.Oeffnen(s, _db.DateiPfad(d))
+                              SlicerSuche.Oeffnen(s, pfad)
                           Catch ex As Exception
                               Fehler($"{s.Name} konnte nicht gestartet werden.", ex)
                           End Try
@@ -565,8 +595,10 @@ Public Class DateienSeite
     Private Sub Oeffnen()
         Dim d = Ausgewaehlt()
         If d Is Nothing Then Return
+        Dim pfad = LadeDialog.DateiHolen(Me, _db, d)
+        If pfad Is Nothing Then Return
         Try
-            Process.Start(New ProcessStartInfo(_db.DateiPfad(d)) With {.UseShellExecute = True})
+            Process.Start(New ProcessStartInfo(pfad) With {.UseShellExecute = True})
         Catch ex As Exception
             Fehler("Die Datei konnte nicht geöffnet werden (evtl. ist kein Programm für diesen Dateityp eingerichtet).", ex)
         End Try
@@ -578,7 +610,9 @@ Public Class DateienSeite
             If d Is Nothing Then
                 Process.Start("explorer.exe", """" & _db.DateienOrdner & """")
             Else
-                Process.Start("explorer.exe", "/select,""" & _db.DateiPfad(d) & """")
+                Dim pfad = LadeDialog.DateiHolen(Me, _db, d)
+                If pfad Is Nothing Then Return
+                Process.Start("explorer.exe", "/select,""" & pfad & """")
             End If
         Catch ex As Exception
             Fehler("Der Ordner konnte nicht geöffnet werden.", ex)

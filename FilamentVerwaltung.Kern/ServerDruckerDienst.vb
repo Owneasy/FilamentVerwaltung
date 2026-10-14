@@ -153,6 +153,28 @@ Public Class ServerDruckerDienst
                  End Sub)
     End Sub
 
+    ''' <summary>
+    ''' Beansprucht das Druckende auf dem Server (wird dort entfernt). Es wird hier nicht mehr als "anderswo erledigt"
+    ''' gemeldet, damit der Hinweis während des Buchens stehen bleibt.
+    ''' </summary>
+    Public Function DruckEndeUebernehmen(ende As DruckEnde) As Boolean Implements IDruckerDienst.DruckEndeUebernehmen
+        If ende.Id <= 0 Then Return True
+        If Not _server.DruckEndeUebernehmen(ende.Id) Then Return False
+        _gemeldet.Remove(ende.Id)
+        Return True
+    End Function
+
+    ''' <summary>Buchen abgebrochen: wieder auf den Server legen (neue Nummer, hier schon als gemeldet vermerkt).</summary>
+    Public Sub DruckEndeZuruecklegen(ende As DruckEnde) Implements IDruckerDienst.DruckEndeZuruecklegen
+        If ende.Id <= 0 Then Return
+        ende.Id = _server.DruckEndeZuruecklegen(ende)
+        _gemeldet.Add(ende.Id)
+    End Sub
+
+    Public Function TestenAsync(d As Drucker, abbruch As CancellationToken) As Task(Of DruckerStatus) Implements IDruckerDienst.TestenAsync
+        Return Task.Run(Function() _server.DruckerTesten(d), abbruch)
+    End Function
+
     Public Function KameraErstellen(d As Drucker) As IKamera Implements IDruckerDienst.KameraErstellen
         Return New ServerKamera(_server, d.Id)
     End Function

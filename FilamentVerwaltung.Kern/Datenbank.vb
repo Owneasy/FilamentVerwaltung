@@ -642,6 +642,15 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         Return Path.Combine(DateienOrdner, d.Pfad)
     End Function
 
+    ''' <summary>Lokal liegt die Datei immer direkt im Dateien-Ordner.</summary>
+    Public Function DateiVorhanden(d As Datei) As Boolean Implements IDatenquelle.DateiVorhanden
+        Return True
+    End Function
+
+    Public Function DateiLadenAsync(d As Datei, fortschritt As IProgress(Of Double), abbruch As Threading.CancellationToken) As Task(Of String) Implements IDatenquelle.DateiLadenAsync
+        Return Task.FromResult(DateiPfad(d))
+    End Function
+
     Public Function DateienLaden() As List(Of Datei) Implements IDatenquelle.DateienLaden
         Dim liste As New List(Of Datei)
         Using c = Oeffnen(), cmd = c.CreateCommand()

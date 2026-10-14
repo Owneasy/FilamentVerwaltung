@@ -459,20 +459,53 @@ Public Class MainForm
     Private Sub DruckBuchen()
         If _druckEnden.Count = 0 Then Return
         Dim ende = _druckEnden(0)
-        Dim filamente As List(Of Filament), dateien As List(Of Datei), zuordnung As Dictionary(Of Integer, Long)
+
+        ' Beim Server darf nur ein PC buchen: vorher beanspruchen
+        Dim uebernommen As Boolean
         Try
-            filamente = _db.AlleLaden()
-            dateien = _db.DateienLaden()
-            zuordnung = _db.SpulenZuordnung(ende.DruckerId)
+            uebernommen = _ueberwachung.DruckEndeUebernehmen(ende)
         Catch ex As Exception
             MessageBox.Show(Me, ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)
             Return
         End Try
-        Dim vorschlag = BuchungVorschlagen(ende, filamente, dateien, zuordnung)
-        If DruckeSeite.DruckDialogZeigen(Me, _db, vorschlag, filamente, dateien, $"Druck buchen – {ende.DruckerName}") Then
-            DruckEndeAbschliessen(ende)
-            If _aktuelleSeite IsNot Nothing Then SeiteZeigen(_aktuelleSeite)
+        If Not uebernommen Then
+            MessageBox.Show(Me, "Dieser Druck wurde schon an einem anderen PC gebucht oder verworfen.", "Druck buchen",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information)
+            _druckEnden.Remove(ende)
+            DruckBannerAktualisieren()
+            Return
         End If
+
+        Dim gebucht = False
+        Try
+            Dim filamente As List(Of Filament), dateien As List(Of Datei), zuordnung As Dictionary(Of Integer, Long)
+            Try
+                filamente = _db.AlleLaden()
+                dateien = _db.DateienLaden()
+                zuordnung = _db.SpulenZuordnung(ende.DruckerId)
+            Catch ex As Exception
+                MessageBox.Show(Me, ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End Try
+            Dim vorschlag = BuchungVorschlagen(ende, filamente, dateien, zuordnung)
+            gebucht = DruckeSeite.DruckDialogZeigen(Me, _db, vorschlag, filamente, dateien, $"Druck buchen – {ende.DruckerName}")
+        Finally
+            If Not gebucht Then
+                ' Abgebrochen: für alle PCs wieder offen legen
+                Try
+                    _ueberwachung.DruckEndeZuruecklegen(ende)
+                Catch ex As Exception
+                    MessageBox.Show(Me, "Der Druck konnte auf dem Server nicht wieder freigegeben werden: " & ex.Message, "Druck buchen",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                End Try
+            End If
+        End Try
+        If Not gebucht Then Return
+
+        ' Schon beim Übernehmen erledigt – nur noch aus dem Hinweis nehmen
+        _druckEnden.Remove(ende)
+        DruckBannerAktualisieren()
+        If _aktuelleSeite IsNot Nothing Then SeiteZeigen(_aktuelleSeite)
     End Sub
 
     <Runtime.InteropServices.StructLayout(Runtime.InteropServices.LayoutKind.Sequential)>

@@ -465,7 +465,7 @@ Public Class DruckerSeite
     End Sub
 
     Private Sub Bearbeiten(d As Drucker, titel As String)
-        Using dlg As New DruckerDialog(d, titel)
+        Using dlg As New DruckerDialog(d, titel, _ueberwachung)
             If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
             Try
                 If dlg.Loeschen Then _db.DruckerLoeschen(d.Id) Else _db.DruckerSpeichern(d)

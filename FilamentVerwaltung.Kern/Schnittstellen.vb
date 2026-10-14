@@ -43,6 +43,10 @@ Public Interface IDatenquelle
     Function DateiPfad(d As Datei) As String
     ''' <summary>Lokaler Ordner mit den Dateien (beim Server: Zwischenspeicher der heruntergeladenen Kopien).</summary>
     ReadOnly Property DateienOrdner As String
+    ''' <summary>True, wenn <see cref="DateiPfad"/> sofort antwortet (lokal immer; beim Server, wenn die Kopie schon da ist).</summary>
+    Function DateiVorhanden(d As Datei) As Boolean
+    ''' <summary>Wie <see cref="DateiPfad"/>, aber im Hintergrund mit Fortschritt (0..1) und abbrechbar.</summary>
+    Function DateiLadenAsync(d As Datei, fortschritt As IProgress(Of Double), abbruch As CancellationToken) As Task(Of String)
 
     ' Sicherungen
     Function SicherungenLaden() As List(Of SicherungInfo)
@@ -78,8 +82,16 @@ Public Interface IDruckerDienst
     ''' <summary>Lädt die Datei auf den Drucker und startet den Druck (beim Server: die Datei mit dateiId aus "Dateien").</summary>
     Function SendenAsync(druckerId As Long, dateiPfad As String, dateiId As Long, optionen As SendeOptionen,
                          fortschritt As IProgress(Of Double), abbruch As CancellationToken) As Task
-    ''' <summary>Das Druckende wurde gebucht oder verworfen.</summary>
+    ''' <summary>Das Druckende wurde verworfen (bzw. erledigt).</summary>
     Sub DruckEndeErledigt(ende As DruckEnde)
+    ''' <summary>
+    ''' Vor dem Buchen: das Druckende für diesen PC beanspruchen. False = schon an einem anderen PC gebucht oder verworfen.
+    ''' </summary>
+    Function DruckEndeUebernehmen(ende As DruckEnde) As Boolean
+    ''' <summary>Buchen abgebrochen: das übernommene Druckende wieder für alle PCs offen legen.</summary>
+    Sub DruckEndeZuruecklegen(ende As DruckEnde)
+    ''' <summary>Verbindungstest für den Drucker-Dialog (beim Server: vom Server aus, denn er spricht mit dem Drucker).</summary>
+    Function TestenAsync(d As Drucker, abbruch As CancellationToken) As Task(Of DruckerStatus)
     ''' <summary>Kamerabild des Druckers (Bambu Lab).</summary>
     Function KameraErstellen(d As Drucker) As IKamera
 

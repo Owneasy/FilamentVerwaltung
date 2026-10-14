@@ -169,6 +169,19 @@ Public Class DruckerUeberwachung
     Public Sub DruckEndeErledigt(ende As DruckEnde) Implements IDruckerDienst.DruckEndeErledigt
     End Sub
 
+    ''' <summary>Lokal bucht nur dieser PC – das Druckende gehört ihm immer.</summary>
+    Public Function DruckEndeUebernehmen(ende As DruckEnde) As Boolean Implements IDruckerDienst.DruckEndeUebernehmen
+        Return True
+    End Function
+
+    Public Sub DruckEndeZuruecklegen(ende As DruckEnde) Implements IDruckerDienst.DruckEndeZuruecklegen
+    End Sub
+
+    ''' <summary>Fragt den Drucker einmal mit eigener Verbindung ab (für "Verbindung testen"); höchstens 20 Sekunden.</summary>
+    Public Async Function TestenAsync(d As Drucker, abbruch As CancellationToken) As Task(Of DruckerStatus) Implements IDruckerDienst.TestenAsync
+        Return Await DruckerTest.AbfragenAsync(d, abbruch)
+    End Function
+
     Public Function KameraErstellen(d As Drucker) As IKamera Implements IDruckerDienst.KameraErstellen
         Return New BambuKamera(d, Protokoll(d.Id))
     End Function
@@ -287,6 +300,23 @@ Public Class DruckerUeberwachung
     End Sub
 
 End Class
+
+''' <summary>Einmaliger Verbindungstest mit einem Drucker (App lokal und Server nutzen ihn).</summary>
+Public Module DruckerTest
+
+    Public Async Function AbfragenAsync(d As Drucker, abbruch As CancellationToken) As Task(Of DruckerStatus)
+        Using verbindung = DruckerVerbindung.Erstellen(d, New DruckerProtokoll()),
+              zeitlimit = CancellationTokenSource.CreateLinkedTokenSource(abbruch)
+            zeitlimit.CancelAfter(TimeSpan.FromSeconds(20))
+            Try
+                Return Await verbindung.AbfragenAsync(zeitlimit.Token)
+            Catch ex As OperationCanceledException When Not abbruch.IsCancellationRequested
+                Throw New TimeoutException("Keine Antwort (Zeitüberschreitung). Adresse und Netzwerk prüfen.")
+            End Try
+        End Using
+    End Function
+
+End Module
 
 ''' <summary>Macht aus einem beendeten Druck einen Buchungsvorschlag für den Druck-Dialog.</summary>
 Public Module DruckErkennung
