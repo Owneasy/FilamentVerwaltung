@@ -24,4 +24,8 @@
     <PackageReference Include="QRCoder" Version="1.8.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\FilamentVerwaltung.Kern\FilamentVerwaltung.Kern.vbproj" />
+  </ItemGroup>
+
 </Project>

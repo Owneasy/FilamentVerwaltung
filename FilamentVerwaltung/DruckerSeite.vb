@@ -77,7 +77,7 @@ End Class
 Public Class DruckerKarte
     Inherits Karte
 
-    Private ReadOnly _db As Datenbank
+    Private ReadOnly _db As IDatenquelle
     Public ReadOnly Property Drucker As Drucker
 
     Private ReadOnly lblName As New Label With {.AutoSize = True, .Font = Theme.SchriftLogo, .ForeColor = Theme.TextStark, .Margin = New Padding(0)}
@@ -110,7 +110,7 @@ Public Class DruckerKarte
     Public Event BearbeitenGeklickt(d As Drucker)
     Public Event ProtokollGeklickt(d As Drucker)
 
-    Public Sub New(d As Drucker, db As Datenbank, Optional protokoll As DruckerProtokoll = Nothing)
+    Public Sub New(d As Drucker, db As IDatenquelle, Optional protokoll As DruckerProtokoll = Nothing)
         _Drucker = d
         _db = db
         _protokoll = protokoll
@@ -397,15 +397,15 @@ Public Class DruckerSeite
     Inherits UserControl
     Implements ISeite
 
-    Private ReadOnly _db As Datenbank
-    Private ReadOnly _ueberwachung As DruckerUeberwachung
+    Private ReadOnly _db As IDatenquelle
+    Private ReadOnly _ueberwachung As IDruckerDienst
     Private ReadOnly karten As New FlowLayoutPanel With {.Dock = DockStyle.Fill, .AutoScroll = True, .Margin = New Padding(0), .Padding = New Padding(0, 0, 0, 8)}
     Private ReadOnly lblLeer As New Label With {.AutoSize = True, .ForeColor = Theme.TextLeise, .MaximumSize = New Size(640, 0), .Margin = New Padding(0, 8, 0, 0),
         .Text = "Noch kein Drucker angebunden. Mit ""Drucker hinzufügen"" verbindest du Bambu Lab, Prusa (PrusaLink), Klipper (Moonraker) " &
                 "oder OctoPrint. Ist ein Druck fertig, schlägt die App vor, den Verbrauch zu buchen."}
     Private _filamente As New List(Of Filament)
 
-    Public Sub New(db As Datenbank, ueberwachung As DruckerUeberwachung)
+    Public Sub New(db As IDatenquelle, ueberwachung As IDruckerDienst)
         _db = db
         _ueberwachung = ueberwachung
         SuspendLayout()

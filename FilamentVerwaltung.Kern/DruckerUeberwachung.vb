@@ -1,12 +1,12 @@
 ﻿Imports System.Threading
-Imports System.Windows.Forms
 
 ''' <summary>
 ''' Fragt alle aktiven Drucker regelmäßig ab und meldet, wenn ein Druck endet.
-''' Läuft im UI-Thread (Timer); die Abfragen selbst sind asynchron.
+''' Läuft im Thread, der <see cref="Starten"/> aufruft (in der App: UI-Thread) – die Abfragen selbst sind asynchron
+''' und kehren über den SynchronizationContext dorthin zurück.
 ''' </summary>
 Public Class DruckerUeberwachung
-    Implements IDisposable
+    Implements IDruckerDienst
 
     Private Const IntervallMs As Integer = 10000
 
@@ -29,28 +29,37 @@ Public Class DruckerUeberwachung
         Public JobDateiId As Long?
     End Class
 
-    Private ReadOnly _db As Datenbank
+    Private ReadOnly _db As IDatenquelle
     Private ReadOnly _eintraege As New Dictionary(Of Long, Eintrag)
-    Private ReadOnly _timer As New System.Windows.Forms.Timer With {.Interval = IntervallMs}
     Private ReadOnly _abbruch As New CancellationTokenSource()
 
-    ''' <summary>Der Zustand eines Druckers hat sich geändert (im UI-Thread).</summary>
-    Public Event StatusGeaendert(druckerId As Long)
-    ''' <summary>Ein Druck ist fertig oder wurde abgebrochen (im UI-Thread).</summary>
-    Public Event DruckBeendet(ende As DruckEnde)
+    Public Event StatusGeaendert(druckerId As Long) Implements IDruckerDienst.StatusGeaendert
+    Public Event DruckBeendet(ende As DruckEnde) Implements IDruckerDienst.DruckBeendet
 
-    Public Sub New(db As Datenbank)
+    Public Sub New(db As IDatenquelle)
         _db = db
-        AddHandler _timer.Tick, Sub(s, e) AlleAbfragen()
     End Sub
 
-    Public Sub Starten()
+    Public Sub Starten() Implements IDruckerDienst.Starten
         Neuladen()
-        _timer.Start()
+        Takt()
+    End Sub
+
+    ''' <summary>Fragt alle <see cref="IntervallMs"/> ab; Await kehrt in den Thread des Aufrufers zurück (wie ein Timer).</summary>
+    Private Async Sub Takt()
+        Using t As New PeriodicTimer(TimeSpan.FromMilliseconds(IntervallMs))
+            Try
+                While Await t.WaitForNextTickAsync(_abbruch.Token)
+                    AlleAbfragen()
+                End While
+            Catch ex As OperationCanceledException
+                ' Programm wird beendet
+            End Try
+        End Using
     End Sub
 
     ''' <summary>Drucker aus der Datenbank übernehmen (nach Hinzufügen / Bearbeiten / Löschen).</summary>
-    Public Sub Neuladen()
+    Public Sub Neuladen() Implements IDruckerDienst.Neuladen
         Dim liste As List(Of Drucker)
         Try
             liste = _db.DruckerLaden()
@@ -84,18 +93,18 @@ Public Class DruckerUeberwachung
         AlleAbfragen()
     End Sub
 
-    Public Function Status(druckerId As Long) As DruckerStatus
+    Public Function Status(druckerId As Long) As DruckerStatus Implements IDruckerDienst.Status
         Dim e As Eintrag = Nothing
         Return If(_eintraege.TryGetValue(druckerId, e), e.Status, Nothing)
     End Function
 
-    Public Function Protokoll(druckerId As Long) As DruckerProtokoll
+    Public Function Protokoll(druckerId As Long) As DruckerProtokoll Implements IDruckerDienst.Protokoll
         Dim e As Eintrag = Nothing
         Return If(_eintraege.TryGetValue(druckerId, e), e.Protokoll, Nothing)
     End Function
 
     ''' <summary>Dateiendungen, die der Drucker zum Drucken annimmt (leer, wenn nicht überwacht).</summary>
-    Public Function DruckbareEndungen(druckerId As Long) As String()
+    Public Function DruckbareEndungen(druckerId As Long) As String() Implements IDruckerDienst.DruckbareEndungen
         Dim e As Eintrag = Nothing
         Return If(_eintraege.TryGetValue(druckerId, e), e.Verbindung.DruckbareEndungen, Array.Empty(Of String)())
     End Function
@@ -105,7 +114,7 @@ Public Class DruckerUeberwachung
     ''' damit beim Druckende genau sie zum Buchen vorgeschlagen wird.
     ''' </summary>
     Public Async Function SendenAsync(druckerId As Long, dateiPfad As String, dateiId As Long, optionen As SendeOptionen,
-                                      fortschritt As IProgress(Of Double), abbruch As CancellationToken) As Task
+                                      fortschritt As IProgress(Of Double), abbruch As CancellationToken) As Task Implements IDruckerDienst.SendenAsync
         Dim e As Eintrag = Nothing
         If Not _eintraege.TryGetValue(druckerId, e) Then Throw New InvalidOperationException("Der Drucker wird nicht überwacht (in den Druckereinstellungen aktivieren).")
         e.Protokoll.Schreiben($"Sende Auftrag: {IO.Path.GetFileName(dateiPfad)}")
@@ -122,7 +131,7 @@ Public Class DruckerUeberwachung
     End Function
 
     ''' <summary>Anzahl Drucker, die gerade drucken.</summary>
-    Public ReadOnly Property AnzahlDruckend As Integer
+    Public ReadOnly Property AnzahlDruckend As Integer Implements IDruckerDienst.AnzahlDruckend
         Get
             Return _eintraege.Values.Where(Function(e) e.Status.DruckLaeuft).Count()
         End Get
@@ -216,7 +225,6 @@ Public Class DruckerUeberwachung
 
     Public Sub Dispose() Implements IDisposable.Dispose
         _abbruch.Cancel()
-        _timer.Dispose()
         For Each e In _eintraege.Values
             e.Verbindung?.Dispose()
         Next

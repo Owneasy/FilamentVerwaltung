@@ -75,18 +75,6 @@ Public Module Anzeige
         Return (bytes / 1024.0 / 1024.0 / 1024.0).ToString("N2") & " GB"
     End Function
 
-    ''' <summary>
-    ''' Aktueller Wert eines Zahlenfelds inkl. noch nicht bestätigter Eingabe
-    ''' (NumericUpDown.Value ändert sich erst beim Verlassen des Felds).
-    ''' </summary>
-    Public Function EingabeWert(n As System.Windows.Forms.NumericUpDown) As Decimal
-        Dim wert As Decimal
-        If Decimal.TryParse(n.Text, NumberStyles.Number, CultureInfo.CurrentCulture, wert) Then
-            Return Math.Min(n.Maximum, Math.Max(n.Minimum, wert))
-        End If
-        Return n.Value
-    End Function
-
     Public Function GrammText(gramm As Double?) As String
         If Not gramm.HasValue OrElse gramm.Value <= 0 Then Return ""
         Return gramm.Value.ToString(If(gramm.Value < 10, "N1", "N0"), CultureInfo.CurrentCulture) & " g"

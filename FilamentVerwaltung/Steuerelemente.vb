@@ -746,3 +746,20 @@ Public Class SeitenKopf
     End Property
 
 End Class
+
+''' <summary>Hilfen für Eingabefelder.</summary>
+Public Module Eingabe
+
+    ''' <summary>
+    ''' Aktueller Wert eines Zahlenfelds inkl. noch nicht bestätigter Eingabe
+    ''' (NumericUpDown.Value ändert sich erst beim Verlassen des Felds).
+    ''' </summary>
+    Public Function EingabeWert(n As NumericUpDown) As Decimal
+        Dim wert As Decimal
+        If Decimal.TryParse(n.Text, Globalization.NumberStyles.Number, Globalization.CultureInfo.CurrentCulture, wert) Then
+            Return Math.Min(n.Maximum, Math.Max(n.Minimum, wert))
+        End If
+        Return n.Value
+    End Function
+
+End Module

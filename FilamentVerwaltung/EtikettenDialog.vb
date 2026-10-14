@@ -10,7 +10,7 @@ Public Class EtikettenDialog
 
     Private Const EinstellungFormat As String = "Etiketten.Format"
 
-    Private ReadOnly _db As Datenbank
+    Private ReadOnly _db As IDatenquelle
     Private ReadOnly _alle As List(Of Filament)
     Private ReadOnly _ausgewaehlt As New HashSet(Of Long)
     Private _listeWirdAktualisiert As Boolean
@@ -33,7 +33,7 @@ Public Class EtikettenDialog
     Private _dokument As EtikettenDruck
 
     ''' <param name="vorauswahl">IDs der Spulen, die schon angehakt sein sollen.</param>
-    Public Sub New(db As Datenbank, spulen As List(Of Filament), vorauswahl As IEnumerable(Of Long))
+    Public Sub New(db As IDatenquelle, spulen As List(Of Filament), vorauswahl As IEnumerable(Of Long))
         _db = db
         _alle = spulen.OrderBy(Function(f) f.Code).ToList()
         For Each id In vorauswahl

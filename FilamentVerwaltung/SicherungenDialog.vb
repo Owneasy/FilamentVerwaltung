@@ -9,7 +9,7 @@ Imports System.Windows.Forms
 Public Class SicherungenDialog
     Inherits Form
 
-    Private ReadOnly _db As Datenbank
+    Private ReadOnly _db As IDatenquelle
     Private ReadOnly grid As New WebTabelle()
     Private ReadOnly quelle As New BindingSource()
     Private ReadOnly lblInfo As New Label With {.AutoSize = False, .Dock = DockStyle.Fill, .Height = 22, .AutoEllipsis = True, .ForeColor = Theme.TextLeise, .Font = Theme.SchriftKlein}
@@ -18,7 +18,7 @@ Public Class SicherungenDialog
     ''' <summary>True, wenn eine Sicherung zurückgespielt wurde (die Seiten müssen neu laden).</summary>
     Public ReadOnly Property Wiederhergestellt As Boolean
 
-    Public Sub New(db As Datenbank)
+    Public Sub New(db As IDatenquelle)
         _db = db
         OberflaecheAufbauen()
         Laden()
@@ -87,6 +87,7 @@ Public Class SicherungenDialog
         links.Controls.Add(btnJetzt)
         links.Controls.Add(btnWiederherstellen)
         links.Controls.Add(btnOrdner)
+        btnOrdner.Visible = TypeOf _db Is Datenbank   ' Sicherungen auf dem Server liegen nicht in einem lokalen Ordner
         Dim btnSchliessen As New WebButton("Schließen") With {.Margin = New Padding(0), .DialogResult = DialogResult.Cancel}
         knoepfe.Controls.Add(links, 0, 0)
         knoepfe.Controls.Add(btnSchliessen, 1, 0)
@@ -104,7 +105,7 @@ Public Class SicherungenDialog
     Private Sub Laden(Optional auswahl As String = Nothing)
         Dim liste As List(Of SicherungInfo)
         Try
-            liste = Sicherung.Liste(_db)
+            liste = _db.SicherungenLaden()
         Catch ex As Exception
             liste = New List(Of SicherungInfo)
             lblInfo.Text = "Die Sicherungen konnten nicht gelesen werden: " & ex.Message
@@ -113,7 +114,7 @@ Public Class SicherungenDialog
         If auswahl IsNot Nothing Then grid.Auswaehlen(Of SicherungInfo)(Function(s) s.Pfad = auswahl)
         btnWiederherstellen.Enabled = grid.Ausgewaehlt(Of SicherungInfo)() IsNot Nothing
         lblInfo.Text = If(liste.Count = 0, "Noch keine Sicherungen vorhanden.",
-                          $"{liste.Count} Sicherungen · {GroesseText(liste.Sum(Function(s) s.Groesse))} · Ordner: {Sicherung.Ordner(_db)}")
+                          $"{liste.Count} Sicherungen · {GroesseText(liste.Sum(Function(s) s.Groesse))}{OrtText()}")
     End Sub
 
     Private Sub Grid_CellPainting(sender As Object, e As DataGridViewCellPaintingEventArgs)
@@ -129,7 +130,7 @@ Public Class SicherungenDialog
     Private Sub JetztSichern()
         Try
             Cursor = Cursors.WaitCursor
-            Dim neu = Erstellen(_db, SicherungInfo.ArtManuell)
+            Dim neu = _db.SicherungErstellen(SicherungInfo.ArtManuell)
             Laden(neu.Pfad)
         Catch ex As Exception
             MessageBox.Show(Me, "Die Sicherung ist fehlgeschlagen." & Environment.NewLine & Environment.NewLine & ex.Message,
@@ -151,7 +152,7 @@ Public Class SicherungenDialog
         If antwort <> DialogResult.Yes Then Return
         Try
             Cursor = Cursors.WaitCursor
-            Sicherung.Wiederherstellen(_db, s)
+            _db.SicherungWiederherstellen(s)
             _Wiederhergestellt = True
             Laden(s.Pfad)
             MessageBox.Show(Me, $"Die Sicherung vom {s.Zeitpunkt:dd.MM.yyyy HH:mm} wurde wiederhergestellt.", "Sicherungen",
@@ -164,10 +165,18 @@ Public Class SicherungenDialog
         End Try
     End Sub
 
+    ''' <summary>Ablageort für die Infozeile: lokaler Ordner oder "auf dem Server".</summary>
+    Private Function OrtText() As String
+        Dim db = TryCast(_db, Datenbank)
+        Return If(db IsNot Nothing, " · Ordner: " & Sicherung.Ordner(db), " · auf dem Server")
+    End Function
+
     Private Sub OrdnerOeffnen()
         Try
-            Directory.CreateDirectory(Sicherung.Ordner(_db))
-            Process.Start("explorer.exe", """" & Sicherung.Ordner(_db) & """")
+            Dim db = TryCast(_db, Datenbank)
+            If db Is Nothing Then Return
+            Directory.CreateDirectory(Sicherung.Ordner(db))
+            Process.Start("explorer.exe", """" & Sicherung.Ordner(db) & """")
         Catch ex As Exception
             MessageBox.Show(Me, ex.Message, "Sicherungen", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try

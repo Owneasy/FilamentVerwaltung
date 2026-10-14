@@ -1,4 +1,4 @@
-Imports System.Drawing
+﻿Imports System.Drawing
 Imports System.Globalization
 Imports System.Windows.Forms
 
@@ -45,7 +45,7 @@ Public Class StatistikSeite
     Inherits UserControl
     Implements ISeite
 
-    Private ReadOnly _db As Datenbank
+    Private ReadOnly _db As IDatenquelle
     Private ReadOnly kzSchnitt As New KennzahlKarte("Ø Verbrauch pro Monat", Theme.SymSpule, Theme.Akzent)
     Private ReadOnly kzReichweite As New KennzahlKarte("Reichweite des Lagers", Theme.SymUhr, Theme.Gruen)
     Private ReadOnly kzKostenJahr As New KennzahlKarte("Kosten dieses Jahr", Theme.SymGeld, Theme.Lila)
@@ -58,7 +58,7 @@ Public Class StatistikSeite
     Private ReadOnly prognoseQuelle As New BindingSource()
     Private kartePrognose As TabellenKarte
 
-    Public Sub New(db As Datenbank)
+    Public Sub New(db As IDatenquelle)
         _db = db
         karteMonate = New DiagrammKarte("Verbrauch pro Monat", "Letzte 12 Monate · Drucke und Nachwiegen", monate, "Verbrauch")
         karteMaterial = New DiagrammKarte("Verbrauch nach Material", "Letzte 12 Monate · Anteil am Gesamtverbrauch", materialien, "Verbrauch")

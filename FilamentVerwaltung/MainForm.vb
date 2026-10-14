@@ -11,7 +11,7 @@ Imports System.Windows.Forms
 Public Class MainForm
     Inherits Form
 
-    Private ReadOnly _db As Datenbank
+    Private ReadOnly _db As IDatenquelle
     Private ReadOnly inhalt As New Panel With {.Dock = DockStyle.Fill, .BackColor = Theme.Seite}
     Private ReadOnly navigation As New List(Of (Knopf As WebButton, Seite As Control))
     ''' <summary>Untermenü unter "Filament": Alle / Vorhanden / Leer (nur sichtbar, solange die Filament-Seite offen ist).</summary>
@@ -23,7 +23,7 @@ Public Class MainForm
     Private ReadOnly statistikSeite As StatistikSeite
     Private ReadOnly nachkaufSeite As NachkaufSeite
     Private ReadOnly druckerSeite As DruckerSeite
-    Private ReadOnly _ueberwachung As DruckerUeberwachung
+    Private ReadOnly _ueberwachung As IDruckerDienst
 
     ' --- Beendete Drucke zum Buchen
     Private ReadOnly _druckEnden As New Queue(Of DruckEnde)
@@ -46,11 +46,11 @@ Public Class MainForm
     Private ReadOnly btnUpdate As New WebButton("Nach Updates suchen", Theme.SymExport, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
     Private _update As UpdateInfo
 
-    Public Sub New(db As Datenbank)
+    Public Sub New(db As IDatenquelle, ueberwachung As IDruckerDienst)
         _db = db
         filamentSeite = New FilamentSeite(db)
         druckeSeite = New DruckeSeite(db)
-        _ueberwachung = New DruckerUeberwachung(db)
+        _ueberwachung = ueberwachung
         dateienSeite = New DateienSeite(db, _ueberwachung)
         statistikSeite = New StatistikSeite(db)
         nachkaufSeite = New NachkaufSeite(db)
@@ -162,7 +162,7 @@ Public Class MainForm
         Zeile(leiste, btnUpdate)
 
         Dim lblPfad As New Label With {
-            .Text = _db.Pfad,
+            .Text = _db.Ort,
             .Font = New Font("Segoe UI", 8.0F),
             .ForeColor = Color.FromArgb(100, 116, 139),
             .AutoEllipsis = True,
@@ -170,9 +170,13 @@ Public Class MainForm
             .Height = 20,
             .Margin = New Padding(16, 2, 4, 0)
         }
-        lblPfad.Cursor = Cursors.Hand
-        AddHandler lblPfad.Click, Sub(s, e) DbOrdnerOeffnen()
-        tipps.SetToolTip(lblPfad, _db.Pfad & Environment.NewLine & "Klicken, um den Ordner zu öffnen")
+        If TypeOf _db Is Datenbank Then
+            lblPfad.Cursor = Cursors.Hand
+            AddHandler lblPfad.Click, Sub(s, e) DbOrdnerOeffnen()
+            tipps.SetToolTip(lblPfad, _db.Ort & Environment.NewLine & "Klicken, um den Ordner zu öffnen")
+        Else
+            tipps.SetToolTip(lblPfad, "Verbunden mit " & _db.Ort)
+        End If
         Zeile(leiste, lblPfad)
         Zeile(leiste, New Label With {
             .Text = $"Version {AktuelleVersion}",
@@ -514,7 +518,7 @@ Public Class MainForm
 
     Private Sub DbOrdnerOeffnen()
         Try
-            Process.Start("explorer.exe", "/select,""" & _db.Pfad & """")
+            Process.Start("explorer.exe", "/select,""" & _db.Ort & """")
         Catch ex As Exception
             MessageBox.Show(Me, "Der Ordner konnte nicht geöffnet werden." & Environment.NewLine & Environment.NewLine & ex.Message,
                             "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)

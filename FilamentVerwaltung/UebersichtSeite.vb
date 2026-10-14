@@ -19,8 +19,8 @@ Public Class UebersichtSeite
     ''' <summary>"Alle anzeigen" wurde geklickt – MainForm wechselt zur passenden Seite.</summary>
     Public Event SeiteOeffnen(ziel As String)
 
-    Private ReadOnly _db As Datenbank
-    Private ReadOnly _ueberwachung As DruckerUeberwachung
+    Private ReadOnly _db As IDatenquelle
+    Private ReadOnly _ueberwachung As IDruckerDienst
     Private _drucker As New List(Of Drucker)
 
     Private ReadOnly kopf As New SeitenKopf("Übersicht", "")
@@ -36,7 +36,7 @@ Public Class UebersichtSeite
     Private ReadOnly karteNachkauf As New ListenKarte("Nachkaufen", "Sorten, die knapp werden", "Zur Nachkaufliste")
     Private _druckerSignatur As String = Nothing
 
-    Public Sub New(db As Datenbank, ueberwachung As DruckerUeberwachung)
+    Public Sub New(db As IDatenquelle, ueberwachung As IDruckerDienst)
         _db = db
         _ueberwachung = ueberwachung
         karteWochen = New DiagrammKarte("Verbrauch pro Woche", "Letzte 12 Kalenderwochen", wochen, "Verbrauch")

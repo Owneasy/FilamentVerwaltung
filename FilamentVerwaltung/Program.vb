@@ -53,7 +53,7 @@ Public Module Program
                             "Filament-Verwaltung", MessageBoxButtons.OK, MessageBoxIcon.Warning)
         End Try
 
-        Application.Run(New MainForm(db))
+        Application.Run(New MainForm(db, New DruckerUeberwachung(db)))
     End Sub
 
 End Module

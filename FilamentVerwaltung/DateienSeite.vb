@@ -13,8 +13,8 @@ Public Class DateienSeite
 
     Private Const AlleTypen As String = "Alle Dateitypen"
 
-    Private ReadOnly _db As Datenbank
-    Private ReadOnly _ueberwachung As DruckerUeberwachung
+    Private ReadOnly _db As IDatenquelle
+    Private ReadOnly _ueberwachung As IDruckerDienst
     Private _alle As New List(Of Datei)
     Private _buchungen As New List(Of Buchung)
     Private _filterWirdAktualisiert As Boolean
@@ -51,7 +51,7 @@ Public Class DateienSeite
     Private ReadOnly btnLoeschen As New WebButton("Löschen", Theme.SymLoeschen, KnopfStil.Gefahr)
     Private details As Panel
 
-    Public Sub New(db As Datenbank, ueberwachung As DruckerUeberwachung)
+    Public Sub New(db As IDatenquelle, ueberwachung As IDruckerDienst)
         _db = db
         _ueberwachung = ueberwachung
         OberflaecheAufbauen()

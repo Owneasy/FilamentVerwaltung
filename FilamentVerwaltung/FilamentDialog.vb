@@ -16,7 +16,7 @@ Public Class FilamentDialog
         "PLA", "PLA+", "PLA Silk", "PLA Matt", "PETG", "ABS", "ASA", "TPU", "PA (Nylon)", "PC", "HIPS", "PVA", "CF-PLA", "CF-PETG"}
 
     Private ReadOnly _f As Filament
-    Private ReadOnly _db As Datenbank
+    Private ReadOnly _db As IDatenquelle
     Private _letztesGewicht As Integer
 
     Private ReadOnly txtCode As New TextBox With {.Width = 170}
@@ -42,7 +42,7 @@ Public Class FilamentDialog
     ''' <summary>Zuletzt automatisch eingetragenes Leerspulengewicht (wird bei Herstellerwechsel ersetzt, eigene Eingaben nicht).</summary>
     Private _automatischeSpule As Integer = -1
 
-    Public Sub New(f As Filament, db As Datenbank, titel As String,
+    Public Sub New(f As Filament, db As IDatenquelle, titel As String,
                    bekannteHersteller As IEnumerable(Of String), bekannteMaterialien As IEnumerable(Of String),
                    Optional bekannteLagerorte As IEnumerable(Of String) = Nothing)
         _f = f

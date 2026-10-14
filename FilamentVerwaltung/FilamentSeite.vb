@@ -46,7 +46,7 @@ Public Class FilamentSeite
         AnsichtAktualisieren()
     End Sub
 
-    Private ReadOnly _db As Datenbank
+    Private ReadOnly _db As IDatenquelle
     Private _alle As New List(Of Filament)
     Private _filterWirdAktualisiert As Boolean
 
@@ -71,7 +71,7 @@ Public Class FilamentSeite
     Private ReadOnly spaltenMenue As New ContextMenuStrip With {.Font = Theme.Schrift}
     Private karte As TabellenKarte
 
-    Public Sub New(db As Datenbank)
+    Public Sub New(db As IDatenquelle)
         _db = db
         OberflaecheAufbauen()
         DatenLaden()

@@ -6,11 +6,18 @@ Imports Microsoft.Data.Sqlite
 ''' Zugriff auf die SQLite-Datenbank (eine einzelne Datei, kein Server nötig).
 ''' </summary>
 Public Class Datenbank
+    Implements IDatenquelle
 
     Private Const CodePraefix As String = "FIL-"
     Private ReadOnly _verbindung As String
 
     Public ReadOnly Property Pfad As String
+
+    Public ReadOnly Property Ort As String Implements IDatenquelle.Ort
+        Get
+            Return Pfad
+        End Get
+    End Property
 
     Public Sub New(dateiPfad As String)
         Pfad = dateiPfad
@@ -130,7 +137,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         {"Jayo", 160}, {"Overture", 170}, {"Polymaker", 140}, {"Prusament", 200}, {"Sunlu", 160}}
 
     ''' <summary>Leerspulengewicht für einen Hersteller: eigener gespeicherter Wert, sonst Richtwert, sonst Nothing.</summary>
-    Public Function LeerspulenVorlage(hersteller As String, ByRef eigenerWert As Boolean) As Integer?
+    Public Function LeerspulenVorlage(hersteller As String, ByRef eigenerWert As Boolean) As Integer? Implements IDatenquelle.LeerspulenVorlage
         eigenerWert = False
         If String.IsNullOrWhiteSpace(hersteller) Then Return Nothing
         Using c = Oeffnen()
@@ -146,7 +153,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     End Function
 
     ''' <summary>Liest eine gespeicherte Einstellung (Nothing, wenn sie noch nicht existiert).</summary>
-    Public Function EinstellungLesen(schluessel As String) As String
+    Public Function EinstellungLesen(schluessel As String) As String Implements IDatenquelle.EinstellungLesen
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText = "SELECT Wert FROM Einstellungen WHERE Schluessel = $schluessel"
             cmd.Parameters.AddWithValue("$schluessel", schluessel)
@@ -154,7 +161,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         End Using
     End Function
 
-    Public Sub EinstellungSpeichern(schluessel As String, wert As String)
+    Public Sub EinstellungSpeichern(schluessel As String, wert As String) Implements IDatenquelle.EinstellungSpeichern
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText = "INSERT INTO Einstellungen (Schluessel, Wert) VALUES ($schluessel, $wert) " &
                               "ON CONFLICT(Schluessel) DO UPDATE SET Wert = excluded.Wert"
@@ -164,7 +171,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         End Using
     End Sub
 
-    Public Function AlleLaden() As List(Of Filament)
+    Public Function AlleLaden() As List(Of Filament) Implements IDatenquelle.AlleLaden
         Dim liste As New List(Of Filament)
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText = "SELECT Id, Code, Hersteller, Material, Farbe, Durchmesser, Gewicht, Restgewicht, " &
@@ -201,7 +208,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     ''' Legt das Filament neu an (Id = 0) oder aktualisiert es.
     ''' Ändert sich dabei das Restgewicht, wird eine Korrektur-Buchung angelegt.
     ''' </summary>
-    Public Sub Speichern(f As Filament)
+    Public Sub Speichern(f As Filament) Implements IDatenquelle.Speichern
         Using c = Oeffnen(), t = c.BeginTransaction(), cmd = c.CreateCommand()
             cmd.Transaction = t
             Dim altRest As Integer? = Nothing
@@ -266,7 +273,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         End Using
     End Sub
 
-    Public Sub Loeschen(id As Long)
+    Public Sub Loeschen(id As Long) Implements IDatenquelle.Loeschen
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText = "DELETE FROM Filament WHERE Id = $id"
             cmd.Parameters.AddWithValue("$id", id)
@@ -275,7 +282,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     End Sub
 
     ''' <summary>True, wenn die ID bereits von einem anderen Filament verwendet wird.</summary>
-    Public Function CodeExistiert(code As String, ausserId As Long) As Boolean
+    Public Function CodeExistiert(code As String, ausserId As Long) As Boolean Implements IDatenquelle.CodeExistiert
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText = "SELECT COUNT(*) FROM Filament WHERE Code = $code AND Id <> $id"
             cmd.Parameters.AddWithValue("$code", code.Trim())
@@ -285,7 +292,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     End Function
 
     ''' <summary>Liefert die nächste freie ID im Format FIL-0001.</summary>
-    Public Function NaechsterCode() As String
+    Public Function NaechsterCode() As String Implements IDatenquelle.NaechsterCode
         Dim hoechste = 0
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText = "SELECT Code FROM Filament WHERE Code LIKE 'FIL-%'"
@@ -310,7 +317,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     ''' Setzt das Restgewicht einer Spule und protokolliert die Differenz als Buchung
     ''' (Verbrauch abziehen = Druck, Nachwiegen / direkte Eingabe = Wiegen).
     ''' </summary>
-    Public Sub RestgewichtBuchen(filamentId As Long, neuesRestgewicht As Integer, art As String, bezeichnung As String)
+    Public Sub RestgewichtBuchen(filamentId As Long, neuesRestgewicht As Integer, art As String, bezeichnung As String) Implements IDatenquelle.RestgewichtBuchen
         Using c = Oeffnen(), t = c.BeginTransaction()
             Dim spule = SpuleLesen(c, t, filamentId)
             Dim gramm = spule.Restgewicht - neuesRestgewicht
@@ -328,7 +335,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     ''' Speichert einen Druck und passt das Restgewicht an. Beim Bearbeiten wird der alte Verbrauch
     ''' zuerst zurückgebucht (auch wenn der Druck einer anderen Spule zugeordnet wird).
     ''' </summary>
-    Public Sub DruckSpeichern(b As Buchung)
+    Public Sub DruckSpeichern(b As Buchung) Implements IDatenquelle.DruckSpeichern
         Using c = Oeffnen(), t = c.BeginTransaction()
             If b.Id <> 0 Then
                 Using r = Befehl(c, t, "SELECT FilamentId, Gramm FROM Buchung WHERE Id = $id", "$id", b.Id).ExecuteReader()
@@ -361,7 +368,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     End Sub
 
     ''' <summary>Löscht eine Buchung; optional wird der Verbrauch der Spule wieder gutgeschrieben.</summary>
-    Public Sub BuchungLoeschen(id As Long, zurueckbuchenJa As Boolean)
+    Public Sub BuchungLoeschen(id As Long, zurueckbuchenJa As Boolean) Implements IDatenquelle.BuchungLoeschen
         Using c = Oeffnen(), t = c.BeginTransaction()
             If zurueckbuchenJa Then
                 Using r = Befehl(c, t, "SELECT FilamentId, Gramm FROM Buchung WHERE Id = $id", "$id", id).ExecuteReader()
@@ -377,7 +384,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         End Using
     End Sub
 
-    Public Function BuchungenLaden() As List(Of Buchung)
+    Public Function BuchungenLaden() As List(Of Buchung) Implements IDatenquelle.BuchungenLaden
         Dim liste As New List(Of Buchung)
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText =
@@ -453,7 +460,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
 
     ' ------------------------------------------------------------------ Drucker
 
-    Public Function DruckerLaden() As List(Of Drucker)
+    Public Function DruckerLaden() As List(Of Drucker) Implements IDatenquelle.DruckerLaden
         Dim liste As New List(Of Drucker)
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText = "SELECT Id, Name, Typ, Adresse, Zugang, Benutzer, Seriennummer, Aktiv FROM Drucker ORDER BY Name"
@@ -468,7 +475,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         Return liste
     End Function
 
-    Public Sub DruckerSpeichern(d As Drucker)
+    Public Sub DruckerSpeichern(d As Drucker) Implements IDatenquelle.DruckerSpeichern
         Using c = Oeffnen()
             If d.Id = 0 Then
                 d.Id = Convert.ToInt64(Befehl(c, Nothing,
@@ -485,7 +492,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         End Using
     End Sub
 
-    Public Sub DruckerLoeschen(id As Long)
+    Public Sub DruckerLoeschen(id As Long) Implements IDatenquelle.DruckerLoeschen
         Using c = Oeffnen(), t = c.BeginTransaction()
             Befehl(c, t, "DELETE FROM DruckerSpule WHERE DruckerId = $id", "$id", id).ExecuteNonQuery()
             Befehl(c, t, "DELETE FROM Drucker WHERE Id = $id", "$id", id).ExecuteNonQuery()
@@ -494,7 +501,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     End Sub
 
     ''' <summary>Spulen-Zuordnung je Fach (Slot → FilamentId).</summary>
-    Public Function SpulenZuordnung(druckerId As Long) As Dictionary(Of Integer, Long)
+    Public Function SpulenZuordnung(druckerId As Long) As Dictionary(Of Integer, Long) Implements IDatenquelle.SpulenZuordnung
         Dim ergebnis As New Dictionary(Of Integer, Long)
         Using c = Oeffnen()
             Using r = Befehl(c, Nothing, "SELECT Slot, FilamentId FROM DruckerSpule WHERE DruckerId = $id", "$id", druckerId).ExecuteReader()
@@ -507,7 +514,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     End Function
 
     ''' <summary>Ordnet einem Fach eine Spule zu (filamentId = Nothing entfernt die Zuordnung).</summary>
-    Public Sub SpuleZuordnen(druckerId As Long, slot As Integer, filamentId As Long?)
+    Public Sub SpuleZuordnen(druckerId As Long, slot As Integer, filamentId As Long?) Implements IDatenquelle.SpuleZuordnen
         Using c = Oeffnen()
             If filamentId.HasValue Then
                 Befehl(c, Nothing, "INSERT INTO DruckerSpule (DruckerId, Slot, FilamentId) VALUES ($d, $s, $f) " &
@@ -521,6 +528,17 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
 
     ' ------------------------------------------------------------------ Sicherung
 
+    Public Function SicherungenLaden() As List(Of SicherungInfo) Implements IDatenquelle.SicherungenLaden
+        Return Sicherung.Liste(Me)
+    End Function
+
+    Public Function SicherungErstellen(art As String) As SicherungInfo Implements IDatenquelle.SicherungErstellen
+        Return Sicherung.Erstellen(Me, art)
+    End Function
+
+    Public Sub SicherungWiederherstellen(s As SicherungInfo) Implements IDatenquelle.SicherungWiederherstellen
+        Sicherung.Wiederherstellen(Me, s)
+    End Sub
     ''' <summary>Schreibt eine konsistente Kopie der Datenbank (SQLite-Backup, auch während Zugriffen sicher).</summary>
     Public Sub SichernNach(zielPfad As String)
         Using quelle = Oeffnen(), ziel As New SqliteConnection(Verbindung(zielPfad, SqliteOpenMode.ReadWriteCreate))
@@ -574,17 +592,17 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     ' ------------------------------------------------------------------ Dateien (CAD, STL, G-Code …)
 
     ''' <summary>Ordner neben der Datenbank, in den hinzugefügte Dateien kopiert werden.</summary>
-    Public ReadOnly Property DateienOrdner As String
+    Public ReadOnly Property DateienOrdner As String Implements IDatenquelle.DateienOrdner
         Get
             Return Path.Combine(If(Path.GetDirectoryName(Pfad), ""), "Dateien")
         End Get
     End Property
 
-    Public Function DateiPfad(d As Datei) As String
+    Public Function DateiPfad(d As Datei) As String Implements IDatenquelle.DateiPfad
         Return Path.Combine(DateienOrdner, d.Pfad)
     End Function
 
-    Public Function DateienLaden() As List(Of Datei)
+    Public Function DateienLaden() As List(Of Datei) Implements IDatenquelle.DateienLaden
         Dim liste As New List(Of Datei)
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText = "SELECT Id, Name, Pfad, Typ, Groesse, Hinzugefuegt, Gramm, Druckzeit, Material, Notiz " &
@@ -614,7 +632,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     End Function
 
     ''' <summary>Kopiert eine Datei in den Dateien-Ordner, liest Druckdaten aus und legt den Eintrag an.</summary>
-    Public Function DateiImportieren(quelle As String) As Datei
+    Public Function DateiImportieren(quelle As String) As Datei Implements IDatenquelle.DateiImportieren
         Directory.CreateDirectory(DateienOrdner)
         Dim name = Path.GetFileName(quelle)
         Dim zielName = name
@@ -654,14 +672,14 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         Return d
     End Function
 
-    Public Sub DateiNotizSpeichern(id As Long, notiz As String)
+    Public Sub DateiNotizSpeichern(id As Long, notiz As String) Implements IDatenquelle.DateiNotizSpeichern
         Using c = Oeffnen()
             Befehl(c, Nothing, "UPDATE Datei SET Notiz = $notiz WHERE Id = $id", "$notiz", If(notiz, ""), "$id", id).ExecuteNonQuery()
         End Using
     End Sub
 
     ''' <summary>Entfernt den Eintrag und die Datei im Dateien-Ordner. Drucke behalten ihre Daten, verlieren nur die Verknüpfung.</summary>
-    Public Sub DateiLoeschen(d As Datei)
+    Public Sub DateiLoeschen(d As Datei) Implements IDatenquelle.DateiLoeschen
         Using c = Oeffnen(), t = c.BeginTransaction()
             Befehl(c, t, "UPDATE Buchung SET DateiId = NULL WHERE DateiId = $id", "$id", d.Id).ExecuteNonQuery()
             Befehl(c, t, "DELETE FROM Datei WHERE Id = $id", "$id", d.Id).ExecuteNonQuery()

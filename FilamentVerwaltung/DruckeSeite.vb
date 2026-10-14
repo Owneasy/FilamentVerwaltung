@@ -10,7 +10,7 @@ Public Class DruckeSeite
 
     Private Const AlleSpulen As String = "Alle Spulen"
 
-    Private ReadOnly _db As Datenbank
+    Private ReadOnly _db As IDatenquelle
     Private _alle As New List(Of Buchung)
     Private _filamente As New List(Of Filament)
     Private _filterWirdAktualisiert As Boolean
@@ -32,7 +32,7 @@ Public Class DruckeSeite
     Private ReadOnly kzKosten As New KennzahlKarte("Kosten diesen Monat", Theme.SymGeld, Theme.Lila)
     Private ReadOnly kzZeit As New KennzahlKarte("Druckzeit diesen Monat", Theme.SymUhr, Theme.Gelb)
 
-    Public Sub New(db As Datenbank)
+    Public Sub New(db As IDatenquelle)
         _db = db
         OberflaecheAufbauen()
     End Sub
@@ -323,7 +323,7 @@ Public Class DruckeSeite
     End Sub
 
     ''' <summary>Zeigt den Druck-Dialog und speichert bei OK (auch von der Dateien-Seite aus genutzt).</summary>
-    Friend Shared Function DruckDialogZeigen(besitzer As IWin32Window, db As Datenbank, b As Buchung,
+    Friend Shared Function DruckDialogZeigen(besitzer As IWin32Window, db As IDatenquelle, b As Buchung,
                                              filamente As List(Of Filament), dateien As List(Of Datei), titel As String) As Boolean
         If Not filamente.Any(Function(f) f.Restgewicht > 0 OrElse f.Id = b.FilamentId) Then
             MessageBox.Show(besitzer, "Es gibt keine Spule mit Restbestand. Bitte zuerst ein Filament anlegen.",

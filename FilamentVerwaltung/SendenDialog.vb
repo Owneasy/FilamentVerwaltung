@@ -10,8 +10,8 @@ Imports System.Windows.Forms
 Public Class SendenDialog
     Inherits Form
 
-    Private ReadOnly _db As Datenbank
-    Private ReadOnly _ueberwachung As DruckerUeberwachung
+    Private ReadOnly _db As IDatenquelle
+    Private ReadOnly _ueberwachung As IDruckerDienst
     Private ReadOnly _datei As Datei
     Private ReadOnly _pfad As String
     Private _drucker As New List(Of Drucker)
@@ -36,7 +36,7 @@ Public Class SendenDialog
     Private ReadOnly btnStarten As New WebButton("Druck starten", Theme.SymDrucker, KnopfStil.Primaer) With {.MinimumSize = New Size(130, 0), .Margin = New Padding(8, 0, 0, 0)}
     Private ReadOnly btnAbbrechen As New WebButton("Abbrechen") With {.MinimumSize = New Size(100, 0), .Margin = New Padding(8, 0, 0, 0)}
 
-    Public Sub New(db As Datenbank, ueberwachung As DruckerUeberwachung, datei As Datei, pfad As String)
+    Public Sub New(db As IDatenquelle, ueberwachung As IDruckerDienst, datei As Datei, pfad As String)
         _db = db
         _ueberwachung = ueberwachung
         _datei = datei

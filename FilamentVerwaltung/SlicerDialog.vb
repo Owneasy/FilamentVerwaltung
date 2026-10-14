@@ -12,7 +12,7 @@ Public Class SlicerDialog
 
     Private Const KeineSpule As String = "(ohne Spule – Filamentprofil selbst wählen)"
 
-    Private ReadOnly _db As Datenbank
+    Private ReadOnly _db As IDatenquelle
     Private ReadOnly _bambu As BambuStudio
     Private ReadOnly _quelle As Datei
     Private ReadOnly _modellPfad As String
@@ -41,7 +41,7 @@ Public Class SlicerDialog
     ''' <summary>Die erzeugte und in "Dateien" übernommene Datei.</summary>
     Public ReadOnly Property Ergebnis As Datei
 
-    Public Sub New(db As Datenbank, bambu As BambuStudio, quelle As Datei, modellPfad As String, spulen As List(Of Filament))
+    Public Sub New(db As IDatenquelle, bambu As BambuStudio, quelle As Datei, modellPfad As String, spulen As List(Of Filament))
         _db = db
         _bambu = bambu
         _quelle = quelle

@@ -62,7 +62,7 @@ Public Class NachkaufSeite
     Private Const TageNachkaufen As Integer = 30
     Private Const TageBald As Integer = 60
 
-    Private ReadOnly _db As Datenbank
+    Private ReadOnly _db As IDatenquelle
     Private _sorten As New List(Of SorteInfo)
     Private _filamente As New List(Of Filament)
     Private _ausgeblendet As New HashSet(Of String)
@@ -87,7 +87,7 @@ Public Class NachkaufSeite
     ''' <summary>Eine neue Spule wurde angelegt (andere Seiten neu laden).</summary>
     Public Event SpuleAngelegt()
 
-    Public Sub New(db As Datenbank)
+    Public Sub New(db As IDatenquelle)
         _db = db
         OberflaecheAufbauen()
     End Sub
@@ -205,7 +205,7 @@ Public Class NachkaufSeite
     End Sub
 
     ''' <summary>Mindestbestand und ausgeblendete Sorten aus den Einstellungen (auch für die Übersicht).</summary>
-    Public Shared Function EinstellungenLesen(db As Datenbank) As (Mindestbestand As Integer, Ausgeblendet As HashSet(Of String))
+    Public Shared Function EinstellungenLesen(db As IDatenquelle) As (Mindestbestand As Integer, Ausgeblendet As HashSet(Of String))
         Dim mindest As Integer
         If Not Integer.TryParse(db.EinstellungLesen(EinstellungMindestbestand), mindest) Then mindest = 250
         Dim aus = New HashSet(Of String)(If(db.EinstellungLesen(EinstellungAusgeblendet), "").
