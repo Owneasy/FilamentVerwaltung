@@ -366,7 +366,7 @@ async function spulenSeite() {
   titel('Spulen');
   inhalt(`<div class="suche">
       <input id="suche" type="search" placeholder="ID, Hersteller, Farbe, Lagerort …" value="${esc(spulenSuche)}">
-      ${'BarcodeDetector' in window ? `<button class="knopf" id="scannen" title="QR-Code scannen">${ICON.qr}</button>` : ''}
+      <button class="knopf" id="scannen" title="QR-Code scannen">${ICON.qr}</button>
     </div>
     <label class="schalter"><input type="checkbox" id="nurVorhanden" ${nurVorhanden ? 'checked' : ''}> nur Spulen mit Restbestand</label>
     <div id="liste"><p class="leer">Lade …</p></div>`);
@@ -386,7 +386,7 @@ async function spulenSeite() {
     if (f) location.hash = 'spule/' + encodeURIComponent(f.code);
   };
   $('#nurVorhanden').onchange = e => { nurVorhanden = e.target.checked; zeigen(); };
-  if ($('#scannen')) $('#scannen').onclick = () => scannen(spulen);
+  $('#scannen').onclick = () => scannen(spulen);
   zeigen();
 }
 
@@ -406,12 +406,18 @@ async function scannen(spulen) {
   const video = $('#scanVideo');
   video.srcObject = stream;
   try { await video.play(); } catch { /* startet trotzdem */ }
-  const erkenner = new BarcodeDetector({ formats: ['qr_code'] });
+  let erkennen;
+  try {
+    erkennen = await qrErkenner();
+  } catch (e) {
+    blattSchliessen();
+    return toast(e.message, true);
+  }
   while (lauf.aktiv) {
     try {
-      const codes = await erkenner.detect(video);
-      if (codes.length && lauf.aktiv) {
-        const wert = codes[0].rawValue.trim();
+      const gelesen = await erkennen(video);
+      if (gelesen && lauf.aktiv) {
+        const wert = gelesen.trim();
         blattSchliessen();
         const f = spulen.find(x => x.code.toLowerCase() === wert.toLowerCase());
         if (f) location.hash = 'spule/' + encodeURIComponent(f.code);
@@ -423,6 +429,43 @@ async function scannen(spulen) {
   }
 }
 
+// QR-Erkennung: eingebaut, wo vorhanden (Chrome/Edge auf Android), sonst jsQR (iPhone/Safari, Firefox) –
+// die Bibliothek wird erst beim ersten Scannen geladen. Liefert eine Funktion video -> Text oder null.
+let jsqrLaden = null;
+function jsqrHolen() {
+  if (window.jsQR) return Promise.resolve(window.jsQR);
+  return jsqrLaden ??= new Promise((ok, fehlschlag) => {
+    const s = document.createElement('script');
+    s.src = 'lib/jsQR.js';
+    s.onload = () => ok(window.jsQR);
+    s.onerror = () => { jsqrLaden = null; fehlschlag(new Error('Die QR-Erkennung konnte nicht geladen werden.')); };
+    document.head.appendChild(s);
+  });
+}
+
+async function qrErkenner() {
+  if ('BarcodeDetector' in window) {
+    try {
+      if ((await BarcodeDetector.getSupportedFormats()).includes('qr_code')) {
+        const erkenner = new BarcodeDetector({ formats: ['qr_code'] });
+        return async video => (await erkenner.detect(video))[0]?.rawValue || null;
+      }
+    } catch { /* weiter mit jsQR */ }
+  }
+  const jsQR = await jsqrHolen();
+  const leinwand = document.createElement('canvas');
+  const ctx = leinwand.getContext('2d', { willReadFrequently: true });
+  return async video => {
+    if (!video.videoWidth) return null;
+    // Auf höchstens 640 px verkleinern – reicht für Etiketten und schont den Akku
+    const f = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight));
+    leinwand.width = Math.round(video.videoWidth * f);
+    leinwand.height = Math.round(video.videoHeight * f);
+    ctx.drawImage(video, 0, 0, leinwand.width, leinwand.height);
+    const bild = ctx.getImageData(0, 0, leinwand.width, leinwand.height);
+    return jsQR(bild.data, bild.width, bild.height, { inversionAttempts: 'dontInvert' })?.data || null;
+  };
+}
 function scanStopp() {
   if (!scanLauf) return;
   scanLauf.aktiv = false;
