@@ -102,7 +102,7 @@ Public Class SendenDialog
         t.Controls.Add(knoepfe, 0, t.RowCount) : t.SetColumnSpan(knoepfe, 2) : t.RowCount += 1
 
         AddHandler cboDrucker.SelectedIndexChanged, Sub(s, e) DruckerGewechselt()
-        AddHandler cboPlatte.SelectedIndexChanged, Sub(s, e) FaecherAufbauen()
+        AddHandler cboPlatte.SelectedIndexChanged, Sub(s, e) DruckerGewechselt()   ' baut auch die Fächer neu auf
         AddHandler btnStarten.Click, AddressOf Starten_Click
         AddHandler btnAbbrechen.Click, Sub(s, e)
                                            If _laeuft Then _abbruch?.Cancel() Else DialogResult = DialogResult.Cancel
@@ -182,6 +182,10 @@ Public Class SendenDialog
             problem = If(d.Typ = Drucker.TypBambu,
                          "Für Bambu Lab wird eine in Bambu Studio geslicte 3MF (mit G-Code) benötigt – z. B. über ""Slicen …"" erzeugen.",
                          $"{d.TypName} druckt nur {String.Join(" / ", _ueberwachung.DruckbareEndungen(d.Id))}-Dateien aus dem passenden Slicer.")
+        ElseIf d.Typ = Drucker.TypBambu AndAlso
+               DreiMfOhneDruckerstart(_pfad, If(TryCast(cboPlatte.SelectedItem, PlattenInfo)?.Nummer, 1)) Then
+            problem = "Diese Datei enthält nicht den Start-G-Code des Druckers (mit Version 0.0.5 geslict) – der Drucker würde kein " &
+                      "Filament laden. Bitte das Modell über ""Slicen …"" neu slicen."
         ElseIf zustand = DruckerZustand.Offline OrElse zustand = DruckerZustand.Unbekannt Then
             problem = "Der Drucker ist gerade nicht erreichbar."
         ElseIf s.DruckLaeuft Then

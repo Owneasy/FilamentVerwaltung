@@ -86,9 +86,9 @@ End Class
 
 ''' <summary>
 ''' Steuert die installierte Bambu Studio über die Kommandozeile.
-''' Wichtig: Die Kommandozeile löst die Profil-Vererbung ("inherits") nicht vollständig auf – dann fehlen z. B. Dichte
-''' und Geschwindigkeitsgrenzen (Gewicht 0 g, falsche Zeit). Deshalb werden Prozess- und Filamentprofil hier selbst
-''' aufgelöst und vollständig übergeben; das Druckerprofil bleibt das Original (sonst schlägt die Kompatibilitätsprüfung fehl).
+''' Wichtig: Die Kommandozeile löst weder die Profil-Vererbung ("inherits") noch eingebundene Vorlagen ("include")
+''' auf – dann fehlen z. B. Dichte (Gewicht 0 g) oder beim Drucker der echte Start-G-Code (der Drucker lädt dann kein
+''' Filament aus dem AMS!). Deshalb werden alle drei Profile hier selbst vollständig aufgelöst und übergeben.
 ''' </summary>
 Public Class BambuStudio
 
@@ -223,13 +223,56 @@ Public Class BambuStudio
         End While
         Dim ergebnis As New JsonObject()
         For Each teil In kette
+            ' "include": Vorlagen (z. B. "... template machine_start_gcode") liefern einzelne Felder, das Profil selbst gewinnt
+            Dim vorlagen = TryCast(teil("include"), JsonArray)
+            If vorlagen IsNot Nothing Then
+                For Each v In vorlagen.Where(Function(x) x IsNot Nothing).Select(Function(x) x.ToString())
+                    Dim vorlage As (Json As JsonObject, Pfad As String, Benutzer As Boolean) = Nothing
+                    If Not _index(art).TryGetValue(v, vorlage) Then Throw New InvalidOperationException($"Profilvorlage ""{v}"" wurde in Bambu Studio nicht gefunden.")
+                    For Each feld In vorlage.Json
+                        If feld.Key <> "name" AndAlso feld.Key <> "instantiation" AndAlso feld.Key <> "type" AndAlso feld.Key <> "from" Then
+                            ergebnis(feld.Key) = feld.Value?.DeepClone()
+                        End If
+                    Next
+                Next
+            End If
             For Each feld In teil
                 ergebnis(feld.Key) = feld.Value?.DeepClone()
             Next
         Next
         ergebnis.Remove("inherits")
+        ergebnis.Remove("include")
         Return ergebnis
     End Function
+
+    ''' <summary>Modell-ID des Druckers (z. B. "N2S" für den A1) aus dem Modellprofil, leer wenn unbekannt.</summary>
+    Private Function ModellId(maschine As JsonObject) As String
+        Dim modell As (Json As JsonObject, Pfad As String, Benutzer As Boolean) = Nothing
+        If _index("machine").TryGetValue(Wert(maschine, "printer_model"), modell) Then Return Wert(modell.Json, "model_id")
+        Return ""
+    End Function
+
+    ''' <summary>
+    ''' Die Kommandozeile lässt printer_model_id in slice_info.config leer – Bambu Studio und der Drucker
+    ''' nutzen sie, um zu prüfen, für welches Modell die Datei geslict wurde.
+    ''' </summary>
+    Private Shared Sub ModellIdEintragen(datei As String, modellId As String)
+        If modellId.Length = 0 Then Return
+        Using zip = IO.Compression.ZipFile.Open(datei, IO.Compression.ZipArchiveMode.Update)
+            Dim eintrag = zip.GetEntry("Metadata/slice_info.config")
+            If eintrag Is Nothing Then Return
+            Dim inhalt As String
+            Using r As New StreamReader(eintrag.Open(), Encoding.UTF8)
+                inhalt = r.ReadToEnd()
+            End Using
+            Dim neu = inhalt.Replace("<metadata key=""printer_model_id"" value=""""/>", $"<metadata key=""printer_model_id"" value=""{modellId}""/>")
+            If neu = inhalt Then Return
+            eintrag.Delete()
+            Using w As New StreamWriter(zip.CreateEntry("Metadata/slice_info.config").Open(), New UTF8Encoding(False))
+                w.Write(neu)
+            End Using
+        End Using
+    End Sub
 
     ''' <summary>Schlägt ein Filamentprofil für eine Spule vor (Hersteller und Material im Namen, eigene Profile bevorzugt).</summary>
     Public Shared Function FilamentVorschlagen(profile As List(Of SlicerProfil), spule As Filament) As SlicerProfil
@@ -266,9 +309,12 @@ Public Class BambuStudio
             prozessJson("curr_bed_type") = druckplatte
             Dim filamentJson = Aufloesen("filament", filament.Name)
             If farbe.HasValue Then filamentJson("filament_colour") = New JsonArray(Drawing.ColorTranslator.ToHtml(Drawing.Color.FromArgb(farbe.Value.R, farbe.Value.G, farbe.Value.B)))
+            Dim maschineJson = Aufloesen("machine", drucker.Name)
+            Dim maschineDatei = Path.Combine(arbeitsordner, "machine.json")
             Dim prozessDatei = Path.Combine(arbeitsordner, "process.json")
             Dim filamentDatei = Path.Combine(arbeitsordner, "filament.json")
             Dim ohneBom As New UTF8Encoding(False)
+            File.WriteAllText(maschineDatei, maschineJson.ToJsonString(), ohneBom)
             File.WriteAllText(prozessDatei, prozessJson.ToJsonString(), ohneBom)
             File.WriteAllText(filamentDatei, filamentJson.ToJsonString(), ohneBom)
 
@@ -278,7 +324,7 @@ Public Class BambuStudio
                 .RedirectStandardOutput = True, .RedirectStandardError = True,
                 .StandardOutputEncoding = Encoding.UTF8, .StandardErrorEncoding = Encoding.UTF8}
             For Each a In {"--debug", "2", "--slice", "0", "--arrange", "1", "--orient", If(ausrichten, "1", "0"),
-                           "--load-settings", drucker.Pfad & ";" & prozessDatei,
+                           "--load-settings", maschineDatei & ";" & prozessDatei,
                            "--load-filaments", filamentDatei,
                            "--outputdir", arbeitsordner, "--export-3mf", zielName, modell}
                 psi.ArgumentList.Add(a)
@@ -312,6 +358,7 @@ Public Class BambuStudio
 
             Dim erzeugt = Path.Combine(arbeitsordner, zielName)
             If File.Exists(erzeugt) Then
+                ModellIdEintragen(erzeugt, ModellId(maschineJson))
                 ergebnis.Datei = erzeugt
             Else
                 ergebnis.Fehler = FehlerAusProtokoll(protokoll.ToString())

@@ -235,6 +235,35 @@ Public Module DateiAnalyse
         Return platten.OrderBy(Function(p) p.Nummer).ToList()
     End Function
 
+    ''' <summary>
+    ''' True, wenn der G-Code einer Platte nur den Ersatz-Start-G-Code der Bambu-Studio-Kommandozeile enthält
+    ''' ("G28 ; home all axes" statt des Druckerstarts). Solche Dateien entstanden mit "Slicen …" bis Version 0.0.5:
+    ''' Der Drucker lädt damit kein Filament und druckt ins Leere.
+    ''' </summary>
+    Public Function DreiMfOhneDruckerstart(pfad As String, platte As Integer) As Boolean
+        Try
+            Using zip = ZipFile.OpenRead(pfad)
+                Dim eintrag = zip.GetEntry($"Metadata/plate_{platte}.gcode")
+                If eintrag Is Nothing Then Return False
+                ' Der echte Start-G-Code aller Bambu-Modelle lädt das Filament per M620 (AMS bzw. Spulenhalter)
+                Using r As New IO.StreamReader(eintrag.Open())
+                    Dim zeilen = 0
+                    Do
+                        Dim zeile = r.ReadLine()
+                        If zeile Is Nothing Then Exit Do
+                        zeilen += 1
+                        If zeilen > 5000 Then Exit Do   ' Startblock steht ganz vorne
+                        If zeile.StartsWith("M620", StringComparison.Ordinal) Then Return False
+                        If zeile.StartsWith("; MACHINE_START_GCODE_END", StringComparison.Ordinal) Then Return True
+                    Loop
+                End Using
+            End Using
+        Catch ex As Exception
+            ' Im Zweifel nicht blockieren
+        End Try
+        Return False
+    End Function
+
     ''' <summary>"1d 2h 3m 4s" → Sekunden.</summary>
     Public Function DauerLesen(text As String) As Integer?
         Dim summe = 0
