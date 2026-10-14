@@ -89,6 +89,9 @@ Public Class DruckerKarte
     Private ReadOnly lblFortschritt As New Label With {.AutoSize = True, .ForeColor = Theme.TextLeise, .Font = Theme.SchriftKlein, .Margin = New Padding(0, 0, 0, 8)}
     Private ReadOnly lblMeldung As New Label With {.AutoSize = True, .MaximumSize = New Size(400, 0), .ForeColor = Theme.Rot,
                                                    .Font = Theme.SchriftKlein, .Margin = New Padding(0, 0, 0, 6), .Visible = False}
+    Private ReadOnly temperaturen As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = True, .Margin = New Padding(0, 0, 0, 6), .Visible = False}
+    Private ReadOnly _temperaturWerte As New List(Of Label)
+    Private _temperaturSignatur As String = ""
     Private ReadOnly spulen As New TableLayoutPanel With {.AutoSize = True, .ColumnCount = 2, .Dock = DockStyle.Fill, .Margin = New Padding(0, 4, 0, 4)}
     Private _fachSignatur As String = Nothing
     Private _filamente As New List(Of Filament)
@@ -123,6 +126,7 @@ Public Class DruckerKarte
         t.Controls.Add(lblDatei)
         t.Controls.Add(balken)
         t.Controls.Add(lblFortschritt)
+        t.Controls.Add(temperaturen)
         t.Controls.Add(lblMeldung)
         spulen.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
         spulen.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
@@ -175,9 +179,38 @@ Public Class DruckerKarte
         If s.GrammGeplant.HasValue Then teile.Add($"{s.GrammGeplant.Value:N0} g laut Slicer")
         lblFortschritt.Text = String.Join(" · ", teile)
         lblFortschritt.Visible = teile.Count > 0
+        TemperaturenAnzeigen(If(s.Zustand = DruckerZustand.Offline, New List(Of DruckerTemperatur), s.Temperaturen))
         lblMeldung.Text = s.Meldung
         lblMeldung.Visible = s.Zustand = DruckerZustand.Offline AndAlso s.Meldung.Length > 0
         SpulenAufbauen(s.Faecher, s.Slot)
+    End Sub
+
+    ''' <summary>Düse / Bett / Kammer: Beschriftung leise, Wert fett; beim Aufheizen in Gelb mit Pfeil.</summary>
+    Private Sub TemperaturenAnzeigen(liste As List(Of DruckerTemperatur))
+        Dim signatur = String.Join("|", liste.Select(Function(x) x.Name))
+        If signatur <> _temperaturSignatur Then
+            _temperaturSignatur = signatur
+            temperaturen.SuspendLayout()
+            For Each c As Control In temperaturen.Controls.Cast(Of Control)().ToList()
+                c.Dispose()
+            Next
+            temperaturen.Controls.Clear()
+            _temperaturWerte.Clear()
+            For Each x In liste
+                temperaturen.Controls.Add(New Label With {.Text = x.Name, .AutoSize = True, .Font = Theme.SchriftKlein, .ForeColor = Theme.TextLeise,
+                                                          .Margin = New Padding(0, 2, 4, 0)})
+                Dim wert As New Label With {.AutoSize = True, .Font = Theme.SchriftFett, .Margin = New Padding(0, 0, 18, 0)}
+                temperaturen.Controls.Add(wert)
+                _temperaturWerte.Add(wert)
+            Next
+            temperaturen.ResumeLayout()
+        End If
+        For i = 0 To liste.Count - 1
+            Dim x = liste(i)
+            _temperaturWerte(i).Text = If(x.HeiztAuf, If(x.Ist < x.Soll.Value, "↑ ", "↓ "), "") & x.WertText
+            _temperaturWerte(i).ForeColor = If(x.HeiztAuf, Theme.Gelb, If(x.Heizt, Theme.TextStark, Theme.TextLeise))
+        Next
+        temperaturen.Visible = liste.Count > 0
     End Sub
 
     ''' <summary>Zuordnung Fach → Spule. Wird nur neu aufgebaut, wenn sich die Fächer ändern.</summary>

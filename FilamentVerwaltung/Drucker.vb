@@ -69,6 +69,32 @@ Public Class DruckerFach
     Public Property Farbe As Drawing.Color?
 End Class
 
+''' <summary>Eine Temperatur des Druckers in °C, Soll = Nothing oder 0 heißt: Heizung aus bzw. nur Sensor.</summary>
+Public Class DruckerTemperatur
+    Public Property Name As String = ""
+    Public Property Ist As Double
+    Public Property Soll As Double?
+
+    Public ReadOnly Property Heizt As Boolean
+        Get
+            Return Soll.HasValue AndAlso Soll.Value > 0
+        End Get
+    End Property
+
+    ''' <summary>Heizung an, aber noch mehr als 3 °C vom Ziel entfernt.</summary>
+    Public ReadOnly Property HeiztAuf As Boolean
+        Get
+            Return Heizt AndAlso Math.Abs(Ist - Soll.Value) > 3
+        End Get
+    End Property
+
+    Public ReadOnly Property WertText As String
+        Get
+            Return If(Heizt, $"{Ist:N0} / {Soll.Value:N0} °C", $"{Ist:N0} °C")
+        End Get
+    End Property
+End Class
+
 ''' <summary>Momentaufnahme eines Druckers.</summary>
 Public Class DruckerStatus
     Public Property Zustand As DruckerZustand = DruckerZustand.Unbekannt
@@ -88,6 +114,8 @@ Public Class DruckerStatus
     ''' <summary>Aktives Fach der Mehrfarbeinheit (Bambu), sonst Nothing.</summary>
     Public Property Slot As Integer?
     Public Property Faecher As New List(Of DruckerFach)
+    ''' <summary>Temperaturen (Düse, Bett, ggf. Kammer) – leer, wenn der Drucker keine meldet.</summary>
+    Public Property Temperaturen As New List(Of DruckerTemperatur)
     Public Property Meldung As String = ""
 
     Public ReadOnly Property DruckLaeuft As Boolean

@@ -23,7 +23,7 @@ Die Daten liegen in einer lokalen **SQLite-Datenbank** – eine einzige Datei, k
   „Dateien“. Die Profil-Vererbung wird von der App aufgelöst, weil die Bambu-Studio-Kommandozeile das nicht
   vollständig tut (sonst Gewicht 0 g). „Im Slicer öffnen“ öffnet Dateien in Bambu Studio, OrcaSlicer, PrusaSlicer oder Cura.
 - **Drucker-Anbindung:** Bambu Lab (LAN, MQTT), Prusa (PrusaLink), Klipper (Moonraker) und OctoPrint. Live-Status je
-  Drucker (Datei, Fortschritt, Restzeit), Spulen-Zuordnung je Drucker bzw. je AMS-Fach. Ist ein Druck fertig oder
+  Drucker (Datei, Fortschritt, Restzeit, Temperaturen von Düse, Bett und ggf. Kammer), Spulen-Zuordnung je Drucker bzw. je AMS-Fach. Ist ein Druck fertig oder
   abgebrochen, erscheint ein Hinweis zum Buchen – Spule, Gewicht, Druckzeit und Datei sind vorausgefüllt
   (Gewicht aus tatsächlicher Extrusion, Slicer-Angaben des Druckers oder der passenden Datei in „Dateien“).
   Pro Drucker gibt es ein Protokoll für die Fehlersuche.

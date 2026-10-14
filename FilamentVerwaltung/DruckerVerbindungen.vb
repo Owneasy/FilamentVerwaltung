@@ -218,6 +218,12 @@ Public MustInherit Class DruckerVerbindung
         Return Nothing
     End Function
 
+    ''' <summary>Temperatur übernehmen, wenn der Drucker einen Ist-Wert meldet.</summary>
+    Protected Shared Sub Temperatur(s As DruckerStatus, name As String, ist As Double?, soll As Double?)
+        If Not ist.HasValue Then Return
+        s.Temperaturen.Add(New DruckerTemperatur With {.Name = name, .Ist = ist.Value, .Soll = soll})
+    End Sub
+
     Protected Shared Function NeuerHttpClient(basis As String, Optional handler As HttpMessageHandler = Nothing) As HttpClient
         Dim c = If(handler Is Nothing, New HttpClient(), New HttpClient(handler, disposeHandler:=True))
         c.BaseAddress = New Uri(basis.TrimEnd("/"c) & "/")
@@ -281,6 +287,17 @@ Public Class OctoPrintVerbindung
             s.Zustand = If(fortschritt >= 0.999 AndAlso s.Datei.Length > 0, DruckerZustand.Fertig, DruckerZustand.Bereit)
         End If
         s.Meldung = zustand
+
+        ' Temperaturen (antwortet mit 409, wenn der Drucker nicht verbunden ist – dann eben ohne)
+        If s.Zustand <> DruckerZustand.Offline Then
+            Try
+                Dim drucker = Await JsonHolenAsync(_http, "api/printer?history=false&exclude=sd,state", abbruch)
+                Temperatur(s, "Düse", Zahl(drucker, "temperature", "tool0", "actual"), Zahl(drucker, "temperature", "tool0", "target"))
+                Temperatur(s, "Bett", Zahl(drucker, "temperature", "bed", "actual"), Zahl(drucker, "temperature", "bed", "target"))
+                Temperatur(s, "Kammer", Zahl(drucker, "temperature", "chamber", "actual"), Zahl(drucker, "temperature", "chamber", "target"))
+            Catch ex As Exception When TypeOf ex IsNot OperationCanceledException
+            End Try
+        End If
         Return s
     End Function
 
@@ -319,7 +336,8 @@ Public Class MoonrakerVerbindung
     End Sub
 
     Public Overrides Async Function AbfragenAsync(abbruch As CancellationToken) As Task(Of DruckerStatus)
-        Dim antwort = Await JsonHolenAsync(_http, "printer/objects/query?print_stats&virtual_sdcard", abbruch)
+        ' Nicht vorhandene Objekte (z. B. ohne Heizbett) lässt Moonraker in der Antwort einfach weg
+        Dim antwort = Await JsonHolenAsync(_http, "printer/objects/query?print_stats&virtual_sdcard&extruder=temperature,target&heater_bed=temperature,target", abbruch)
         Dim stats = Kind(antwort, "result", "status", "print_stats")
         Dim s As New DruckerStatus With {
             .Datei = Text(stats, "filename"),
@@ -330,6 +348,9 @@ Public Class MoonrakerVerbindung
         If dauer.HasValue Then s.DauerSekunden = CInt(dauer.Value)
         Dim verbraucht = Zahl(stats, "filament_used")
         If verbraucht.HasValue AndAlso verbraucht.Value > 0 Then s.FilamentMmVerbraucht = verbraucht
+        Dim status = Kind(antwort, "result", "status")
+        Temperatur(s, "Düse", Zahl(status, "extruder", "temperature"), Zahl(status, "extruder", "target"))
+        Temperatur(s, "Bett", Zahl(status, "heater_bed", "temperature"), Zahl(status, "heater_bed", "target"))
 
         Select Case Text(stats, "state").ToLowerInvariant()
             Case "printing" : s.Zustand = DruckerZustand.Druckt
@@ -412,6 +433,8 @@ Public Class PrusaLinkVerbindung
         Dim rest = Zahl(status, "job", "time_remaining"), dauer = Zahl(status, "job", "time_printing")
         If rest.HasValue Then s.RestSekunden = CInt(rest.Value)
         If dauer.HasValue Then s.DauerSekunden = CInt(dauer.Value)
+        Temperatur(s, "Düse", Zahl(status, "printer", "temp_nozzle"), Zahl(status, "printer", "target_nozzle"))
+        Temperatur(s, "Bett", Zahl(status, "printer", "temp_bed"), Zahl(status, "printer", "target_bed"))
 
         Select Case Text(status, "printer", "state").ToUpperInvariant()
             Case "PRINTING", "BUSY" : s.Zustand = DruckerZustand.Druckt
@@ -644,6 +667,12 @@ Public Class BambuVerbindung
         s.Fortschritt = Math.Max(0, Math.Min(1, If(Zahl(feld("mc_percent")), 0.0) / 100.0))
         Dim rest = Zahl(feld("mc_remaining_time"))
         If rest.HasValue Then s.RestSekunden = CInt(rest.Value * 60)
+        Temperatur(s, "Düse", Zahl(feld("nozzle_temper")), Zahl(feld("nozzle_target_temper")))
+        Temperatur(s, "Bett", Zahl(feld("bed_temper")), Zahl(feld("bed_target_temper")))
+        ' Einen Kammersensor haben nur X1/H2. A1 (039…), A1 mini (030…), P1P (01S…) und P1S (01P…) melden trotzdem einen Fantasiewert (z. B. 5 °C)
+        Dim ohneKammer = {"039", "030", "01S", "01P"}.Any(Function(p) Drucker.Seriennummer.Trim().StartsWith(p, StringComparison.OrdinalIgnoreCase))
+        Dim kammer = Zahl(feld("chamber_temper"))
+        If Not ohneKammer AndAlso kammer.HasValue AndAlso kammer.Value > 0 Then Temperatur(s, "Kammer", kammer, Nothing)
 
         ' AMS: Fächer und aktives Fach (Slot = AMS-Nr. × 4 + Fach; 254 = externe Spule)
         Dim ams = feld("ams")
