@@ -118,11 +118,16 @@ Statt der lokalen Datenbank kann ein Server die Daten halten (Datenbank, Dateien
 und auch unterwegs dieselben Daten nutzen. Stand: Daten, Dateien, Einstellungen und Sicherungen laufen über den Server;
 die Drucker werden vorerst noch von der App aus überwacht (Umzug auf den Server folgt).
 
-**Bauen und starten (z. B. im Unraid-Terminal):**
+**Installation auf Unraid (mit Vorlage):** GitHub baut das Image bei jedem Push automatisch
+(`.github/workflows/server-image.yml` → `ghcr.io/owneasy/filament-server:latest`).
+
+1. `unraid/filament-server.xml` nach `\\<Unraid>\flash\config\plugins\dockerMan\templates-user\my-filament-server.xml` kopieren.
+2. In Unraid: **Docker → Add Container → Template:** „filament-server“ wählen, Port und Datenordner prüfen, **Apply**.
+3. `http://<Unraid-IP>:8080/api/info` im Browser öffnen; das Token steht in `/mnt/user/appdata/filament/token.txt`.
+
+**Ohne Vorlage (Image selbst bauen):** Quellcode nach Unraid kopieren, dann im Terminal
 
 ```
-git clone https://github.com/Owneasy/FilamentVerwaltung.git /mnt/user/appdata/filament-src
-cd /mnt/user/appdata/filament-src
 docker build -t filament-server .
 docker run -d --name filament-server --restart unless-stopped -p 8080:8080 \
   -v /mnt/user/appdata/filament:/data filament-server

@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>filament-server</Name>
+  <Repository>ghcr.io/owneasy/filament-server:latest</Repository>
+  <Registry>https://github.com/Owneasy/FilamentVerwaltung/pkgs/container/filament-server</Registry>
+  <Network>bridge</Network>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Owneasy/FilamentVerwaltung</Support>
+  <Project>https://github.com/Owneasy/FilamentVerwaltung</Project>
+  <Overview>Server der Filament-Verwaltung: hält Filament, Drucke, Drucker, Dateien und Einstellungen für die Windows-App, damit mehrere PCs und auch unterwegs (z. B. über einen Cloudflare-Tunnel) dieselben Daten nutzen. Beim ersten Start wird eine leere Datenbank angelegt. Das Zugangs-Token steht danach in token.txt im Datenordner und im Container-Log – es wird in der App unter „Verbindung“ eingetragen.</Overview>
+  <Category>Tools: Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/api/info</WebUI>
+  <Icon></Icon>
+  <ExtraParams></ExtraParams>
+  <PostArgs></PostArgs>
+  <Config Name="Port" Target="8080" Default="8080" Mode="tcp" Description="Port der API. In der App: http://IP-des-Servers:Port" Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Daten" Target="/data" Default="/mnt/user/appdata/filament" Mode="rw" Description="Datenbank, Dateien (STL, G-Code …), Sicherungen und token.txt" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/filament</Config>
+  <Config Name="Zugangs-Token" Target="FILAMENT_TOKEN" Default="" Mode="" Description="Optional. Leer lassen = der Server erzeugt beim ersten Start eins und speichert es in token.txt." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Zeitzone" Target="TZ" Default="Europe/Berlin" Mode="" Description="Für Zeitstempel der Sicherungen" Type="Variable" Display="advanced" Required="false" Mask="false">Europe/Berlin</Config>
+</Container>
