@@ -115,7 +115,8 @@ direkt im Nextcloud-Ordner zu halten, funktioniert, kann aber bei gleichzeitigem
 ## Server (Docker / Unraid) – im Aufbau
 
 Statt der lokalen Datenbank kann ein Server die Daten halten (Datenbank, Dateien, Sicherungen), damit mehrere PCs
-und auch unterwegs dieselben Daten nutzen. Stand: Der Server mit REST-API ist fertig, die Anbindung der App folgt.
+und auch unterwegs dieselben Daten nutzen. Stand: Daten, Dateien, Einstellungen und Sicherungen laufen über den Server;
+die Drucker werden vorerst noch von der App aus überwacht (Umzug auf den Server folgt).
 
 **Bauen und starten (z. B. im Unraid-Terminal):**
 
@@ -135,7 +136,15 @@ docker run -d --name filament-server --restart unless-stopped -p 8080:8080 \
   zusätzlich per Cloudflare Access (Service-Token) schützen. Große Dateien werden in 16-MB-Stücken hochgeladen
   (Cloudflare lässt höchstens 100 MB pro Anfrage zu).
 - **Test:** `http://<Unraid-IP>:8080/api/info` liefert Name und Version (ohne Token).
-## Projektaufbau
+
+**App verbinden:** In der Seitenleiste „Verbindung“ → „Server“ wählen, Adresse im Heimnetz (z. B. `http://192.168.1.10:8080`),
+Adresse unterwegs (z. B. `https://filament.meinedomain.de`), Token und ggf. Cloudflare-Service-Token eintragen, „Verbindung
+testen“, speichern – die App startet neu. Die App versucht zuerst die Heimnetz-Adresse, sonst die für unterwegs, und wechselt
+bei einem Verbindungsabbruch automatisch. Die Verbindung wird nur auf dem PC gespeichert (`%AppData%\FilamentVerwaltung\verbindung.json`,
+Token und Secret mit Windows verschlüsselt); alle anderen Einstellungen (Design, Spalten, Slicer-Profile …) liegen auf dem
+Server und sind damit auf jedem PC gleich. Dateien vom Server werden für Vorschau, Slicen und Senden in
+`%LocalAppData%\FilamentVerwaltung\Dateien` zwischengespeichert. Ist der Server beim Start nicht erreichbar, erscheint der
+Verbindungsdialog.## Projektaufbau
 
 Drei Projekte: `FilamentVerwaltung` (Windows-App), `FilamentVerwaltung.Kern` (Modelle, Datenbank, Drucker-Anbindung, Dateianalyse –
 ohne Windows-Abhängigkeiten, von App und Server genutzt; Schnittstellen `IDatenquelle` / `IDruckerDienst` in `Schnittstellen.vb`)

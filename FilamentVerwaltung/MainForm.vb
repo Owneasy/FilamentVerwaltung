@@ -147,6 +147,10 @@ Public Class MainForm
         leiste.Controls.Add(New Panel With {.Margin = New Padding(0)}, 0, leiste.RowCount)
         leiste.RowCount += 1
 
+        Dim btnVerbindung As New WebButton("Verbindung", Theme.SymServer, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
+        AddHandler btnVerbindung.Click, Sub(s, e) VerbindungZeigen()
+        tipps.SetToolTip(btnVerbindung, "Lokale Datenbank oder Server (z. B. Docker auf Unraid) wählen")
+        Zeile(leiste, btnVerbindung)
         Dim btnSicherungen As New WebButton("Sicherungen", Theme.SymSicherung, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
         AddHandler btnSicherungen.Click, Sub(s, e) SicherungenZeigen()
         tipps.SetToolTip(btnSicherungen, "Sicherungen der Datenbank ansehen, jetzt sichern oder wiederherstellen")
@@ -273,6 +277,15 @@ Public Class MainForm
         Dim antwort = MessageBox.Show(Me, "Das neue Design wird nach einem Neustart übernommen. Jetzt neu starten?",
                                       "Design", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
         If antwort = DialogResult.Yes Then Application.Restart()
+    End Sub
+
+    ''' <summary>Verbindung ändern; danach startet die App neu (alle Seiten hängen an der Datenquelle).</summary>
+    Private Sub VerbindungZeigen()
+        Using dlg As New VerbindungDialog(Verbindung.Laden())
+            If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
+        End Using
+        If MessageBox.Show(Me, "Die neue Verbindung wird nach einem Neustart verwendet. Jetzt neu starten?", "Verbindung",
+                           MessageBoxButtons.YesNo, MessageBoxIcon.Question) = DialogResult.Yes Then Application.Restart()
     End Sub
 
     Private Sub SicherungenZeigen()
