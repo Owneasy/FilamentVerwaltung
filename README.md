@@ -5,6 +5,8 @@ Die Daten liegen in einer lokalen **SQLite-Datenbank** – eine einzige Datei, k
 
 ## Funktionen
 
+- **Übersicht (Startseite):** Lagerbestand, laufende Drucke (live mit Fortschritt, Restzeit, Schicht, Temperaturen –
+  aktive Drucke farbig hervorgehoben), Verbrauch diesen Monat und pro Woche, letzte Drucke und was nachgekauft werden sollte
 - Filament anlegen, bearbeiten, duplizieren (neue Spule vom gleichen Typ), löschen
 - Felder: **eindeutige ID** (automatisch `FIL-0001`, `FIL-0002`, … oder frei wählbar), **Hersteller**, Material,
   Farbe, Durchmesser, **Gewicht**, Restgewicht, Leerspulengewicht, **Preis**, Kaufdatum, Notiz
@@ -121,6 +123,7 @@ direkt im Nextcloud-Ordner zu halten, funktioniert, kann aber bei gleichzeitigem
 | `DruckeSeite.vb` | Seite „Drucke“: Verlauf aller Buchungen, Kennzahlen |
 | `DruckDialog.vb` | Druck erfassen / bearbeiten |
 | `DateienSeite.vb` | Seite „Dateien“: Liste, 3D-Vorschau, Details, Drag & Drop |
+| `UebersichtSeite.vb` | Startseite „Übersicht“: Kennzahlen, Drucker live, Verbrauch pro Woche, letzte Drucke, Nachkauf |
 | `StatistikSeite.vb` | Seite „Statistik“: Kennzahlen, Diagramme, Reichweite je Spule |
 | `Diagramme.vb` | Säulen- und Balkendiagramm (selbst gezeichnet) mit Tooltip und Tabellenansicht |
 | `Sicherung.vb`, `SicherungenDialog.vb` | Automatische und manuelle Sicherungen, Wiederherstellen |

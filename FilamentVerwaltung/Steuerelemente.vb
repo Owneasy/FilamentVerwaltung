@@ -683,10 +683,23 @@ Public Class SeitenKopf
         }
         texte.Controls.Add(New Label With {.Text = titel, .Font = Theme.SchriftTitel, .ForeColor = Theme.TextStark,
                                            .AutoSize = True, .Margin = New Padding(0)})
-        texte.Controls.Add(New Label With {.Text = untertitel, .Font = Theme.Schrift, .ForeColor = Theme.TextLeise,
-                                           .AutoSize = True, .Margin = New Padding(1, 2, 0, 0)})
+        lblUntertitel = New Label With {.Text = untertitel, .Font = Theme.Schrift, .ForeColor = Theme.TextLeise,
+                                        .AutoSize = True, .Margin = New Padding(1, 2, 0, 0)}
+        texte.Controls.Add(lblUntertitel)
         Controls.Add(texte, 0, 0)
         Controls.Add(Knoepfe, 1, 0)
     End Sub
+
+    Private ReadOnly lblUntertitel As Label
+
+    <System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)>
+    Public Property Untertitel As String
+        Get
+            Return lblUntertitel.Text
+        End Get
+        Set(value As String)
+            lblUntertitel.Text = value
+        End Set
+    End Property
 
 End Class

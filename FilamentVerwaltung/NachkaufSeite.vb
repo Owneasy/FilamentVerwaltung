@@ -1,4 +1,4 @@
-Imports System.Diagnostics
+﻿Imports System.Diagnostics
 Imports System.Drawing
 Imports System.Text
 Imports System.Windows.Forms
@@ -200,13 +200,27 @@ Public Class NachkaufSeite
         End Try
         _laedt = False
 
-        ' Verbrauch der letzten 90 Tage je Spule
+        _sorten = SortenBerechnen(_filamente, buchungen, CInt(numMindest.Value), _ausgeblendet)
+        AnsichtAktualisieren()
+    End Sub
+
+    ''' <summary>Mindestbestand und ausgeblendete Sorten aus den Einstellungen (auch für die Übersicht).</summary>
+    Public Shared Function EinstellungenLesen(db As Datenbank) As (Mindestbestand As Integer, Ausgeblendet As HashSet(Of String))
+        Dim mindest As Integer
+        If Not Integer.TryParse(db.EinstellungLesen(EinstellungMindestbestand), mindest) Then mindest = 250
+        Dim aus = New HashSet(Of String)(If(db.EinstellungLesen(EinstellungAusgeblendet), "").
+                                         Split({vbLf}, StringSplitOptions.RemoveEmptyEntries), StringComparer.OrdinalIgnoreCase)
+        Return (mindest, aus)
+    End Function
+
+    ''' <summary>Bestand, Verbrauch (letzte 90 Tage) und Nachkauf-Status je Sorte.</summary>
+    Public Shared Function SortenBerechnen(filamente As List(Of Filament), buchungen As List(Of Buchung), mindestbestand As Integer,
+                                           ausgeblendet As HashSet(Of String)) As List(Of SorteInfo)
         Dim start = Date.Today.AddDays(-TageBasis + 1)
         Dim verbrauchJeSpule = buchungen.Where(Function(b) IstVerbrauch(b) AndAlso b.Datum.Date >= start).
                                          GroupBy(Function(b) b.FilamentId).ToDictionary(Function(gr) gr.Key, Function(gr) gr.Sum(Function(b) CDbl(b.Gramm)))
-        Dim mindestbestand = CInt(numMindest.Value)
 
-        _sorten = _filamente.GroupBy(Function(f) f.Sorte).Select(Function(gruppe)
+        Return filamente.GroupBy(Function(f) f.Sorte).Select(Function(gruppe)
             Dim neueste = gruppe.OrderByDescending(Function(f) f.Kaufdatum).ThenByDescending(Function(f) f.Id).First()
             Dim gramm = gruppe.Sum(Function(f) If(verbrauchJeSpule.ContainsKey(f.Id), verbrauchJeSpule(f.Id), 0.0))
             Dim s As New SorteInfo With {
@@ -220,15 +234,14 @@ Public Class NachkaufSeite
                 .PreisProKg = neueste.PreisProKg,
                 .ShopLink = If(gruppe.OrderByDescending(Function(f) f.Kaufdatum).Select(Function(f) f.ShopLink).FirstOrDefault(Function(l) l.Length > 0), ""),
                 .Vorlage = neueste,
-                .Ausgeblendet = _ausgeblendet.Contains(gruppe.Key)
+                .Ausgeblendet = ausgeblendet.Contains(gruppe.Key)
             }
             If gramm > 0 Then s.ReichweiteTage = s.Rest / (gramm / TageBasis)
             s.Status = If(s.Rest < mindestbestand OrElse s.ReichweiteTage < TageNachkaufen, SorteInfo.StatusNachkaufen,
                           If(s.ReichweiteTage < TageBald, SorteInfo.StatusBald, SorteInfo.StatusOk))
             Return s
         End Function).ToList()
-        AnsichtAktualisieren()
-    End Sub
+    End Function
 
     Private Sub AnsichtAktualisieren()
         If _laedt Then Return

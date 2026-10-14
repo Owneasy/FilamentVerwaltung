@@ -14,6 +14,7 @@ Public Class MainForm
     Private ReadOnly _db As Datenbank
     Private ReadOnly inhalt As New Panel With {.Dock = DockStyle.Fill, .BackColor = Theme.Seite}
     Private ReadOnly navigation As New List(Of (Knopf As WebButton, Seite As Control))
+    Private ReadOnly uebersichtSeite As UebersichtSeite
     Private ReadOnly filamentSeite As FilamentSeite
     Private ReadOnly druckeSeite As DruckeSeite
     Private ReadOnly dateienSeite As DateienSeite
@@ -52,6 +53,8 @@ Public Class MainForm
         statistikSeite = New StatistikSeite(db)
         nachkaufSeite = New NachkaufSeite(db)
         druckerSeite = New DruckerSeite(db, _ueberwachung)
+        uebersichtSeite = New UebersichtSeite(db, _ueberwachung)
+        AddHandler uebersichtSeite.SeiteOeffnen, AddressOf UebersichtZiel
         AddHandler _ueberwachung.DruckBeendet, AddressOf DruckBeendet
         AddHandler filamentSeite.VerlaufAnzeigen, Sub(id)
                                                       druckeSeite.SpuleFiltern(id)
@@ -93,6 +96,7 @@ Public Class MainForm
             .AutoSize = True,
             .Margin = New Padding(16, 0, 0, 8)
         })
+        Zeile(leiste, NavEintrag("Übersicht", Theme.SymStart, uebersichtSeite))
         Zeile(leiste, NavEintrag("Filament", Theme.SymSpule, filamentSeite))
         Zeile(leiste, NavEintrag("Drucke", Theme.SymDrucker, druckeSeite))
         Zeile(leiste, NavEintrag("Drucker", Theme.SymNetzDrucker, druckerSeite))
@@ -165,7 +169,7 @@ Public Class MainForm
         Controls.Add(druckBanner)
         Controls.Add(leiste)
 
-        SeiteZeigen(filamentSeite)
+        SeiteZeigen(uebersichtSeite)
         ResumeLayout(False)
         PerformLayout()
     End Sub
@@ -270,6 +274,17 @@ Public Class MainForm
         s?.Aktivieren()
     End Sub
 
+    ''' <summary>"Alle anzeigen" auf der Übersicht.</summary>
+    Private Sub UebersichtZiel(ziel As String)
+        Select Case ziel
+            Case UebersichtSeite.ZielFilament : SeiteZeigen(filamentSeite)
+            Case UebersichtSeite.ZielDrucke : SeiteZeigen(druckeSeite)
+            Case UebersichtSeite.ZielDrucker : SeiteZeigen(druckerSeite)
+            Case UebersichtSeite.ZielNachkauf : SeiteZeigen(nachkaufSeite)
+            Case UebersichtSeite.ZielStatistik : SeiteZeigen(statistikSeite)
+        End Select
+    End Sub
+
     Private Sub LogoZeichnen(g As Graphics, p As Control)
         g.SmoothingMode = SmoothingMode.AntiAlias
         Dim groesse = Px(p, 36)
@@ -292,7 +307,7 @@ Public Class MainForm
 
     Protected Overrides Sub OnShown(e As EventArgs)
         MyBase.OnShown(e)
-        filamentSeite.Aktivieren()
+        TryCast(_aktuelleSeite, ISeite)?.Aktivieren()
         UpdatePruefen(stumm:=True)
         _ueberwachung.Starten()
     End Sub
