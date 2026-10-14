@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -11,8 +11,10 @@
     <OptionStrict>On</OptionStrict>
     <OptionExplicit>On</OptionExplicit>
     <OptionInfer>On</OptionInfer>
-    <Version>1.0.0</Version>
+    <Version>0.0.1</Version>
     <Product>Filament-Verwaltung</Product>
+    <!-- Für release.ps1 (eigenständige EXE): Ziel bei jeder Wiederherstellung mitnehmen, auch wenn Visual Studio restored -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>
