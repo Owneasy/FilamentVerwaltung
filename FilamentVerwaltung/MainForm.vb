@@ -17,6 +17,7 @@ Public Class MainForm
     Private ReadOnly filamentSeite As FilamentSeite
     Private ReadOnly druckeSeite As DruckeSeite
     Private ReadOnly dateienSeite As DateienSeite
+    Private ReadOnly statistikSeite As StatistikSeite
     Private ReadOnly tipps As New ToolTip()
 
     ' --- Updates
@@ -35,6 +36,7 @@ Public Class MainForm
         filamentSeite = New FilamentSeite(db)
         druckeSeite = New DruckeSeite(db)
         dateienSeite = New DateienSeite(db)
+        statistikSeite = New StatistikSeite(db)
         AddHandler filamentSeite.VerlaufAnzeigen, Sub(id)
                                                       druckeSeite.SpuleFiltern(id)
                                                       SeiteZeigen(druckeSeite)
@@ -76,6 +78,7 @@ Public Class MainForm
         })
         Zeile(leiste, NavEintrag("Filament", Theme.SymSpule, filamentSeite))
         Zeile(leiste, NavEintrag("Drucke", Theme.SymDrucker, druckeSeite))
+        Zeile(leiste, NavEintrag("Statistik", Theme.SymDiagramm, statistikSeite))
         Zeile(leiste, NavEintrag("Dateien (CAD / STL)", Theme.SymOrdner, dateienSeite))
 
         ' Platzhalter schiebt den Datenbank-Bereich nach unten

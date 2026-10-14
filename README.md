@@ -17,6 +17,9 @@ Die Daten liegen in einer lokalen **SQLite-Datenbank** – eine einzige Datei, k
 - **Drucke / Verlauf:** Jede Änderung am Restgewicht wird protokolliert (Druck, Wiegen, Korrektur) – mit Kosten,
   Druckzeit und verknüpfter Datei. Drucke lassen sich erfassen, bearbeiten und mit Rückbuchung löschen.
   Kennzahlen für den laufenden Monat; "Verlauf anzeigen" (Rechtsklick auf eine Spule) filtert nach Spule.
+- **Statistik:** Verbrauch pro Monat (letzte 12 Monate), Verbrauch nach Material, Ø Verbrauch, Reichweite des
+  Lagers, Kosten und Drucke im laufenden Jahr sowie eine Prognose je Spule, wann sie beim bisherigen Verbrauch
+  (letzte 90 Tage) leer ist. Jedes Diagramm lässt sich auf eine Tabelle umschalten.
 - **Dateien:** STL, 3MF, OBJ, STEP, G-Code … per Drag & Drop oder Knopf hinzufügen. Die Dateien werden in den
   Ordner `Dateien` neben der Datenbank kopiert. 3D-Vorschau für STL/3MF/OBJ (drehen, zoomen).
   Aus G-Code (PrusaSlicer, OrcaSlicer, Bambu Studio, Cura) und geslicten 3MF werden Gewicht, Druckzeit und
@@ -94,6 +97,10 @@ direkt im Nextcloud-Ordner zu halten, funktioniert, kann aber bei gleichzeitigem
 | `DruckeSeite.vb` | Seite „Drucke“: Verlauf aller Buchungen, Kennzahlen |
 | `DruckDialog.vb` | Druck erfassen / bearbeiten |
 | `DateienSeite.vb` | Seite „Dateien“: Liste, 3D-Vorschau, Details, Drag & Drop |
+| `StatistikSeite.vb` | Seite „Statistik“: Kennzahlen, Diagramme, Reichweite je Spule |
+| `Diagramme.vb` | Säulen- und Balkendiagramm (selbst gezeichnet) mit Tooltip und Tabellenansicht |
+| `Sicherung.vb`, `SicherungenDialog.vb` | Automatische und manuelle Sicherungen, Wiederherstellen |
+| `Updater.vb`, `UpdateDialog.vb` | Updates über GitHub Releases |
 | `ModellAnsicht.vb` | STL/3MF/OBJ laden (`Netz`) und 3D-Vorschau mit eigenem Software-Renderer |
 | `DateiAnalyse.vb` | Druckdaten aus G-Code und geslicten 3MF auslesen |
 | `Datei.vb`, `Buchung.vb` | Datenmodelle für Dateien und Buchungen |
