@@ -1,14 +1,19 @@
-<#
+﻿<#
 .SYNOPSIS
     Baut eine neue Version der Filament-Verwaltung als eigenständige EXE für ein GitHub-Release.
 
 .DESCRIPTION
-    1. Setzt <Version> in FilamentVerwaltung.vbproj
-    2. Baut eine einzelne, eigenständige EXE (enthält .NET, läuft ohne Installation)
-    3. Legt sie unter artefakte\<Version>\FilamentVerwaltung.exe ab und zeigt die nächsten Schritte
+    1. Prüft, dass alles committet ist und GitHub keinen neueren Stand hat
+    2. Setzt <Version> in FilamentVerwaltung.vbproj, committet das als "Version x.y.z" und pusht
+       (damit der Release-Tag auf GitHub auf genau diesen Code zeigt)
+    3. Baut eine einzelne, eigenständige EXE (enthält .NET, läuft ohne Installation)
+    4. Legt sie unter artefakte\<Version>\FilamentVerwaltung.exe ab und zeigt die nächsten Schritte
 
     Danach auf GitHub ein Release mit dem Tag v<Version> anlegen und die EXE anhängen.
     Die installierten Programme finden das Update beim nächsten Start.
+
+.PARAMETER OhneGit
+    Nur bauen, ohne Prüfung, Commit und Push (z. B. für einen Testbuild).
 
 .EXAMPLE
     .\release.ps1 -Version 1.1.0
@@ -16,7 +21,8 @@
 param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version
+    [string]$Version,
+    [switch]$OhneGit
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,12 +30,50 @@ $wurzel = $PSScriptRoot
 $projekt = Join-Path $wurzel 'FilamentVerwaltung\FilamentVerwaltung.vbproj'
 $ziel = Join-Path $wurzel "artefakte\$Version"
 
+function GitAusfuehren {
+    # git schreibt Fortschritt nach stderr – das ist kein Fehler, entscheidend ist der Exit-Code
+    $alt = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $ausgabe = & git.exe -C $wurzel @args 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE; $ErrorActionPreference = $alt
+    if ($code -ne 0) { throw "git $($args -join ' ') ist fehlgeschlagen:`n$($ausgabe -join "`n")" }
+    return $ausgabe
+}
+
+# --- Git-Stand prüfen
+if (-not $OhneGit) {
+    $offen = GitAusfuehren status --porcelain
+    if ($offen) {
+        throw "Es gibt nicht committete Änderungen. Bitte zuerst committen (oder mit -OhneGit nur bauen):`n$($offen -join "`n")"
+    }
+    $zweig = (GitAusfuehren rev-parse --abbrev-ref HEAD | Select-Object -First 1).Trim()
+    GitAusfuehren fetch --quiet --tags origin | Out-Null
+    $remote = (GitAusfuehren rev-parse "origin/$zweig" | Select-Object -First 1).Trim()
+    $basis = (GitAusfuehren merge-base HEAD "origin/$zweig" | Select-Object -First 1).Trim()
+    if ($basis -ne $remote) {
+        throw "Auf GitHub gibt es Commits, die lokal fehlen. Bitte zuerst pullen."
+    }
+    if (GitAusfuehren tag --list "v$Version") {
+        throw "Den Tag v$Version gibt es schon. Bitte eine höhere Versionsnummer wählen."
+    }
+}
+
 # --- Version im Projekt setzen
 $inhalt = [System.IO.File]::ReadAllText($projekt)
 $neu = [regex]::Replace($inhalt, '<Version>[^<]*</Version>', "<Version>$Version</Version>")
 if ($neu -ne $inhalt) {
     [System.IO.File]::WriteAllText($projekt, $neu, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "Version im Projekt auf $Version gesetzt."
+}
+
+# --- Committen und pushen, damit der Release-Tag auf diesen Stand zeigt
+if (-not $OhneGit) {
+    if (GitAusfuehren status --porcelain) {
+        GitAusfuehren add -- $projekt | Out-Null
+        GitAusfuehren commit --quiet -m "Version $Version" | Out-Null
+        Write-Host "Commit ""Version $Version"" angelegt."
+    }
+    GitAusfuehren push --quiet origin $zweig | Out-Null
+    Write-Host "Auf GitHub gepusht ($zweig)."
 }
 
 # --- Eigenständige Einzel-EXE bauen
