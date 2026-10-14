@@ -19,6 +19,17 @@ Public Class MainForm
     Private ReadOnly dateienSeite As DateienSeite
     Private ReadOnly statistikSeite As StatistikSeite
     Private ReadOnly nachkaufSeite As NachkaufSeite
+    Private ReadOnly druckerSeite As DruckerSeite
+    Private ReadOnly _ueberwachung As DruckerUeberwachung
+
+    ' --- Beendete Drucke zum Buchen
+    Private ReadOnly _druckEnden As New Queue(Of DruckEnde)
+    Private ReadOnly druckBanner As New TableLayoutPanel With {
+        .Dock = DockStyle.Top, .Height = 52, .Visible = False, .ColumnCount = 3, .RowCount = 1,
+        .BackColor = Hell(Theme.Gruen, 0.12), .Padding = New Padding(28, 8, 20, 8)
+    }
+    Private ReadOnly lblDruckBanner As New Label With {.AutoSize = True, .Anchor = AnchorStyles.Left, .Font = Theme.SchriftFett,
+                                                       .ForeColor = Theme.TextStark}
     Private ReadOnly tipps As New ToolTip()
 
     ' --- Updates
@@ -39,6 +50,9 @@ Public Class MainForm
         dateienSeite = New DateienSeite(db)
         statistikSeite = New StatistikSeite(db)
         nachkaufSeite = New NachkaufSeite(db)
+        _ueberwachung = New DruckerUeberwachung(db)
+        druckerSeite = New DruckerSeite(db, _ueberwachung)
+        AddHandler _ueberwachung.DruckBeendet, AddressOf DruckBeendet
         AddHandler filamentSeite.VerlaufAnzeigen, Sub(id)
                                                       druckeSeite.SpuleFiltern(id)
                                                       SeiteZeigen(druckeSeite)
@@ -81,6 +95,7 @@ Public Class MainForm
         })
         Zeile(leiste, NavEintrag("Filament", Theme.SymSpule, filamentSeite))
         Zeile(leiste, NavEintrag("Drucke", Theme.SymDrucker, druckeSeite))
+        Zeile(leiste, NavEintrag("Drucker", Theme.SymNetzDrucker, druckerSeite))
         Zeile(leiste, NavEintrag("Nachkauf", Theme.SymGeld, nachkaufSeite))
         Zeile(leiste, NavEintrag("Statistik", Theme.SymDiagramm, statistikSeite))
         Zeile(leiste, NavEintrag("Dateien (CAD / STL)", Theme.SymOrdner, dateienSeite))
@@ -92,7 +107,7 @@ Public Class MainForm
             .AutoSize = True,
             .Margin = New Padding(16, 18, 0, 8)
         })
-        Dim btnSuchen As New WebButton("Spule suchen", Theme.SymSuche, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42, .Margin = New Padding(0, 0, 0, 4)}
+        Dim btnSuchen As New WebButton("Spule suchen", Theme.SymScanner, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42, .Margin = New Padding(0, 0, 0, 4)}
         AddHandler btnSuchen.Click, Sub(s, e) SchnellsucheZeigen()
         tipps.SetToolTip(btnSuchen, "QR-Code scannen oder ID eingeben und die Spule öffnen (Strg+K)")
         Zeile(leiste, btnSuchen)
@@ -142,10 +157,12 @@ Public Class MainForm
         })
 
         BannerAufbauen()
+        DruckBannerAufbauen()
 
         ' Reihenfolge wichtig für das Andocken: zuerst die füllende Fläche, dann der Balken über dem Inhalt, dann die Leiste
         Controls.Add(inhalt)
         Controls.Add(banner)
+        Controls.Add(druckBanner)
         Controls.Add(leiste)
 
         SeiteZeigen(filamentSeite)
@@ -277,6 +294,94 @@ Public Class MainForm
         MyBase.OnShown(e)
         filamentSeite.Aktivieren()
         UpdatePruefen(stumm:=True)
+        _ueberwachung.Starten()
+    End Sub
+
+    Protected Overrides Sub OnFormClosed(e As FormClosedEventArgs)
+        _ueberwachung.Dispose()
+        MyBase.OnFormClosed(e)
+    End Sub
+
+    ' ------------------------------------------------------------------ Drucker: fertige Drucke buchen
+
+    Private Sub DruckBannerAufbauen()
+        druckBanner.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
+        druckBanner.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
+        druckBanner.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
+        Dim btnBuchen As New WebButton("Buchen …", Theme.SymDrucker, KnopfStil.Primaer) With {.Anchor = AnchorStyles.Right}
+        Dim btnVerwerfen As New WebButton("Verwerfen") With {.Anchor = AnchorStyles.Right, .Margin = New Padding(0)}
+        AddHandler btnBuchen.Click, Sub(s, e) DruckBuchen()
+        AddHandler btnVerwerfen.Click, Sub(s, e)
+                                           If _druckEnden.Count > 0 Then _druckEnden.Dequeue()
+                                           DruckBannerAktualisieren()
+                                       End Sub
+        druckBanner.Controls.Add(lblDruckBanner, 0, 0)
+        druckBanner.Controls.Add(btnBuchen, 1, 0)
+        druckBanner.Controls.Add(btnVerwerfen, 2, 0)
+        AddHandler druckBanner.Paint, Sub(s, e)
+                                          Using p As New Pen(Hell(Theme.Gruen, 0.3))
+                                              e.Graphics.DrawLine(p, 0, druckBanner.Height - 1, druckBanner.Width, druckBanner.Height - 1)
+                                          End Using
+                                      End Sub
+    End Sub
+
+    Private Sub DruckBeendet(ende As DruckEnde)
+        _druckEnden.Enqueue(ende)
+        DruckBannerAktualisieren()
+        If Form.ActiveForm IsNot Me Then TaskleisteBlinken()
+    End Sub
+
+    Private Sub DruckBannerAktualisieren()
+        If _druckEnden.Count = 0 Then
+            druckBanner.Visible = False
+            Return
+        End If
+        Dim ende = _druckEnden.Peek()
+        Dim weitere = If(_druckEnden.Count > 1, $"  (+{_druckEnden.Count - 1} weitere)", "")
+        lblDruckBanner.Text = If(ende.Abgebrochen,
+            $"Druck abgebrochen auf {ende.DruckerName}: {ende.Datei} bei {ende.Fortschritt:P0} – Verbrauch buchen?{weitere}",
+            $"Druck fertig auf {ende.DruckerName}: {ende.Datei} – Verbrauch buchen?{weitere}")
+        druckBanner.Visible = True
+    End Sub
+
+    Private Sub DruckBuchen()
+        If _druckEnden.Count = 0 Then Return
+        Dim ende = _druckEnden.Peek()
+        Dim filamente As List(Of Filament), dateien As List(Of Datei), zuordnung As Dictionary(Of Integer, Long)
+        Try
+            filamente = _db.AlleLaden()
+            dateien = _db.DateienLaden()
+            zuordnung = _db.SpulenZuordnung(ende.DruckerId)
+        Catch ex As Exception
+            MessageBox.Show(Me, ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End Try
+        Dim vorschlag = BuchungVorschlagen(ende, filamente, dateien, zuordnung)
+        If DruckeSeite.DruckDialogZeigen(Me, _db, vorschlag, filamente, dateien, $"Druck buchen – {ende.DruckerName}") Then
+            _druckEnden.Dequeue()
+            DruckBannerAktualisieren()
+            If _aktuelleSeite IsNot Nothing Then SeiteZeigen(_aktuelleSeite)
+        End If
+    End Sub
+
+    <Runtime.InteropServices.StructLayout(Runtime.InteropServices.LayoutKind.Sequential)>
+    Private Structure FLASHWINFO
+        Public cbSize As UInteger
+        Public hwnd As IntPtr
+        Public dwFlags As UInteger
+        Public uCount As UInteger
+        Public dwTimeout As UInteger
+    End Structure
+
+    <Runtime.InteropServices.DllImport("user32.dll")>
+    Private Shared Function FlashWindowEx(ByRef info As FLASHWINFO) As Boolean
+    End Function
+
+    ''' <summary>Taskleisten-Eintrag blinken lassen, bis das Fenster aktiviert wird.</summary>
+    Private Sub TaskleisteBlinken()
+        Dim info As New FLASHWINFO With {.hwnd = Handle, .dwFlags = 3UI Or 12UI, .uCount = 0, .dwTimeout = 0}
+        info.cbSize = CUInt(Runtime.InteropServices.Marshal.SizeOf(info))
+        FlashWindowEx(info)
     End Sub
 
     ' ------------------------------------------------------------------ Updates

@@ -17,6 +17,11 @@ Die Daten liegen in einer lokalen **SQLite-Datenbank** – eine einzige Datei, k
 - **Drucke / Verlauf:** Jede Änderung am Restgewicht wird protokolliert (Druck, Wiegen, Korrektur) – mit Kosten,
   Druckzeit und verknüpfter Datei. Drucke lassen sich erfassen, bearbeiten und mit Rückbuchung löschen.
   Kennzahlen für den laufenden Monat; "Verlauf anzeigen" (Rechtsklick auf eine Spule) filtert nach Spule.
+- **Drucker-Anbindung:** Bambu Lab (LAN, MQTT), Prusa (PrusaLink), Klipper (Moonraker) und OctoPrint. Live-Status je
+  Drucker (Datei, Fortschritt, Restzeit), Spulen-Zuordnung je Drucker bzw. je AMS-Fach. Ist ein Druck fertig oder
+  abgebrochen, erscheint ein Hinweis zum Buchen – Spule, Gewicht, Druckzeit und Datei sind vorausgefüllt
+  (Gewicht aus tatsächlicher Extrusion, Slicer-Angaben des Druckers oder der passenden Datei in „Dateien“).
+  Pro Drucker gibt es ein Protokoll für die Fehlersuche.
 - **Etiketten mit QR-Code:** A4-Etikettenbögen (z. B. Avery 3474 / 3652 / L7163, auch angebrochene Bögen) oder
   Etikettendrucker (Brother 62 × 29 mm, Dymo 54 × 25 mm), mit Vorschau. Der QR-Code enthält die Spulen-ID.
 - **Spule scannen:** Strg+K (oder „Spule suchen“) – QR-Code scannen oder ID eintippen, Enter öffnet die Spule zum
@@ -113,6 +118,10 @@ direkt im Nextcloud-Ordner zu halten, funktioniert, kann aber bei gleichzeitigem
 | `NachkaufSeite.vb` | Seite „Nachkauf“: Bestand und Reichweite je Sorte, Einkaufsliste |
 | `Etiketten.vb`, `EtikettenDialog.vb` | Etikettenformate, QR-Code (QRCoder), Druck und Vorschau |
 | `SchnellsucheDialog.vb` | Spule per Scan / ID finden (Strg+K) |
+| `Drucker.vb` | Drucker, Status, Druckende, Umrechnung Länge/Volumen → Gramm |
+| `DruckerVerbindungen.vb` | Verbindungen: Moonraker, OctoPrint, PrusaLink (HTTP), Bambu Lab (MQTT/TLS, MQTTnet) |
+| `DruckerUeberwachung.vb` | Regelmäßige Abfrage, Erkennung von Druckende, Buchungsvorschlag |
+| `DruckerSeite.vb`, `DruckerDialog.vb` | Seite „Drucker“ mit Live-Karten, Drucker hinzufügen / testen |
 | `Updater.vb`, `UpdateDialog.vb` | Updates über GitHub Releases |
 | `ModellAnsicht.vb` | STL/3MF/OBJ laden (`Netz`) und 3D-Vorschau mit eigenem Software-Renderer |
 | `DateiAnalyse.vb` | Druckdaten aus G-Code und geslicten 3MF auslesen |

@@ -126,6 +126,8 @@ Public Module Theme
     Public Const SymDatei As String = ChrW(&HE8A5)
     Public Const SymSicherung As String = ChrW(&HE74E)
     Public Const SymSonne As String = ChrW(&HE706)
+    Public Const SymNetzDrucker As String = ChrW(&HE968)
+    Public Const SymScanner As String = ChrW(&HEC5A)
     Public Const SymMond As String = ChrW(&HE708)
 
     ' --- Farben für Buchungsarten

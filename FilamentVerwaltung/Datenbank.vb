@@ -81,6 +81,22 @@ CREATE INDEX IF NOT EXISTS IX_Buchung_Filament ON Buchung (FilamentId);
 CREATE TABLE IF NOT EXISTS SpulenVorlage (
     Hersteller TEXT    PRIMARY KEY COLLATE NOCASE,
     Gewicht    INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS Drucker (
+    Id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    Name         TEXT    NOT NULL,
+    Typ          TEXT    NOT NULL,
+    Adresse      TEXT    NOT NULL DEFAULT '',
+    Zugang       TEXT    NOT NULL DEFAULT '',
+    Benutzer     TEXT    NOT NULL DEFAULT '',
+    Seriennummer TEXT    NOT NULL DEFAULT '',
+    Aktiv        INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS DruckerSpule (
+    DruckerId  INTEGER NOT NULL,
+    Slot       INTEGER NOT NULL,
+    FilamentId INTEGER NOT NULL,
+    PRIMARY KEY (DruckerId, Slot)
 );"
             cmd.ExecuteNonQuery()
 
@@ -434,6 +450,74 @@ CREATE TABLE IF NOT EXISTS SpulenVorlage (
         Next
         Return cmd
     End Function
+
+    ' ------------------------------------------------------------------ Drucker
+
+    Public Function DruckerLaden() As List(Of Drucker)
+        Dim liste As New List(Of Drucker)
+        Using c = Oeffnen(), cmd = c.CreateCommand()
+            cmd.CommandText = "SELECT Id, Name, Typ, Adresse, Zugang, Benutzer, Seriennummer, Aktiv FROM Drucker ORDER BY Name"
+            Using r = cmd.ExecuteReader()
+                While r.Read()
+                    liste.Add(New Drucker With {
+                        .Id = r.GetInt64(0), .Name = Text(r, 1), .Typ = Text(r, 2), .Adresse = Text(r, 3),
+                        .Zugang = Text(r, 4), .Benutzer = Text(r, 5), .Seriennummer = Text(r, 6), .Aktiv = r.GetInt64(7) <> 0})
+                End While
+            End Using
+        End Using
+        Return liste
+    End Function
+
+    Public Sub DruckerSpeichern(d As Drucker)
+        Using c = Oeffnen()
+            If d.Id = 0 Then
+                d.Id = Convert.ToInt64(Befehl(c, Nothing,
+                    "INSERT INTO Drucker (Name, Typ, Adresse, Zugang, Benutzer, Seriennummer, Aktiv) " &
+                    "VALUES ($n, $t, $a, $z, $b, $s, $akt); SELECT last_insert_rowid();",
+                    "$n", d.Name.Trim(), "$t", d.Typ, "$a", d.Adresse.Trim(), "$z", d.Zugang.Trim(), "$b", d.Benutzer.Trim(),
+                    "$s", d.Seriennummer.Trim(), "$akt", If(d.Aktiv, 1, 0)).ExecuteScalar())
+            Else
+                Befehl(c, Nothing, "UPDATE Drucker SET Name = $n, Typ = $t, Adresse = $a, Zugang = $z, Benutzer = $b, " &
+                                   "Seriennummer = $s, Aktiv = $akt WHERE Id = $id",
+                       "$n", d.Name.Trim(), "$t", d.Typ, "$a", d.Adresse.Trim(), "$z", d.Zugang.Trim(), "$b", d.Benutzer.Trim(),
+                       "$s", d.Seriennummer.Trim(), "$akt", If(d.Aktiv, 1, 0), "$id", d.Id).ExecuteNonQuery()
+            End If
+        End Using
+    End Sub
+
+    Public Sub DruckerLoeschen(id As Long)
+        Using c = Oeffnen(), t = c.BeginTransaction()
+            Befehl(c, t, "DELETE FROM DruckerSpule WHERE DruckerId = $id", "$id", id).ExecuteNonQuery()
+            Befehl(c, t, "DELETE FROM Drucker WHERE Id = $id", "$id", id).ExecuteNonQuery()
+            t.Commit()
+        End Using
+    End Sub
+
+    ''' <summary>Spulen-Zuordnung je Fach (Slot → FilamentId).</summary>
+    Public Function SpulenZuordnung(druckerId As Long) As Dictionary(Of Integer, Long)
+        Dim ergebnis As New Dictionary(Of Integer, Long)
+        Using c = Oeffnen()
+            Using r = Befehl(c, Nothing, "SELECT Slot, FilamentId FROM DruckerSpule WHERE DruckerId = $id", "$id", druckerId).ExecuteReader()
+                While r.Read()
+                    ergebnis(r.GetInt32(0)) = r.GetInt64(1)
+                End While
+            End Using
+        End Using
+        Return ergebnis
+    End Function
+
+    ''' <summary>Ordnet einem Fach eine Spule zu (filamentId = Nothing entfernt die Zuordnung).</summary>
+    Public Sub SpuleZuordnen(druckerId As Long, slot As Integer, filamentId As Long?)
+        Using c = Oeffnen()
+            If filamentId.HasValue Then
+                Befehl(c, Nothing, "INSERT INTO DruckerSpule (DruckerId, Slot, FilamentId) VALUES ($d, $s, $f) " &
+                                   "ON CONFLICT(DruckerId, Slot) DO UPDATE SET FilamentId = excluded.FilamentId",
+                       "$d", druckerId, "$s", slot, "$f", filamentId.Value).ExecuteNonQuery()
+            Else
+                Befehl(c, Nothing, "DELETE FROM DruckerSpule WHERE DruckerId = $d AND Slot = $s", "$d", druckerId, "$s", slot).ExecuteNonQuery()
+            End If
+        End Using
+    End Sub
 
     ' ------------------------------------------------------------------ Sicherung
 
