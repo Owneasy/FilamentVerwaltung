@@ -1,4 +1,4 @@
-''' <summary>Ein angebundener 3D-Drucker.</summary>
+﻿''' <summary>Ein angebundener 3D-Drucker.</summary>
 Public Class Drucker
 
     Public Const TypBambu As String = "Bambu"
@@ -124,6 +124,8 @@ Public Class DruckEnde
     Public Property VolumenCm3 As Double?
     ''' <summary>Fach, aus dem überwiegend gedruckt wurde.</summary>
     Public Property Slot As Integer = Drucker.SlotStandard
+    ''' <summary>Datei aus "Dateien", die von der App an den Drucker gesendet wurde (dann sind Gewicht und Datei sicher).</summary>
+    Public Property DateiId As Long?
     Public Property Zeitpunkt As Date = Date.Now
 End Class
 

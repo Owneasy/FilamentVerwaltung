@@ -14,6 +14,7 @@ Public Class DateienSeite
     Private Const AlleTypen As String = "Alle Dateitypen"
 
     Private ReadOnly _db As Datenbank
+    Private ReadOnly _ueberwachung As DruckerUeberwachung
     Private _alle As New List(Of Datei)
     Private _buchungen As New List(Of Buchung)
     Private _filterWirdAktualisiert As Boolean
@@ -39,6 +40,7 @@ Public Class DateienSeite
     Private ReadOnly btnBuchen As New WebButton("Als Druck buchen", Theme.SymDrucker, KnopfStil.Primaer)
     Private ReadOnly btnOeffnen As New WebButton("Öffnen", Theme.SymOeffnen)
     Private ReadOnly btnSlicen As New WebButton("Slicen …", Theme.SymWuerfel)
+    Private ReadOnly btnSenden As New WebButton("An Drucker senden …", Theme.SymNetzDrucker)
     Private ReadOnly btnImSlicer As New WebButton("Im Slicer öffnen", Theme.SymOeffnen)
     Private _slicer As List(Of SlicerInstallation)
     Private _bambu As BambuStudio
@@ -49,8 +51,9 @@ Public Class DateienSeite
     Private ReadOnly btnLoeschen As New WebButton("Löschen", Theme.SymLoeschen, KnopfStil.Gefahr)
     Private details As Panel
 
-    Public Sub New(db As Datenbank)
+    Public Sub New(db As Datenbank, ueberwachung As DruckerUeberwachung)
         _db = db
+        _ueberwachung = ueberwachung
         OberflaecheAufbauen()
     End Sub
 
@@ -131,13 +134,15 @@ Public Class DateienSeite
         infos.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
 
         Dim knoepfe As New FlowLayoutPanel With {.AutoSize = True, .Dock = DockStyle.Top, .WrapContents = True, .Margin = New Padding(0, 10, 0, 0)}
-        For Each b In {btnBuchen, btnSlicen, btnImSlicer, btnOeffnen, btnImOrdner, btnLoeschen}
+        For Each b In {btnBuchen, btnSlicen, btnSenden, btnImSlicer, btnOeffnen, btnImOrdner, btnLoeschen}
             b.Margin = New Padding(0, 0, 8, 6)
             knoepfe.Controls.Add(b)
         Next
         AddHandler btnBuchen.Click, Sub(s, e) AlsDruckBuchen()
         AddHandler btnOeffnen.Click, Sub(s, e) Oeffnen()
         AddHandler btnSlicen.Click, Sub(s, e) Slicen()
+        AddHandler btnSenden.Click, Sub(s, e) Senden()
+        tipps.SetToolTip(btnSenden, "Datei an einen angebundenen Drucker senden und den Druck starten (mit Bestätigung)")
         AddHandler btnImSlicer.Click, Sub(s, e) ImSlicerOeffnen(btnImSlicer)
         tipps.SetToolTip(btnSlicen, "Mit Bambu Studio slicen – das Ergebnis (mit Gewicht und Druckzeit) landet hier in Dateien")
         tipps.SetToolTip(btnImSlicer, "Datei in einem installierten Slicer öffnen (Bambu Studio, OrcaSlicer, PrusaSlicer, Cura)")
@@ -180,6 +185,7 @@ Public Class DateienSeite
         Dim menue As New ContextMenuStrip With {.Font = Theme.Schrift, .ShowImageMargin = False}
         menue.Items.Add("Als Druck buchen", Nothing, Sub(s, e) AlsDruckBuchen())
         menue.Items.Add("Slicen …", Nothing, Sub(s, e) Slicen())
+        menue.Items.Add("An Drucker senden …", Nothing, Sub(s, e) Senden())
         menue.Items.Add("Im Slicer öffnen", Nothing, Sub(s, e) ImSlicerOeffnen(Nothing))
         menue.Items.Add("Öffnen", Nothing, Sub(s, e) Oeffnen())
         menue.Items.Add("Im Ordner anzeigen", Nothing, Sub(s, e) OrdnerOeffnen(_angezeigt))
@@ -334,13 +340,15 @@ Public Class DateienSeite
         ' Feste Reihenfolge erzwingen (beim Ein-/Ausblenden kann sie sonst durcheinandergeraten)
         Dim leiste = btnBuchen.Parent
         If leiste IsNot Nothing Then
-            Dim reihenfolge = {btnBuchen, btnSlicen, btnImSlicer, btnOeffnen, btnImOrdner, btnLoeschen}
+            Dim reihenfolge = {btnBuchen, btnSlicen, btnSenden, btnImSlicer, btnOeffnen, btnImOrdner, btnLoeschen}
             For i = 0 To reihenfolge.Length - 1
                 leiste.Controls.SetChildIndex(reihenfolge(i), i)
             Next
             leiste.PerformLayout()
         End If
         btnImSlicer.Visible = d IsNot Nothing AndAlso Not Datei.GcodeTypen.Contains(d.Typ)
+        ' Senden: geslicte 3MF (Bambu) oder G-Code (Klipper, OctoPrint, PrusaLink)
+        btnSenden.Visible = d IsNot Nothing AndAlso (d.HatDruckdaten OrElse Datei.GcodeTypen.Contains(d.Typ) OrElse d.Typ = "BGCODE")
         VorschauLaden(d)
     End Sub
 
@@ -508,6 +516,18 @@ Public Class DateienSeite
             If dlg.ShowDialog(Me) = DialogResult.OK AndAlso dlg.Ergebnis IsNot Nothing Then
                 _angezeigt = Nothing
                 DatenLaden(dlg.Ergebnis.Id)
+            End If
+        End Using
+    End Sub
+
+    Private Sub Senden()
+        Dim d = Ausgewaehlt()
+        If d Is Nothing Then Return
+        Using dlg As New SendenDialog(_db, _ueberwachung, d, _db.DateiPfad(d))
+            If dlg.ShowDialog(Me) = DialogResult.OK Then
+                MessageBox.Show(Me, "Der Auftrag wurde an den Drucker gesendet. Den Fortschritt siehst du auf der Seite ""Drucker""; " &
+                                "nach dem Druck wird der Verbrauch mit dieser Datei zum Buchen vorgeschlagen.", "An Drucker senden",
+                                MessageBoxButtons.OK, MessageBoxIcon.Information)
             End If
         End Using
     End Sub

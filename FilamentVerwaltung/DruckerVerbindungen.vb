@@ -27,6 +27,84 @@ Public Class DruckerProtokoll
     End Function
 End Class
 
+''' <summary>Optionen beim Senden eines Druckauftrags.</summary>
+Public Class SendeOptionen
+    ''' <summary>Platte der 3MF (Bambu), 1-basiert.</summary>
+    Public Property Platte As Integer = 1
+    ''' <summary>Je Filament der Datei das AMS-Fach (0–15) bzw. 254 für die externe Spule (Bambu).</summary>
+    Public Property AmsZuordnung As New List(Of Integer)
+    Public Property Nivellieren As Boolean = True
+    Public Property Zeitraffer As Boolean
+    Public Property FlussKalibrierung As Boolean
+End Class
+
+''' <summary>Meldet beim Lesen den Fortschritt (für Uploads).</summary>
+Public Class FortschrittStream
+    Inherits IO.Stream
+
+    Private ReadOnly _innen As IO.Stream
+    Private ReadOnly _fortschritt As IProgress(Of Double)
+    Private _gelesen As Long
+
+    Public Sub New(innen As IO.Stream, fortschritt As IProgress(Of Double))
+        _innen = innen
+        _fortschritt = fortschritt
+    End Sub
+
+    Public Overrides Function Read(buffer() As Byte, offset As Integer, count As Integer) As Integer
+        Dim n = _innen.Read(buffer, offset, count)
+        Melden(n)
+        Return n
+    End Function
+
+    Public Overrides Function ReadAsync(buffer As Memory(Of Byte), Optional cancellationToken As CancellationToken = Nothing) As ValueTask(Of Integer)
+        Return New ValueTask(Of Integer)(LesenAsync(buffer, cancellationToken))
+    End Function
+
+    Private Async Function LesenAsync(buffer As Memory(Of Byte), cancellationToken As CancellationToken) As Task(Of Integer)
+        Dim n = Await _innen.ReadAsync(buffer, cancellationToken)
+        Melden(n)
+        Return n
+    End Function
+
+    Private Sub Melden(n As Integer)
+        _gelesen += n
+        If _innen.Length > 0 Then _fortschritt?.Report(CDbl(_gelesen) / _innen.Length)
+    End Sub
+
+    Public Overrides ReadOnly Property CanRead As Boolean = True
+    Public Overrides ReadOnly Property CanSeek As Boolean = False
+    Public Overrides ReadOnly Property CanWrite As Boolean = False
+    Public Overrides ReadOnly Property Length As Long
+        Get
+            Return _innen.Length
+        End Get
+    End Property
+    Public Overrides Property Position As Long
+        Get
+            Return _gelesen
+        End Get
+        Set(value As Long)
+            Throw New NotSupportedException()
+        End Set
+    End Property
+    Public Overrides Sub Flush()
+    End Sub
+    Public Overrides Function Seek(offset As Long, origin As IO.SeekOrigin) As Long
+        Throw New NotSupportedException()
+    End Function
+    Public Overrides Sub SetLength(value As Long)
+        Throw New NotSupportedException()
+    End Sub
+    Public Overrides Sub Write(buffer() As Byte, offset As Integer, count As Integer)
+        Throw New NotSupportedException()
+    End Sub
+    Protected Overrides Sub Dispose(disposing As Boolean)
+        If disposing Then _innen.Dispose()
+        MyBase.Dispose(disposing)
+    End Sub
+End Class
+
 ''' <summary>
 ''' Verbindung zu einem Drucker. Jede Art liefert ihren Zustand als <see cref="DruckerStatus"/>.
 ''' </summary>
@@ -43,6 +121,37 @@ Public MustInherit Class DruckerVerbindung
 
     ''' <summary>Fragt den aktuellen Zustand ab (wirft bei Verbindungsfehlern).</summary>
     Public MustOverride Function AbfragenAsync(abbruch As CancellationToken) As Task(Of DruckerStatus)
+
+    ''' <summary>Dateiendungen, die dieser Drucker zum Drucken annimmt.</summary>
+    Public MustOverride ReadOnly Property DruckbareEndungen As String()
+
+    ''' <summary>Lädt die Datei hoch und startet den Druck (wirft bei Fehlern).</summary>
+    Public MustOverride Function SendenAsync(datei As String, optionen As SendeOptionen, fortschritt As IProgress(Of Double),
+                                             abbruch As CancellationToken) As Task
+
+    ''' <summary>Dateiname für den Drucker: nur unkritische Zeichen.</summary>
+    Protected Shared Function DruckerDateiname(datei As String) As String
+        Dim name = IO.Path.GetFileName(datei)
+        Dim erlaubt = name.Select(Function(c) If(Char.IsLetterOrDigit(c) AndAlso c < ChrW(128) OrElse c = "."c OrElse c = "-"c OrElse c = "_"c, c, "_"c)).ToArray()
+        Return New String(erlaubt)
+    End Function
+
+    ''' <summary>HTTP-Client für Uploads (lange Zeitüberschreitung).</summary>
+    Protected Shared Function UploadClient(basis As String, Optional handler As HttpMessageHandler = Nothing) As HttpClient
+        Dim c = NeuerHttpClient(basis, handler)
+        c.Timeout = TimeSpan.FromMinutes(15)
+        Return c
+    End Function
+
+    Protected Async Function AntwortPruefenAsync(antwort As HttpResponseMessage, was As String, abbruch As CancellationToken) As Task
+        Dim text = Await antwort.Content.ReadAsStringAsync(abbruch)
+        Protokoll.Schreiben($"{was} → {CInt(antwort.StatusCode)} {Kuerzen(text)}")
+        If antwort.StatusCode = HttpStatusCode.Unauthorized OrElse antwort.StatusCode = HttpStatusCode.Forbidden Then
+            Throw New UnauthorizedAccessException("Zugriff verweigert – bitte API-Key, Benutzer bzw. Passwort prüfen.")
+        End If
+        If antwort.StatusCode = HttpStatusCode.Conflict Then Throw New InvalidOperationException("Der Drucker ist beschäftigt (druckt gerade?).")
+        If Not antwort.IsSuccessStatusCode Then Throw New InvalidOperationException($"Der Drucker hat den Auftrag abgelehnt ({CInt(antwort.StatusCode)}): {Kuerzen(text)}")
+    End Function
 
     Public Shared Function Erstellen(d As Drucker, p As DruckerProtokoll) As DruckerVerbindung
         Select Case d.Typ
@@ -175,6 +284,22 @@ Public Class OctoPrintVerbindung
         Return s
     End Function
 
+    Public Overrides ReadOnly Property DruckbareEndungen As String() = {".gcode", ".gco", ".g"}
+
+    Public Overrides Async Function SendenAsync(datei As String, optionen As SendeOptionen, fortschritt As IProgress(Of Double),
+                                                abbruch As CancellationToken) As Task
+        Using http = UploadClient(Drucker.BasisUrl()), inhalt As New MultipartFormDataContent(),
+              strom As New FortschrittStream(IO.File.OpenRead(datei), fortschritt)
+            If Drucker.Zugang.Length > 0 Then http.DefaultRequestHeaders.Add("X-Api-Key", Drucker.Zugang)
+            inhalt.Add(New StreamContent(strom), "file", DruckerDateiname(datei))
+            inhalt.Add(New StringContent("true"), "select")
+            inhalt.Add(New StringContent("true"), "print")
+            Using antwort = Await http.PostAsync("api/files/local", inhalt, abbruch)
+                Await AntwortPruefenAsync(antwort, "POST api/files/local (drucken)", abbruch)
+            End Using
+        End Using
+    End Function
+
     Public Overrides Sub Dispose()
         _http.Dispose()
     End Sub
@@ -234,6 +359,22 @@ Public Class MoonrakerVerbindung
         gefunden = (Zahl(meta, "result", "filament_weight_total"), Zahl(meta, "result", "filament_total"), Zahl(meta, "result", "estimated_time"))
         _metadaten(datei) = gefunden
         Return gefunden
+    End Function
+
+    Public Overrides ReadOnly Property DruckbareEndungen As String() = {".gcode", ".gco", ".g"}
+
+    Public Overrides Async Function SendenAsync(datei As String, optionen As SendeOptionen, fortschritt As IProgress(Of Double),
+                                                abbruch As CancellationToken) As Task
+        Using http = UploadClient(Drucker.BasisUrl()), inhalt As New MultipartFormDataContent(),
+              strom As New FortschrittStream(IO.File.OpenRead(datei), fortschritt)
+            If Drucker.Zugang.Length > 0 Then http.DefaultRequestHeaders.Add("X-Api-Key", Drucker.Zugang)
+            inhalt.Add(New StreamContent(strom), "file", DruckerDateiname(datei))
+            inhalt.Add(New StringContent("gcodes"), "root")
+            inhalt.Add(New StringContent("true"), "print")
+            Using antwort = Await http.PostAsync("server/files/upload", inhalt, abbruch)
+                Await AntwortPruefenAsync(antwort, "POST server/files/upload (drucken)", abbruch)
+            End Using
+        End Using
     End Function
 
     Public Overrides Sub Dispose()
@@ -299,6 +440,38 @@ Public Class PrusaLinkVerbindung
         Return s
     End Function
 
+    Public Overrides ReadOnly Property DruckbareEndungen As String() = {".bgcode", ".gcode"}
+
+    Public Overrides Async Function SendenAsync(datei As String, optionen As SendeOptionen, fortschritt As IProgress(Of Double),
+                                                abbruch As CancellationToken) As Task
+        ' Speicher ermitteln (MK4/XL: /usb, Mini: /local)
+        Dim speicher = Await JsonHolenAsync(_http, "api/v1/storage", abbruch)
+        Dim pfad = "/usb"
+        Dim liste = Kind(speicher, "storage_list")
+        If liste.HasValue AndAlso liste.Value.ValueKind = JsonValueKind.Array Then
+            For Each s In liste.Value.EnumerateArray()
+                Dim verfuegbar As JsonElement
+                If Text(s, "path").Length > 0 AndAlso (Not s.TryGetProperty("available", verfuegbar) OrElse verfuegbar.ValueKind = JsonValueKind.True) Then
+                    pfad = Text(s, "path")
+                    Exit For
+                End If
+            Next
+        End If
+        Dim handler As HttpMessageHandler = If(Drucker.Benutzer.Length > 0,
+            New HttpClientHandler With {.Credentials = New NetworkCredential(Drucker.Benutzer, Drucker.Zugang)}, Nothing)
+        Using http = UploadClient(Drucker.BasisUrl(), handler), strom As New FortschrittStream(IO.File.OpenRead(datei), fortschritt)
+            If Drucker.Benutzer.Length = 0 AndAlso Drucker.Zugang.Length > 0 Then http.DefaultRequestHeaders.Add("X-Api-Key", Drucker.Zugang)
+            Dim inhalt As New StreamContent(strom)
+            inhalt.Headers.ContentType = New Headers.MediaTypeHeaderValue("application/octet-stream")
+            Dim anfrage As New HttpRequestMessage(HttpMethod.Put, $"api/v1/files{pfad}/{Uri.EscapeDataString(DruckerDateiname(datei))}") With {.Content = inhalt}
+            anfrage.Headers.Add("Print-After-Upload", "?1")
+            anfrage.Headers.Add("Overwrite", "?1")
+            Using antwort = Await http.SendAsync(anfrage, abbruch)
+                Await AntwortPruefenAsync(antwort, $"PUT api/v1/files{pfad} (drucken)", abbruch)
+            End Using
+        End Using
+    End Function
+
     Public Overrides Sub Dispose()
         _http.Dispose()
     End Sub
@@ -316,6 +489,8 @@ Public Class BambuVerbindung
     Private _client As IMqttClient
     Private _letzterPushall As Date = Date.MinValue
     Private _datenErhalten As Boolean
+    ''' <summary>Wartet auf die Antwort des Druckers auf den Startbefehl.</summary>
+    Private _startAntwort As TaskCompletionSource(Of (Ok As Boolean, Grund As String))
 
     Public Sub New(d As Drucker, p As DruckerProtokoll)
         MyBase.New(d, p)
@@ -391,14 +566,20 @@ Public Class BambuVerbindung
         Protokoll.Schreiben("MQTT pushall gesendet")
     End Function
 
-    Private Sub NachrichtVerarbeiten(text As String)
-        Protokoll.Schreiben("MQTT ← " & Kuerzen(text))
+    Private Sub NachrichtVerarbeiten(inhalt As String)
+        Protokoll.Schreiben("MQTT ← " & Kuerzen(inhalt))
         Try
-            Using doc = JsonDocument.Parse(text)
+            Using doc = JsonDocument.Parse(inhalt)
                 Dim druck As JsonElement
                 If Not doc.RootElement.TryGetProperty("print", druck) OrElse druck.ValueKind <> JsonValueKind.Object Then Return
                 Dim neu = TryCast(Nodes.JsonNode.Parse(druck.GetRawText()), Nodes.JsonObject)
                 If neu Is Nothing Then Return
+                ' Antwort auf den Startbefehl (project_file) weiterreichen
+                If Text(druck, "command") = "project_file" AndAlso Text(druck, "result").Length > 0 Then
+                    Dim ergebnis = Text(druck, "result")
+                    Dim grund = If(Text(druck, "reason").Length > 0, Text(druck, "reason"), Text(druck, "msg"))
+                    _startAntwort?.TrySetResult((ergebnis.Equals("success", StringComparison.OrdinalIgnoreCase), grund))
+                End If
                 SyncLock _sperre
                     Zusammenfuehren(_zustand, neu)
                     _datenErhalten = True
@@ -492,6 +673,82 @@ Public Class BambuVerbindung
                                                .Farbe = Farbe(Text(extern, "tray_color"))})
         End If
         Return s
+    End Function
+
+    Public Overrides ReadOnly Property DruckbareEndungen As String() = {".3mf"}
+
+    ''' <summary>
+    ''' 3MF per FTPS (implizit, Port 990) auf die SD-Karte laden und per MQTT den Druck starten.
+    ''' Der Drucker muss im LAN-Modus mit aktiviertem Entwicklermodus sein, sonst ignoriert er den Startbefehl.
+    ''' </summary>
+    Public Overrides Async Function SendenAsync(datei As String, optionen As SendeOptionen, fortschritt As IProgress(Of Double),
+                                                abbruch As CancellationToken) As Task
+        Dim name = DruckerDateiname(datei)
+        ' 1) Hochladen
+        Protokoll.Schreiben($"FTPS verbinde mit {Host}:990 …")
+        Using ftp As New FluentFTP.AsyncFtpClient(Host, "bblp", Drucker.Zugang, 990)
+            ftp.Config.EncryptionMode = FluentFTP.FtpEncryptionMode.Implicit
+            ftp.Config.ValidateAnyCertificate = True   ' selbst ausgestelltes Zertifikat des Druckers
+            ftp.Config.DataConnectionType = FluentFTP.FtpDataConnectionType.PASV
+            ftp.Config.ConnectTimeout = 15000
+            ftp.Config.DataConnectionConnectTimeout = 15000
+            ftp.Config.ReadTimeout = 30000
+            Try
+                Await ftp.Connect(abbruch)
+            Catch ex As FluentFTP.Exceptions.FtpAuthenticationException
+                Throw New UnauthorizedAccessException("Der Drucker hat die FTP-Anmeldung abgelehnt – Zugangscode prüfen.", ex)
+            Catch ex As Exception When TypeOf ex IsNot OperationCanceledException
+                Throw New IO.IOException($"Keine FTPS-Verbindung zum Drucker (Port 990): {ex.Message} Ist der LAN-Modus am Drucker aktiv?", ex)
+            End Try
+            Protokoll.Schreiben($"FTPS lade hoch: /{name}")
+            Dim ftpFortschritt As New Progress(Of FluentFTP.FtpProgress)(Sub(p) fortschritt?.Report(p.Progress / 100.0))
+            Dim status = Await ftp.UploadFile(datei, "/" & name, FluentFTP.FtpRemoteExists.Overwrite, False, FluentFTP.FtpVerify.None, ftpFortschritt, abbruch)
+            Protokoll.Schreiben($"FTPS Upload: {status}")
+            If status <> FluentFTP.FtpStatus.Success Then Throw New IO.IOException("Das Hochladen auf den Drucker ist fehlgeschlagen.")
+            Await ftp.Disconnect(abbruch)
+        End Using
+
+        ' 2) Startbefehl
+        Await VerbindenAsync(abbruch)
+        Dim zuordnung As New Nodes.JsonArray()
+        For Each slot In optionen.AmsZuordnung
+            zuordnung.Add(slot)
+        Next
+        Dim nurExtern = optionen.AmsZuordnung.Count > 0 AndAlso optionen.AmsZuordnung.All(Function(s) s = Drucker.SlotExtern)
+        Dim befehl As New Nodes.JsonObject From {
+            {"sequence_id", "0"},
+            {"command", "project_file"},
+            {"param", $"Metadata/plate_{optionen.Platte}.gcode"},
+            {"url", "file:///sdcard/" & name},
+            {"subtask_name", IO.Path.GetFileNameWithoutExtension(IO.Path.GetFileNameWithoutExtension(name))},
+            {"project_id", "0"}, {"profile_id", "0"}, {"task_id", "0"}, {"subtask_id", "0"},
+            {"bed_type", "auto"},
+            {"timelapse", optionen.Zeitraffer},
+            {"bed_leveling", optionen.Nivellieren},
+            {"bed_levelling", optionen.Nivellieren},
+            {"flow_cali", optionen.FlussKalibrierung},
+            {"vibration_cali", False},
+            {"layer_inspect", False},
+            {"use_ams", Not nurExtern AndAlso optionen.AmsZuordnung.Count > 0},
+            {"ams_mapping", If(nurExtern, New Nodes.JsonArray(), zuordnung)}
+        }
+        Dim nachricht = New Nodes.JsonObject From {{"print", befehl}}.ToJsonString()
+        _startAntwort = New TaskCompletionSource(Of (Ok As Boolean, Grund As String))(TaskCreationOptions.RunContinuationsAsynchronously)
+        Protokoll.Schreiben("MQTT → " & nachricht)
+        Await _client.PublishAsync(New MqttApplicationMessageBuilder().WithTopic($"device/{Drucker.Seriennummer}/request").WithPayload(nachricht).Build(), abbruch)
+
+        ' 3) Auf die Antwort des Druckers warten (manche Firmware antwortet nicht – dann am Status erkennen)
+        Dim fertig = Await Task.WhenAny(_startAntwort.Task, Task.Delay(TimeSpan.FromSeconds(20), abbruch))
+        If fertig Is _startAntwort.Task Then
+            Dim antwort = _startAntwort.Task.Result
+            Protokoll.Schreiben($"Startbefehl: {If(antwort.Ok, "angenommen", "abgelehnt")} {antwort.Grund}")
+            If Not antwort.Ok Then
+                Throw New InvalidOperationException("Der Drucker hat den Druckauftrag abgelehnt" & If(antwort.Grund.Length > 0, $" ({antwort.Grund})", "") &
+                                                    ". Ist der Entwicklermodus (LAN-Modus) am Drucker aktiviert?")
+            End If
+        Else
+            Protokoll.Schreiben("Startbefehl: keine ausdrückliche Antwort – Status wird beobachtet")
+        End If
     End Function
 
     ''' <summary>Bambu-Farbe "RRGGBBAA" → Color.</summary>

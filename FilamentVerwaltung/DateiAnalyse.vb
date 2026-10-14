@@ -1,9 +1,30 @@
-Imports System.Globalization
+﻿Imports System.Globalization
 Imports System.IO
 Imports System.IO.Compression
 Imports System.Text
 Imports System.Text.RegularExpressions
 Imports System.Xml
+Imports System.Xml.Linq
+
+''' <summary>Ein Filament, das auf einer Platte einer geslicten 3MF verwendet wird.</summary>
+Public Class PlattenFilament
+    ''' <summary>Filament-Nummer im Projekt (1-basiert).</summary>
+    Public Property Id As Integer
+    Public Property Typ As String = ""
+    Public Property Farbe As Drawing.Color?
+    Public Property Gramm As Double
+End Class
+
+''' <summary>Eine geslicte Platte einer Bambu-Studio-3MF.</summary>
+Public Class PlattenInfo
+    Public Property Nummer As Integer
+    Public Property Gramm As Double
+    Public Property Sekunden As Integer
+    Public Property Filamente As New List(Of PlattenFilament)
+    Public Overrides Function ToString() As String
+        Return $"Platte {Nummer}" & If(Gramm > 0, $" · {Gramm:N0} g", "") & If(Sekunden > 0, " · " & DauerText(Sekunden), "")
+    End Function
+End Class
 
 ''' <summary>Vom Slicer berechnete Druckdaten.</summary>
 Public Class DruckInfo
@@ -164,6 +185,54 @@ Public Module DateiAnalyse
             info.Material = String.Join(", ", materialien)
         End Using
         Return info
+    End Function
+
+    ''' <summary>
+    ''' Geslicte Platten einer 3MF (nur Platten, zu denen G-Code enthalten ist). Leer, wenn die Datei nicht geslict ist.
+    ''' </summary>
+    Public Function DreiMfPlatten(pfad As String) As List(Of PlattenInfo)
+        Dim platten As New List(Of PlattenInfo)
+        Try
+            Using zip = ZipFile.OpenRead(pfad)
+                Dim mitGcode = zip.Entries.Select(Function(e) Regex.Match(e.FullName, "^Metadata/plate_(\d+)\.gcode$", RegexOptions.IgnoreCase)).
+                                           Where(Function(m) m.Success).Select(Function(m) Integer.Parse(m.Groups(1).Value, CultureInfo.InvariantCulture)).ToHashSet()
+                If mitGcode.Count = 0 Then Return platten
+                Dim info = zip.GetEntry("Metadata/slice_info.config")
+                If info IsNot Nothing Then
+                    Using s = info.Open()
+                        Dim doc = XDocument.Load(s)
+                        For Each p In doc.Descendants("plate")
+                            Dim meta = p.Elements("metadata").ToDictionary(Function(m) CStr(m.Attribute("key")), Function(m) CStr(m.Attribute("value")))
+                            Dim nummer As Integer
+                            If Not meta.ContainsKey("index") OrElse Not Integer.TryParse(meta("index"), nummer) OrElse Not mitGcode.Contains(nummer) Then Continue For
+                            Dim platte As New PlattenInfo With {.Nummer = nummer,
+                                .Gramm = If(Zahl(If(meta.ContainsKey("weight"), meta("weight"), "")), 0.0),
+                                .Sekunden = CInt(If(Zahl(If(meta.ContainsKey("prediction"), meta("prediction"), "")), 0.0))}
+                            For Each f In p.Elements("filament")
+                                Dim id As Integer
+                                Integer.TryParse(CStr(f.Attribute("id")), id)
+                                Dim farbe As Drawing.Color? = Nothing
+                                Try
+                                    Dim hex = CStr(f.Attribute("color"))
+                                    If Not String.IsNullOrEmpty(hex) Then farbe = Drawing.ColorTranslator.FromHtml(hex.Substring(0, Math.Min(7, hex.Length)))
+                                Catch
+                                End Try
+                                platte.Filamente.Add(New PlattenFilament With {.Id = id, .Typ = If(CStr(f.Attribute("type")), ""), .Farbe = farbe,
+                                                                              .Gramm = If(Zahl(CStr(f.Attribute("used_g"))), 0.0)})
+                            Next
+                            platten.Add(platte)
+                        Next
+                    End Using
+                End If
+                ' Platten mit G-Code, aber ohne Eintrag in slice_info trotzdem anbieten
+                For Each nr In mitGcode.Where(Function(n) Not platten.Any(Function(p) p.Nummer = n))
+                    platten.Add(New PlattenInfo With {.Nummer = nr})
+                Next
+            End Using
+        Catch ex As Exception
+            ' Keine gültige 3MF
+        End Try
+        Return platten.OrderBy(Function(p) p.Nummer).ToList()
     End Function
 
     ''' <summary>"1d 2h 3m 4s" → Sekunden.</summary>

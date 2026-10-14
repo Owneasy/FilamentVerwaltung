@@ -23,6 +23,10 @@ Public Class DruckerUeberwachung
         Public MaxFortschritt As Double
         Public LetzterDruckStatus As DruckerStatus
         Public ReadOnly SlotZaehler As New Dictionary(Of Integer, Integer)
+        ' Von der App gesendeter Auftrag
+        Public GesendetDateiId As Long?
+        Public GesendetUm As Date
+        Public JobDateiId As Long?
     End Class
 
     Private ReadOnly _db As Datenbank
@@ -90,6 +94,33 @@ Public Class DruckerUeberwachung
         Return If(_eintraege.TryGetValue(druckerId, e), e.Protokoll, Nothing)
     End Function
 
+    ''' <summary>Dateiendungen, die der Drucker zum Drucken annimmt (leer, wenn nicht überwacht).</summary>
+    Public Function DruckbareEndungen(druckerId As Long) As String()
+        Dim e As Eintrag = Nothing
+        Return If(_eintraege.TryGetValue(druckerId, e), e.Verbindung.DruckbareEndungen, Array.Empty(Of String)())
+    End Function
+
+    ''' <summary>
+    ''' Lädt eine Datei hoch und startet den Druck über die bestehende Verbindung. Die Datei wird gemerkt,
+    ''' damit beim Druckende genau sie zum Buchen vorgeschlagen wird.
+    ''' </summary>
+    Public Async Function SendenAsync(druckerId As Long, dateiPfad As String, dateiId As Long, optionen As SendeOptionen,
+                                      fortschritt As IProgress(Of Double), abbruch As CancellationToken) As Task
+        Dim e As Eintrag = Nothing
+        If Not _eintraege.TryGetValue(druckerId, e) Then Throw New InvalidOperationException("Der Drucker wird nicht überwacht (in den Druckereinstellungen aktivieren).")
+        e.Protokoll.Schreiben($"Sende Auftrag: {IO.Path.GetFileName(dateiPfad)}")
+        e.GesendetDateiId = dateiId
+        e.GesendetUm = Date.Now
+        Try
+            Await e.Verbindung.SendenAsync(dateiPfad, optionen, fortschritt, abbruch)
+        Catch
+            e.GesendetDateiId = Nothing
+            Throw
+        End Try
+        ' Gleich nachsehen, damit die Karte den Start zeigt
+        If Not e.LaeuftGerade Then Abfragen(e)
+    End Function
+
     ''' <summary>Anzahl Drucker, die gerade drucken.</summary>
     Public ReadOnly Property AnzahlDruckend As Integer
         Get
@@ -146,7 +177,10 @@ Public Class DruckerUeberwachung
                 e.JobStart = Date.Now.AddSeconds(-If(neu.DauerSekunden, 0))
                 e.MaxFortschritt = 0
                 e.SlotZaehler.Clear()
-                e.Protokoll.Schreiben($"Druck erkannt: {neu.Datei}")
+                ' Gerade von der App gesendet? Dann gehört die Datei zu diesem Druck
+                e.JobDateiId = If(e.GesendetDateiId.HasValue AndAlso (Date.Now - e.GesendetUm).TotalMinutes < 30, e.GesendetDateiId, Nothing)
+                e.GesendetDateiId = Nothing
+                e.Protokoll.Schreiben($"Druck erkannt: {neu.Datei}" & If(e.JobDateiId.HasValue, " (von der App gesendet)", ""))
             End If
             If e.JobDatei.Length = 0 Then e.JobDatei = neu.Datei
             e.MaxFortschritt = Math.Max(e.MaxFortschritt, neu.Fortschritt)
@@ -172,8 +206,10 @@ Public Class DruckerUeberwachung
             .FilamentMmGeplant = If(neu.FilamentMmGeplant, letzter.FilamentMmGeplant),
             .FilamentMmVerbraucht = If(neu.FilamentMmVerbraucht, letzter.FilamentMmVerbraucht),
             .VolumenCm3 = If(neu.VolumenCm3, letzter.VolumenCm3),
-            .Slot = If(e.SlotZaehler.Count > 0, e.SlotZaehler.OrderByDescending(Function(p) p.Value).First().Key, Drucker.SlotStandard)
+            .Slot = If(e.SlotZaehler.Count > 0, e.SlotZaehler.OrderByDescending(Function(p) p.Value).First().Key, Drucker.SlotStandard),
+            .DateiId = e.JobDateiId
         }
+        e.JobDateiId = Nothing
         e.Protokoll.Schreiben($"Druck beendet: {ende.Datei} ({If(abgebrochen, $"abgebrochen bei {ende.Fortschritt:P0}", "fertig")})")
         RaiseEvent DruckBeendet(ende)
     End Sub
@@ -201,11 +237,16 @@ Public Module DruckErkennung
         End If
         Dim spule = filamente.FirstOrDefault(Function(f) f.Id = spuleId)
 
-        ' Passende Datei aus "Dateien" (gleicher Name ohne Endung)
+        ' Datei: von der App gesendet (sicher), sonst gleicher Name ohne Endung
         Dim name = IO.Path.GetFileNameWithoutExtension(ende.Datei)
         If name.EndsWith(".gcode", StringComparison.OrdinalIgnoreCase) Then name = IO.Path.GetFileNameWithoutExtension(name)
-        Dim datei = dateien.Where(Function(d) String.Equals(IO.Path.GetFileNameWithoutExtension(d.Name).Replace(".gcode", ""), name, StringComparison.OrdinalIgnoreCase)).
+        Dim datei = If(ende.DateiId.HasValue, dateien.FirstOrDefault(Function(d) d.Id = ende.DateiId.Value), Nothing)
+        If datei Is Nothing Then
+            datei = dateien.Where(Function(d) String.Equals(IO.Path.GetFileNameWithoutExtension(d.Name).Replace(".gcode", ""), name, StringComparison.OrdinalIgnoreCase)).
                             OrderByDescending(Function(d) d.HatDruckdaten).ThenByDescending(Function(d) d.Hinzugefuegt).FirstOrDefault()
+        ElseIf name.Length = 0 OrElse ende.Datei.Length = 0 Then
+            name = IO.Path.GetFileNameWithoutExtension(datei.Name).Replace(".gcode", "")
+        End If
 
         Dim anteil = If(ende.Abgebrochen, ende.Fortschritt, 1.0)
         Dim durchmesser = If(spule IsNot Nothing, CDbl(spule.Durchmesser), 1.75)

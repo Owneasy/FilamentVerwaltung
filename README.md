@@ -27,6 +27,10 @@ Die Daten liegen in einer lokalen **SQLite-Datenbank** – eine einzige Datei, k
   abgebrochen, erscheint ein Hinweis zum Buchen – Spule, Gewicht, Druckzeit und Datei sind vorausgefüllt
   (Gewicht aus tatsächlicher Extrusion, Slicer-Angaben des Druckers oder der passenden Datei in „Dateien“).
   Pro Drucker gibt es ein Protokoll für die Fehlersuche.
+- **An Drucker senden:** G-Code/BGCODE bzw. geslicte 3MF direkt aus „Dateien“ hochladen und den Druck starten
+  (OctoPrint, Moonraker, PrusaLink per HTTP; Bambu Lab per FTPS + MQTT mit Wahl der Platte, AMS-Zuordnung,
+  Bettnivellierung, Zeitraffer). Bei Bambu muss der LAN-Modus (meist mit Entwicklermodus) aktiv sein. Nach dem Druck
+  wird die gesendete Datei für die Buchung verwendet.
 - **Etiketten mit QR-Code:** A4-Etikettenbögen (z. B. Avery 3474 / 3652 / L7163, auch angebrochene Bögen) oder
   Etikettendrucker (Brother 62 × 29 mm, Dymo 54 × 25 mm), mit Vorschau. Der QR-Code enthält die Spulen-ID.
 - **Spule scannen:** Strg+K (oder „Spule suchen“) – QR-Code scannen oder ID eintippen, Enter öffnet die Spule zum
@@ -124,11 +128,12 @@ direkt im Nextcloud-Ordner zu halten, funktioniert, kann aber bei gleichzeitigem
 | `Etiketten.vb`, `EtikettenDialog.vb` | Etikettenformate, QR-Code (QRCoder), Druck und Vorschau |
 | `SchnellsucheDialog.vb` | Spule per Scan / ID finden (Strg+K) |
 | `Drucker.vb` | Drucker, Status, Druckende, Umrechnung Länge/Volumen → Gramm |
-| `DruckerVerbindungen.vb` | Verbindungen: Moonraker, OctoPrint, PrusaLink (HTTP), Bambu Lab (MQTT/TLS, MQTTnet) |
+| `DruckerVerbindungen.vb` | Verbindungen: Moonraker, OctoPrint, PrusaLink (HTTP), Bambu Lab (MQTT/TLS, MQTTnet; Upload per FTPS mit FluentFTP) |
 | `DruckerUeberwachung.vb` | Regelmäßige Abfrage, Erkennung von Druckende, Buchungsvorschlag |
 | `DruckerSeite.vb`, `DruckerDialog.vb` | Seite „Drucker“ mit Live-Karten, Drucker hinzufügen / testen |
 | `Slicer.vb` | Slicer finden, Bambu-Studio-Profile lesen/auflösen, Slicen über die Kommandozeile |
 | `SlicerDialog.vb` | Dialog „Slicen mit Bambu Studio“ |
+| `SendenDialog.vb` | Dialog „An Drucker senden“ (Drucker, Platte, AMS-Zuordnung, Optionen) |
 | `Updater.vb`, `UpdateDialog.vb` | Updates über GitHub Releases |
 | `ModellAnsicht.vb` | STL/3MF/OBJ laden (`Netz`) und 3D-Vorschau mit eigenem Software-Renderer |
 | `DateiAnalyse.vb` | Druckdaten aus G-Code und geslicten 3MF auslesen |

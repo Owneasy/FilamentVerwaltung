@@ -47,10 +47,10 @@ Public Class MainForm
         _db = db
         filamentSeite = New FilamentSeite(db)
         druckeSeite = New DruckeSeite(db)
-        dateienSeite = New DateienSeite(db)
+        _ueberwachung = New DruckerUeberwachung(db)
+        dateienSeite = New DateienSeite(db, _ueberwachung)
         statistikSeite = New StatistikSeite(db)
         nachkaufSeite = New NachkaufSeite(db)
-        _ueberwachung = New DruckerUeberwachung(db)
         druckerSeite = New DruckerSeite(db, _ueberwachung)
         AddHandler _ueberwachung.DruckBeendet, AddressOf DruckBeendet
         AddHandler filamentSeite.VerlaufAnzeigen, Sub(id)
