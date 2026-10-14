@@ -97,7 +97,7 @@ Write-Host "Fertig: $exe ($groesse MB)" -ForegroundColor Green
 Write-Host "SHA-256: $hash"
 Write-Host ""
 Write-Host "Naechste Schritte:" -ForegroundColor Cyan
-Write-Host "  1. Aenderungen committen und pushen"
+if ($OhneGit) { Write-Host "  1. Aenderungen committen und pushen (mit -OhneGit gebaut)" } else { Write-Host "  1. Code ist bereits committet und gepusht" }
 Write-Host "  2. Auf GitHub: Releases -> 'Draft a new release'"
 Write-Host "     Tag:   v$Version"
 Write-Host "     Titel: Filament-Verwaltung $Version"
