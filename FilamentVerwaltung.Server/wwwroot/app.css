@@ -181,3 +181,33 @@ dd { margin: 0; color: var(--text-normal); }
   background: #0f172a; color: #fff; box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
 }
 .toast.fehler { background: var(--rot); color: #fff; margin-top: 0; font-size: 15px; }
+
+/* Etiketten: Auswahl im Dialog */
+.liste-kopf { align-items: center; margin: 4px 0 6px; }
+.liste-kopf .schalter { margin: 0; }
+.liste-kopf .knopf, .auswahl-kopf .knopf { min-height: 36px; padding: 4px 12px; margin: 0; }
+.auswahl-kopf { align-items: center; margin-top: 16px; }
+.auswahl { max-height: 38vh; overflow: auto; border: 1px solid var(--rand); border-radius: 9px; padding: 2px 12px; margin-top: 8px; }
+.auswahl .schalter { margin: 10px 0; }
+.knopf.breit { width: 100%; }
+
+/* Etiketten: Druckansicht (nur beim Drucken sichtbar; Maße in mm wie in der App) */
+#druck { display: none; }
+@media print {
+  html, body { background: #fff !important; padding: 0 !important; margin: 0 !important; }
+  body > *:not(#druck) { display: none !important; }
+  #druck { display: block; }
+}
+.druckseite { position: relative; overflow: hidden; break-after: page; page-break-after: always; }
+.druckseite:last-child { break-after: auto; page-break-after: auto; }
+.etikett {
+  position: absolute; overflow: hidden; color: #000; background: #fff;
+  font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.etikett.rahmen { outline: 0.2mm solid #c8c8c8; outline-offset: -0.1mm; }
+.etikett svg { position: absolute; fill: #000; }
+.etikett .text { position: absolute; overflow: hidden; }
+.etikett .text > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.33; }
+.etikett .klein { color: #555; }
+.etikett .punkt { display: inline-block; border-radius: 50%; border: 0.15mm solid rgb(0 0 0 / 47%); vertical-align: -0.1em; margin-right: 1mm; box-sizing: border-box; }

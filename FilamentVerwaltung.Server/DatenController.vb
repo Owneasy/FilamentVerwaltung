@@ -206,6 +206,27 @@ Public Class DatenController
         Return Guid.TryParseExact(id, "N", g)
     End Function
 
+    ' ---------- QR-Codes für Etiketten (Handy-Seite)
+
+    ''' <summary>
+    ''' QR-Codes wie auf den Etiketten der App (QRCoder, Fehlerkorrektur M, mit Ruhezone): je Text die Modulmatrix
+    ''' als Zeilen aus "0"/"1". Die Seite zeichnet daraus scharfe Rechtecke in Millimetern.
+    ''' </summary>
+    <HttpPost("qr")>
+    Public Function QrCodes(<FromBody> texte As List(Of String)) As ActionResult(Of Dictionary(Of String, String()))
+        If texte Is Nothing OrElse texte.Count > 500 Then Return BadRequest("Bitte höchstens 500 Texte auf einmal.")
+        Dim ergebnis As New Dictionary(Of String, String())
+        Using gen As New QRCoder.QRCodeGenerator()
+            For Each inhalt In texte.Distinct()
+                Using daten = gen.CreateQrCode(If(String.IsNullOrEmpty(inhalt), "-", inhalt), QRCoder.QRCodeGenerator.ECCLevel.M)
+                    ergebnis(If(inhalt, "")) = daten.ModuleMatrix.Select(
+                        Function(zeile) String.Concat(zeile.Cast(Of Boolean)().Select(Function(an) If(an, "1"c, "0"c)))).ToArray()
+                End Using
+            Next
+        End Using
+        Return ergebnis
+    End Function
+
     ' ---------- Sicherungen
 
     <HttpGet("sicherungen")>

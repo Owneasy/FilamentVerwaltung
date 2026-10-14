@@ -6,6 +6,7 @@ const ZUSTAND_FARBE = ['grau', 'rot', 'gruen', 'blau', 'gelb', 'gruen', 'rot', '
 const DRUCKT = 3, PAUSIERT = 4, FERTIG = 5, OFFLINE = 1;
 const ICON = {
   kamera: '<svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+  drucken: '<svg viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z"/></svg>',
   qr: '<svg viewBox="0 0 24 24"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM20 14v.01M14 20h.01M17 17h4v4h-4"/></svg>'
 };
 
@@ -368,14 +369,18 @@ async function spulenSeite() {
       <input id="suche" type="search" placeholder="ID, Hersteller, Farbe, Lagerort …" value="${esc(spulenSuche)}">
       <button class="knopf" id="scannen" title="QR-Code scannen">${ICON.qr}</button>
     </div>
-    <label class="schalter"><input type="checkbox" id="nurVorhanden" ${nurVorhanden ? 'checked' : ''}> nur Spulen mit Restbestand</label>
+    <div class="zeile liste-kopf"><label class="schalter"><input type="checkbox" id="nurVorhanden" ${nurVorhanden ? 'checked' : ''}> nur mit Restbestand</label>
+      <button class="knopf" id="etiketten">${ICON.drucken} Etiketten</button></div>
     <div id="liste"><p class="leer">Lade …</p></div>`);
   let spulen;
   try { spulen = await holen('filament'); } catch (e) { return fehler(e); }
-  const zeigen = () => {
+  const gefiltert = () => {
     const q = spulenSuche.toLowerCase();
-    const treffer = spulen.filter(f => (!nurVorhanden || f.restgewicht > 0) &&
+    return spulen.filter(f => (!nurVorhanden || f.restgewicht > 0) &&
       (!q || [f.code, f.hersteller, f.material, f.farbe, f.lagerort, f.notiz].some(x => (x || '').toLowerCase().includes(q))));
+  };
+  const zeigen = () => {
+    const treffer = gefiltert();
     $('#liste').innerHTML = treffer.length ? treffer.map(spulenKarte).join('') : '<p class="leer">Keine passenden Spulen.</p>';
   };
   $('#suche').oninput = e => { spulenSuche = e.target.value; zeigen(); };
@@ -387,6 +392,7 @@ async function spulenSeite() {
   };
   $('#nurVorhanden').onchange = e => { nurVorhanden = e.target.checked; zeigen(); };
   $('#scannen').onclick = () => scannen(spulen);
+  $('#etiketten').onclick = () => etikettenDialog(gefiltert(), new Set());
   zeigen();
 }
 
@@ -501,7 +507,9 @@ async function spuleSeite(code) {
       <div id="vorschau" class="vorschau"></div>
       <label>Wofür? (optional, erscheint im Verlauf)<input id="wBezeichnung" placeholder="z. B. Halterung, Fehldruck …"></label>
       <div class="knoepfe"><button class="primaer" id="wOk">Übernehmen</button></div>
-    </section>`);
+    </section>
+    <button class="knopf breit" id="etikett">${ICON.drucken} Etikett drucken</button>`);
+  $('#etikett').onclick = () => etikettenDialog([f], new Set([f.id]));
 
   const modus = () => document.querySelector('input[name=modus]:checked').value;
   const neuerRest = () => {
@@ -539,6 +547,148 @@ async function spuleSeite(code) {
       fehler(e);
     }
   };
+}
+
+
+// ------------------------------------------------------------------ Etiketten drucken
+// Gleiche Formate (gleiche Reihenfolge, Einstellung "Etiketten.Format" wird mit der App geteilt) und gleicher
+// Aufbau wie in der Windows-App (Etiketten.vb): QR-Code links, Angaben rechts. Alle Maße in mm.
+
+const ETIKETT_FORMATE = [
+  { name: 'A4-Bogen · 3 × 8 · 70 × 37 mm (z. B. Avery 3474)', breite: 70, hoehe: 37, spalten: 3, zeilen: 8, randLinks: 0, randOben: 0.5, abstandX: 0, abstandY: 0 },
+  { name: 'A4-Bogen · 3 × 7 · 70 × 42,3 mm (z. B. Avery 3652)', breite: 70, hoehe: 42.3, spalten: 3, zeilen: 7, randLinks: 0, randOben: 0.45, abstandX: 0, abstandY: 0 },
+  { name: 'A4-Bogen · 2 × 7 · 99,1 × 38,1 mm (z. B. Avery L7163)', breite: 99.1, hoehe: 38.1, spalten: 2, zeilen: 7, randLinks: 4.65, randOben: 15.15, abstandX: 2.5, abstandY: 0 },
+  { name: 'Etikettendrucker · 62 × 29 mm (z. B. Brother DK-11209)', breite: 62, hoehe: 29, einzeln: true },
+  { name: 'Etikettendrucker · 54 × 25 mm (z. B. Dymo 11352)', breite: 54, hoehe: 25, einzeln: true }
+];
+
+// Farbpunkt wie in der App (Theme.FarbeZuName)
+const FARBNAMEN = [['schwarz', '#111827'], ['black', '#111827'], ['weiß', '#FFFFFF'], ['weiss', '#FFFFFF'], ['white', '#FFFFFF'],
+  ['natur', '#F5F0E1'], ['transparent', '#E0F2FE'], ['klar', '#E0F2FE'], ['dunkelgrau', '#4B5563'], ['grau', '#9CA3AF'], ['grey', '#9CA3AF'],
+  ['gray', '#9CA3AF'], ['silber', '#C0C4CC'], ['gold', '#D4A72C'], ['dunkelblau', '#1E3A8A'], ['hellblau', '#7DD3FC'], ['blau', '#2563EB'],
+  ['blue', '#2563EB'], ['türkis', '#14B8A6'], ['tuerkis', '#14B8A6'], ['dunkelgrün', '#166534'], ['hellgrün', '#86EFAC'], ['grün', '#16A34A'],
+  ['gruen', '#16A34A'], ['green', '#16A34A'], ['gelb', '#FACC15'], ['yellow', '#FACC15'], ['orange', '#F97316'], ['dunkelrot', '#991B1B'],
+  ['rot', '#DC2626'], ['red', '#DC2626'], ['rosa', '#F9A8D4'], ['pink', '#EC4899'], ['magenta', '#D946EF'], ['lila', '#9333EA'],
+  ['violett', '#7C3AED'], ['purple', '#9333EA'], ['braun', '#92400E'], ['brown', '#92400E'], ['holz', '#B07A4A'], ['beige', '#E7D8B9']];
+const farbeZuName = name => (FARBNAMEN.find(([wort]) => (name || '').toLowerCase().includes(wort)) || [])[1];
+
+function etikettenSeiten(anzahl, fmt, start) {
+  if (!anzahl) return 0;
+  return fmt.einzeln ? anzahl : Math.ceil((anzahl + start - 1) / (fmt.spalten * fmt.zeilen));
+}
+
+async function etikettenDialog(spulen, ausgewaehlt) {
+  let index = 0;
+  try { index = parseInt((await holen('einstellungen/Etiketten.Format')).wert, 10); } catch { /* Standard */ }
+  if (!(index >= 0 && index < ETIKETT_FORMATE.length)) index = 0;
+  blattOeffnen(`<div class="zeile"><h2>Etiketten drucken</h2><button class="knopf" data-schliessen>Schließen</button></div>
+    <label>Format<select id="eFormat">${ETIKETT_FORMATE.map((f, i) => `<option value="${i}" ${i === index ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label>
+    <label id="eStartFeld">Erstes freies Etikett auf dem Bogen (1 = oben links)<input id="eStart" type="number" inputmode="numeric" min="1" value="1"></label>
+    <label class="schalter"><input type="checkbox" id="eRahmen"> Rahmen um jedes Etikett (zum Ausschneiden)</label>
+    ${spulen.length > 1 ? `<div class="zeile auswahl-kopf"><b>Spulen</b><button class="knopf" id="eAlle">Alle auswählen</button></div>
+      <div class="auswahl">${spulen.map(f => `<label class="schalter"><input type="checkbox" value="${f.id}" ${ausgewaehlt.has(f.id) ? 'checked' : ''}>
+        <span><b>${esc(f.code)}</b> <span class="leise">${esc(spulenText(f))}</span></span></label>`).join('')}</div>` : ''}
+    <p class="leise" id="eInfo"></p>
+    <div class="knoepfe"><button class="primaer" id="eDrucken">Drucken</button></div>`);
+
+  const format = () => ETIKETT_FORMATE[+$('#eFormat').value];
+  const auswahl = () => spulen.length > 1
+    ? spulen.filter(f => document.querySelector(`.auswahl input[value="${f.id}"]`).checked) : spulen;
+  const start = () => Math.max(1, Math.min(parseInt($('#eStart').value, 10) || 1, format().einzeln ? 1 : format().spalten * format().zeilen));
+  const info = () => {
+    const fmt = format(), n = auswahl().length;
+    $('#eStartFeld').hidden = !!fmt.einzeln;
+    const seiten = etikettenSeiten(n, fmt, start());
+    $('#eInfo').textContent = n ? `${n} Etikett${n === 1 ? '' : 'en'} · ${seiten} ${fmt.einzeln ? 'Etikett' + (seiten === 1 ? '' : 'en') + ' im Drucker' : (seiten === 1 ? 'Bogen' : 'Bögen')}` : 'Keine Spule ausgewählt.';
+  };
+  $('#eFormat').onchange = info;
+  $('#eStart').oninput = info;
+  if ($('#eAlle')) {
+    $('#eAlle').onclick = () => {
+      const boxen = [...document.querySelectorAll('.auswahl input')];
+      const alle = boxen.every(b => b.checked);
+      boxen.forEach(b => b.checked = !alle);
+      info();
+    };
+    document.querySelectorAll('.auswahl input').forEach(b => b.onchange = info);
+  }
+  info();
+
+  $('#eDrucken').onclick = async () => {
+    const liste = auswahl();
+    if (!liste.length) return toast('Bitte mindestens eine Spule auswählen.', true);
+    $('#eDrucken').disabled = true;
+    try {
+      schicken('einstellungen/Etiketten.Format', 'PUT', { wert: String($('#eFormat').value) }).catch(() => {});
+      await etikettenDrucken(liste, format(), start(), $('#eRahmen').checked);
+    } catch (e) { fehler(e); }
+    $('#eDrucken').disabled = false;
+  };
+}
+
+function qrPfad(zeilen) {
+  // Zusammenhängende Module einer Zeile als ein Rechteck; minimal höher, damit keine feinen Lücken entstehen
+  let d = '';
+  zeilen.forEach((zeile, y) => {
+    for (let x = 0; x < zeile.length; x++) {
+      if (zeile[x] !== '1') continue;
+      let l = 1;
+      while (zeile[x + l] === '1') l++;
+      d += `M${x} ${y}h${l + 0.04}v1.04h-${l + 0.04}z`;
+      x += l - 1;
+    }
+  });
+  return d;
+}
+
+function etikettHtml(f, qr, fmt, x, y, rahmen) {
+  const H = fmt.hoehe, W = fmt.breite;
+  const pad = Math.max(1.8, H * 0.07), skala = H / 37;
+  const qrGroesse = H - 2 * pad;
+  const tx = pad * 0.6 + qrGroesse + pad * 0.8;
+  const farbe = farbeZuName(f.farbe);
+  const details = [`Ø ${Number(f.durchmesser || 1.75).toFixed(2).replace('.', ',')} mm`, `${zahl(f.gewicht)} g`];
+  if (f.temperaturen) details.push(f.temperaturen);
+  const kauf = f.kaufdatum ? new Date(f.kaufdatum) : null;
+  const unten = [f.lagerort, kauf && kauf.getFullYear() > 1 ? `gekauft ${String(kauf.getMonth() + 1).padStart(2, '0')}/${kauf.getFullYear()}` : '']
+    .filter(Boolean).join(' · ');
+  const punkt = 8 * skala * 0.352778 * 1.33 * 0.62; // ~62 % der Zeilenhöhe der normalen Schrift, in mm
+  return `<div class="etikett${rahmen ? ' rahmen' : ''}" style="left:${x}mm;top:${y}mm;width:${W}mm;height:${H}mm">
+      <svg viewBox="0 0 ${qr.length} ${qr.length}" style="left:${pad * 0.6}mm;top:${pad}mm;width:${qrGroesse}mm;height:${qrGroesse}mm"><path d="${qrPfad(qr)}"/></svg>
+      <div class="text" style="left:${tx}mm;top:${pad * 0.9}mm;width:${W - pad - tx}mm;bottom:${pad * 0.5}mm">
+        <div style="font-size:${13 * skala}pt;font-weight:600">${esc(f.code)}</div>
+        <div style="font-size:${8.5 * skala}pt;font-weight:600;margin-top:${0.4 * skala}mm">${esc(f.hersteller)}</div>
+        <div style="font-size:${8 * skala}pt">${farbe ? `<span class="punkt" style="width:${punkt}mm;height:${punkt}mm;background:${farbe}"></span>` : ''}${esc([f.material, f.farbe].filter(Boolean).join(' · '))}</div>
+        <div class="klein" style="font-size:${6.5 * skala}pt;margin-top:${0.3 * skala}mm">${esc(details.join(' · '))}</div>
+        ${unten ? `<div class="klein" style="font-size:${6.5 * skala}pt">${esc(unten)}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+async function etikettenDrucken(liste, fmt, start, rahmen) {
+  const qr = await (await schicken('qr', 'POST', liste.map(f => f.code))).json();
+  const seiten = [];
+  if (fmt.einzeln) {
+    liste.forEach(f => seiten.push(etikettHtml(f, qr[f.code], fmt, 0, 0, rahmen)));
+  } else {
+    const proBogen = fmt.spalten * fmt.zeilen;
+    let platz = start - 1, seite = '';
+    liste.forEach(f => {
+      if (platz === proBogen) { seiten.push(seite); seite = ''; platz = 0; }
+      const sp = platz % fmt.spalten, ze = Math.floor(platz / fmt.spalten);
+      seite += etikettHtml(f, qr[f.code], fmt, fmt.randLinks + sp * (fmt.breite + fmt.abstandX), fmt.randOben + ze * (fmt.hoehe + fmt.abstandY), rahmen);
+      platz++;
+    });
+    if (seite) seiten.push(seite);
+  }
+  const breite = fmt.einzeln ? fmt.breite : 210, hoehe = fmt.einzeln ? fmt.hoehe : 297;
+  let druck = $('#druck');
+  if (!druck) { druck = document.createElement('div'); druck.id = 'druck'; document.body.appendChild(druck); }
+  druck.innerHTML = `<style>@page { size: ${breite}mm ${hoehe}mm; margin: 0; }</style>` +
+    seiten.map(s => `<div class="druckseite" style="width:${breite}mm;height:${hoehe}mm">${s}</div>`).join('');
+  await pause(100);   // Layout fertig werden lassen
+  window.print();
+  if (navigator.standalone) toast('Erscheint kein Druckdialog: die Seite einmal direkt in Safari öffnen und dort drucken.');
 }
 
 starten();
