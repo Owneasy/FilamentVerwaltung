@@ -157,18 +157,20 @@ function navigieren() {
   stoppen();
   const [name, arg] = (location.hash.slice(1) || 'drucker').split('/');
   document.querySelectorAll('.leiste button').forEach(b =>
-    b.classList.toggle('aktiv', b.dataset.seite === (name === 'spule' ? 'spulen' : name)));
+    b.classList.toggle('aktiv', b.dataset.seite === ({ spule: 'spulen', nachkauf: 'spulen', verlauf: 'buchen' }[name] || name)));
   window.scrollTo(0, 0);
   if (name === 'buchen') buchenSeite();
   else if (name === 'spulen') spulenSeite();
   else if (name === 'dateien') dateienSeite();
+  else if (name === 'verlauf') verlaufSeite();
+  else if (name === 'nachkauf') nachkaufSeite();
   else if (name === 'spule') spuleSeite(decodeURIComponent(arg || ''));
   else druckerSeite();
 }
 
 window.addEventListener('hashchange', navigieren);
 document.addEventListener('click', e => {
-  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden],[data-wisch],[data-fach-waehlen],[data-fach-uebernehmen]');
+  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden],[data-wisch],[data-fach-waehlen],[data-fach-uebernehmen],[data-buchung],[data-gekauft]');
   if (!z) return;
   if (z.dataset.seite) { if (location.hash === '#' + z.dataset.seite) navigieren(); else location.hash = z.dataset.seite; }
   else if (z.hasAttribute('data-schliessen')) blattSchliessen();
@@ -178,6 +180,8 @@ document.addEventListener('click', e => {
   else if (z.dataset.senden) sendenFormular(+z.dataset.senden);
   else if (z.dataset.wisch) wischAktion(z.closest('.wisch'));
   else if (z.dataset.fachWaehlen) fachWaehlen(...z.dataset.fachWaehlen.split(':').map(Number));
+  else if (z.dataset.buchung) buchungZeigen(+z.dataset.buchung);
+  else if (z.dataset.gekauft) gekauft(z.dataset.gekauft);
   else if (z.dataset.fachUebernehmen) fachZuordnen(...z.dataset.fachUebernehmen.split(':').map(Number));
 });
 // Im Hintergrund nichts abfragen (spart Akku und Datenvolumen); beim Zurückkehren neu laden –
@@ -350,14 +354,15 @@ function kameraStopp() {
 // ------------------------------------------------------------------ Fertige Drucke buchen
 
 async function buchenSeite() {
-  titel('Fertige Drucke');
+  titel('Buchen');
+  $('#inhalt').innerHTML = reiter('buchen');
   const laden = async () => {
     try {
       const enden = await holen('druckenden');
       zahlBuchen(enden.length);
-      if (!enden.length) return inhalt('<p class="leer">Keine Drucke zum Buchen.<br><small>Fertige oder abgebrochene Drucke erscheinen hier automatisch.</small></p>');
+      if (!enden.length) return inhalt(reiter('buchen') + '<p class="leer">Keine Drucke zum Buchen.<br><small>Fertige oder abgebrochene Drucke erscheinen hier automatisch.</small></p>');
       if (document.querySelector('.wisch.offen')) return;   // nicht unter dem Finger neu aufbauen
-      inhalt(enden.map(e => wischen(`<section class="karte">
+      inhalt(reiter('buchen') + enden.map(e => wischen(`<section class="karte">
           <div class="zeile">
             <div><h2>${esc(e.datei || 'Druck')}</h2><small class="leise">${esc(e.druckerName)} · ${datumZeit(e.zeitpunkt)}</small></div>
             <span class="badge ${e.abgebrochen ? 'rot' : 'gruen'}">${e.abgebrochen ? 'Abgebrochen bei ' + prozent(e.fortschritt) : 'Fertig'}</span>
@@ -440,7 +445,8 @@ const ZUSTAND_BEREIT = [2, 5, 6];   // Bereit, Fertig, Abgebrochen
 
 async function dateienSeite() {
   titel('Dateien');
-  inhalt(`<div class="suche"><input id="dSuche" type="search" placeholder="Dateiname, Material …" value="${esc(dateienSuche)}"></div>
+  inhalt(`<div class="suche"><input id="dSuche" type="search" placeholder="Dateiname, Material …" value="${esc(dateienSuche)}">
+      <button class="primaer" id="dHochladen">+ Hochladen</button><input type="file" id="dDatei" hidden multiple></div>
     <p class="leise klein-text">Druckfertige Dateien (G-Code und geslicte 3MF). Antippen, um sie an einen Drucker zu senden.</p>
     <div id="dListe"><p class="leer">Lade …</p></div>`);
   let dateien;
@@ -455,6 +461,8 @@ async function dateienSeite() {
       : `<p class="leer">${dateien.length ? 'Keine passenden Dateien.' : 'Noch keine druckfertigen Dateien.<br><small>G-Code oder geslicte 3MF fügst du in der Windows-App unter „Dateien“ hinzu.</small>'}</p>`;
   };
   $('#dSuche').oninput = e => { dateienSuche = e.target.value; zeigen(); };
+  $('#dHochladen').onclick = () => $('#dDatei').click();
+  $('#dDatei').onchange = e => dateienHochladen([...e.target.files]);
   zeigen();
 }
 
@@ -615,7 +623,7 @@ function spulenKarte(f) {
 
 async function spulenSeite() {
   titel('Spulen');
-  inhalt(`<div class="suche">
+  inhalt(reiter('spulen') + `<div class="suche">
       <input id="suche" type="search" placeholder="ID, Hersteller, Farbe, Lagerort …" value="${esc(spulenSuche)}">
       <button class="knopf" id="scannen" title="QR-Code scannen">${ICON.qr}</button>
     </div>
@@ -1255,6 +1263,7 @@ document.addEventListener('click', e => {
 async function wischAktion(w) {
   const art = w.dataset.art, id = +w.dataset.id, name = w.dataset.name;
   if (art === 'druckende') { wischSchliessen(w); return verwerfen(id); }
+  if (art === 'buchung') { wischSchliessen(w); return buchungLoeschen(id); }
   const frage = art === 'spule'
     ? `Spule ${name} löschen?\n\nBisherige Drucke bleiben im Verlauf erhalten.`
     : `Datei „${name}“ löschen?\n\nSie wird auch vom Server entfernt. Bereits gebuchte Drucke behalten ihre Daten.`;
@@ -1382,6 +1391,173 @@ async function pushRegelnZeigen() {
     $('#pushGrenze').value = g;
     schicken('einstellungen/Push.SpuleKnappGrenze', 'PUT', { wert: String(g) }).catch(fehler);
   };
+}
+
+
+// ------------------------------------------------------------------ Reiter (Offen | Verlauf, Spulen | Nachkauf)
+
+function reiter(gruppe) {
+  const aktuell = location.hash.slice(1).split('/')[0] || 'drucker';
+  const eintraege = gruppe === 'buchen' ? [['buchen', 'Offen'], ['verlauf', 'Verlauf']] : [['spulen', 'Spulen'], ['nachkauf', 'Nachkauf']];
+  return `<div class="reiter">${eintraege.map(([ziel, text]) => `<a href="#${ziel}" class="${aktuell === ziel ? 'aktiv' : ''}">${text}</a>`).join('')}</div>`;
+}
+
+// ------------------------------------------------------------------ Verlauf: alle Buchungen (Drucke, Wiegen, Korrekturen)
+
+let verlaufSuche = '';
+const istVerbrauch = b => b.art !== 'Korrektur' && b.gramm > 0;
+const euro = x => (x || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+
+async function verlaufSeite() {
+  titel('Verlauf');
+  inhalt(reiter('buchen') + '<p class="leer">Lade …</p>');
+  let buchungen;
+  try { buchungen = await holen('buchungen'); } catch (e) { return fehler(e); }
+  const heute = new Date(), monatsStart = new Date(heute.getFullYear(), heute.getMonth(), 1);
+  const monat = buchungen.filter(b => new Date(b.datum) >= monatsStart);
+  const drucke = monat.filter(b => b.art === 'Druck').length;
+  const gramm = monat.filter(istVerbrauch).reduce((s, b) => s + b.gramm, 0);
+  const kosten = monat.filter(istVerbrauch).reduce((s, b) => s + b.kosten, 0);
+  inhalt(reiter('buchen') + `
+    <div class="kennzahlen">
+      <div><b>${drucke}</b><small>Drucke im ${heute.toLocaleString('de-DE', { month: 'long' })}</small></div>
+      <div><b>${zahl(gramm)} g</b><small>verbraucht</small></div>
+      <div><b>${euro(kosten)}</b><small>Kosten</small></div>
+    </div>
+    <div class="suche"><input id="vSuche" type="search" placeholder="Bezeichnung, Spule, Datei …" value="${esc(verlaufSuche)}"></div>
+    <div id="vListe"></div>`);
+  const zeigen = () => {
+    const q = verlaufSuche.toLowerCase();
+    const treffer = buchungen.filter(b => !q || [b.bezeichnung, b.filamentCode, b.filamentText, b.dateiName, b.notiz, b.art]
+      .some(x => (x || '').toLowerCase().includes(q))).slice(0, 200);
+    $('#vListe').innerHTML = treffer.length ? treffer.map(b => wischen(`<button class="karte buchung-eintrag" data-buchung="${b.id}">
+        <div class="zeile">
+          <div style="min-width:0"><b>${esc(b.bezeichnung || b.art)}${b.foto ? ' 📷' : ''}</b>
+            <small class="leise">${datumZeit(b.datum)} · ${esc(b.filamentCode)} ${esc(b.filamentText)}</small></div>
+          <div class="rest"><b>${b.gramm < 0 ? '+' + zahl(-b.gramm) : zahl(b.gramm)} g</b><br><small class="leise">${b.art === 'Druck' ? euro(b.kosten) : esc(b.art)}</small></div>
+        </div>
+      </button>`, 'buchung', b.id, b.bezeichnung || b.art)).join('') +
+      (buchungen.length > 200 && !q ? '<p class="leer"><small>Die ältesten Einträge findest du über die Suche.</small></p>' : '')
+      : '<p class="leer">Keine Einträge.</p>';
+  };
+  $('#vSuche').oninput = e => { verlaufSuche = e.target.value; zeigen(); };
+  zeigen();
+}
+
+async function buchungZeigen(id) {
+  let b;
+  try { b = (await holen('buchungen')).find(x => x.id === id); } catch (e) { return fehler(e); }
+  if (!b) return toast('Diesen Eintrag gibt es nicht mehr.', true);
+  const zeilen = [['Datum', datumZeit(b.datum)], ['Art', b.art], ['Spule', `${b.filamentCode} ${b.filamentText}`.trim()],
+    ['Verbrauch', `${zahl(b.gramm)} g`], ['Kosten', b.art === 'Druck' ? euro(b.kosten) : ''], ['Druckzeit', dauer(b.druckzeit)],
+    ['Datei', b.dateiName], ['Notiz', b.notiz]].filter(z => z[1]);
+  blattOeffnen(`<div class="zeile"><h2>${esc(b.bezeichnung || b.art)}</h2><button class="knopf" data-schliessen>Schließen</button></div>
+    ${b.foto ? '<img class="druckfoto" id="vFoto" alt="Foto vom Druckende">' : ''}
+    <dl>${zeilen.map(z => `<dt>${z[0]}</dt><dd>${esc(z[1])}</dd>`).join('')}</dl>
+    <div class="knoepfe"><button class="knopf gefahr" id="vLoeschen">Löschen …</button></div>`);
+  if (b.foto) fotoLaden(b.foto, $('#vFoto'));
+  $('#vLoeschen').onclick = () => buchungLoeschen(id);
+}
+
+function buchungLoeschen(id) {
+  blattOeffnen(`<h2>Eintrag löschen</h2>
+    <p class="leise">Soll der Verbrauch der Spule wieder gutgeschrieben werden (z. B. bei einer falschen Buchung)?</p>
+    <div class="knoepfe senkrecht">
+      <button class="primaer" data-loeschen="1">Löschen und zurückbuchen</button>
+      <button class="knopf" data-loeschen="0">Nur aus dem Verlauf löschen</button>
+      <button class="knopf" data-schliessen>Abbrechen</button>
+    </div>`);
+  document.querySelectorAll('[data-loeschen]').forEach(k => k.onclick = async () => {
+    try {
+      await schicken(`buchungen/${id}?zurueckbuchen=${k.dataset.loeschen === '1'}`, 'DELETE');
+      blattSchliessen();
+      toast(k.dataset.loeschen === '1' ? 'Gelöscht und zurückgebucht.' : 'Gelöscht.');
+      navigieren();
+    } catch (e) { fehler(e); }
+  });
+}
+
+// ------------------------------------------------------------------ Nachkauf: Sorten, die knapp werden
+
+let nachkaufAlle = false;
+const NACHKAUF_FARBE = { Nachkaufen: 'rot', Bald: 'gelb', Genug: 'gruen' };
+
+async function nachkaufSeite() {
+  titel('Nachkauf');
+  inhalt(reiter('spulen') + '<p class="leer">Lade …</p>');
+  let sorten;
+  try { sorten = await holen('nachkauf'); } catch (e) { return fehler(e); }
+  const knapp = sorten.filter(s => s.status === 'Nachkaufen');
+  const zeigen = () => {
+    const liste = nachkaufAlle ? sorten : sorten.filter(s => s.status !== 'Genug');
+    $('#nListe').innerHTML = liste.length ? liste.map(s => `<section class="karte">
+        <div class="zeile">
+          <div style="min-width:0"><b>${esc(s.bezeichnung)}</b>
+            <small class="leise">Ø ${String(s.durchmesser).replace('.', ',')} mm · ${s.spulen} Spule${s.spulen === 1 ? '' : 'n'} · ${zahl(s.rest)} g · ${esc(s.reichweiteText)}</small>
+            <small class="leise">${s.proMonat ? zahl(s.proMonat) + ' g/Monat · ' : ''}zuletzt ${euro(s.letzterPreis)}</small></div>
+          <span class="badge ${NACHKAUF_FARBE[s.status] || 'grau'}">${esc(s.status)}</span>
+        </div>
+        <div class="knoepfe">
+          ${s.shopLink ? `<a class="knopf" href="${esc(s.shopLink)}" target="_blank" rel="noopener">Shop öffnen</a>` : ''}
+          <button class="primaer" data-gekauft="${esc(s.schluessel)}">Gekauft – neue Spule</button>
+        </div>
+      </section>`).join('')
+      : '<p class="leer">Alles ausreichend vorrätig. 👍</p>';
+  };
+  inhalt(reiter('spulen') + `
+    <div class="zeile liste-kopf">
+      <label class="schalter"><input type="checkbox" id="nAlle" ${nachkaufAlle ? 'checked' : ''}> auch ausreichende Sorten</label>
+      ${knapp.length ? '<button class="knopf" id="nListeKopieren">Einkaufsliste</button>' : ''}
+    </div>
+    <div id="nListe"></div>`);
+  $('#nAlle').onchange = e => { nachkaufAlle = e.target.checked; zeigen(); };
+  if ($('#nListeKopieren')) $('#nListeKopieren').onclick = async () => {
+    const text = 'Filament nachkaufen:\n' + knapp.map(s => `- ${s.bezeichnung} (Ø ${String(s.durchmesser).replace('.', ',')} mm)${s.shopLink ? ' ' + s.shopLink : ''}`).join('\n');
+    try {
+      if (navigator.share) await navigator.share({ title: 'Einkaufsliste Filament', text });
+      else { await navigator.clipboard.writeText(text); toast('Einkaufsliste kopiert.'); }
+    } catch (e) { if (e.name !== 'AbortError') toast('Teilen nicht möglich: ' + e.message, true); }
+  };
+  nachkaufSorten = sorten;
+  zeigen();
+}
+
+let nachkaufSorten = [];
+async function gekauft(schluessel) {
+  const s = nachkaufSorten.find(x => x.schluessel === schluessel);
+  if (!s || !s.vorlage) return;
+  try { spuleFormular(s.vorlage, await holen('filament'), true); } catch (e) { fehler(e); }
+}
+
+// ------------------------------------------------------------------ Dateien vom Handy hochladen (in Stücken, wie die App)
+
+async function dateienHochladen(dateien) {
+  if (!dateien.length) return;
+  const STUECK = 16 * 1024 * 1024;   // wie Api.UploadStueckBytes – unter der 100-MB-Grenze von Cloudflare
+  blattOeffnen(`<h2>Hochladen</h2><p id="uText" class="leise"></p><div class="balken"><div id="uBalken" style="width:0"></div></div>`);
+  let fertig = 0;
+  for (const datei of dateien) {
+    try {
+      const id = (await (await schicken('uploads', 'POST', {})).json()).id;
+      for (let offset = 0; offset < datei.size || offset === 0; offset += STUECK) {
+        $('#uText').textContent = `${datei.name} – ${prozent(datei.size ? offset / datei.size : 0)}`;
+        $('#uBalken').style.width = (datei.size ? offset / datei.size * 100 : 0) + '%';
+        const antwort = await fetch(`/api/uploads/${id}?offset=${offset}`, {
+          method: 'PUT', body: datei.slice(offset, offset + STUECK),
+          headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/octet-stream' } });
+        if (!antwort.ok) throw new Error((await antwort.text()) || `Fehler ${antwort.status}`);
+        if (datei.size === 0) break;
+      }
+      $('#uBalken').style.width = '100%';
+      await schicken(`uploads/${id}/fertig`, 'POST', { name: datei.name });
+      fertig++;
+    } catch (e) {
+      toast(`${datei.name}: ${e.message}`, true);
+    }
+  }
+  blattSchliessen();
+  if (fertig) toast(`${fertig} Datei${fertig === 1 ? '' : 'en'} hochgeladen.`);
+  navigieren();
 }
 
 starten();

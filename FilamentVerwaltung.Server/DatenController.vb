@@ -88,6 +88,14 @@ Public Class DatenController
         _regeln.SpuleGeaendert(id, vorher)
     End Sub
 
+    ' ---------- Nachkauf
+
+    ''' <summary>Sorten mit Bestand, Reichweite und Status (wie Seite "Nachkauf" der App), dringende zuerst.</summary>
+    <HttpGet("nachkauf")>
+    Public Function NachkaufListe() As List(Of SorteInfo)
+        Return Nachkauf.Liste(_db)
+    End Function
+
     ' ---------- Buchungen
 
     <HttpGet("buchungen")>

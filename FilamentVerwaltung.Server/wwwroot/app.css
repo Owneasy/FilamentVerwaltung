@@ -47,6 +47,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -155,7 +156,7 @@ input:focus, select:focus { outline: 2px solid var(--akzent); outline-offset: -1
 
 /* Spulen */
 .spule { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; padding: 12px 14px; }
-.spule .rest { text-align: right; font-weight: 700; color: var(--text); }
+.spule .rest, .buchung-eintrag .rest { text-align: right; font-weight: 700; color: var(--text); white-space: nowrap; flex: none; }
 .spule .balken { grid-column: 1 / -1; margin-bottom: 0; }
 .gross { font-size: 28px; font-weight: 700; color: var(--text); margin-top: 6px; }
 .gross small { font-size: 14px; font-weight: 400; color: var(--leise); }
@@ -261,3 +262,22 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 .glocke.an svg { fill: currentColor; fill-opacity: .15; }
 /* Foto vom Druckende */
 .druckfoto { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #000; border-radius: 10px; margin: 12px 0 4px; }
+
+/* Reiter oben auf einer Seite */
+.reiter { display: flex; gap: 4px; padding: 4px; margin-bottom: 12px; background: var(--rand); border-radius: 10px; }
+.reiter a { flex: 1; text-align: center; padding: 8px 0; border-radius: 7px; color: var(--leise); text-decoration: none; font-weight: 600; }
+.reiter a.aktiv { background: var(--karte); color: var(--text); box-shadow: var(--schatten); }
+
+/* Verlauf */
+.kennzahlen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.kennzahlen > div { background: var(--karte); border: 1px solid var(--rand); border-radius: 10px; padding: 10px; text-align: center; }
+.kennzahlen b { display: block; font-size: 17px; color: var(--text); }
+.kennzahlen small { color: var(--leise); }
+.buchung-eintrag { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; padding: 12px 14px; }
+.buchung-eintrag b { color: var(--text); }
+.buchung-eintrag small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.knopf.gefahr { color: var(--rot); border-color: color-mix(in srgb, var(--rot) 40%, var(--rand)); }
+.knoepfe.senkrecht { flex-direction: column; }
+.zeile > div > small { display: block; }
+.suche .primaer { flex: none; min-height: 44px; padding: 0 14px; }
+a.knopf { text-decoration: none; }

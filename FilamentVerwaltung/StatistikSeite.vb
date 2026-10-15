@@ -18,25 +18,7 @@ Public Class SpulenPrognose
     End Property
 End Class
 
-''' <summary>Berechnungen für die Statistik (aus dem Verlauf: Drucke und Nachwiegen, ohne Korrekturen).</summary>
-Public Module Statistik
 
-    ''' <summary>Zeitraum für Durchschnitt und Prognose.</summary>
-    Public Const TageBasis As Integer = 90
-
-    Public Function IstVerbrauch(b As Buchung) As Boolean
-        Return b.Art <> Buchung.ArtKorrektur AndAlso b.Gramm > 0
-    End Function
-
-    Public Function ReichweiteText(tage As Double) As String
-        If Double.IsInfinity(tage) OrElse Double.IsNaN(tage) Then Return "–"
-        If tage < 7 Then Return "unter 1 Woche"
-        If tage < 60 Then Return $"ca. {Math.Round(tage / 7):0} Wochen"
-        If tage < 730 Then Return $"ca. {Math.Round(tage / 30.4):0} Monate"
-        Return "über 2 Jahre"
-    End Function
-
-End Module
 
 ''' <summary>
 ''' Seite "Statistik": Verbrauch und Kosten pro Monat, Verbrauch nach Material, Reichweite je Spule.
