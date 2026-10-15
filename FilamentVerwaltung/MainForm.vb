@@ -155,6 +155,15 @@ Public Class MainForm
         AddHandler btnVerbindung.Click, Sub(s, e) VerbindungZeigen()
         VerbindungAnzeigen(True)
         Zeile(leiste, btnVerbindung)
+        Dim btnBenachrichtigungen As New WebButton("Benachrichtigungen", Theme.SymGlocke, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
+        AddHandler btnBenachrichtigungen.Click, Sub(s, e)
+                                                    Using dlg As New BenachrichtigungenDialog(_db)
+                                                        dlg.ShowDialog(Me)
+                                                    End Using
+                                                End Sub
+        tipps.SetToolTip(btnBenachrichtigungen, "Wofür der Server Nachrichten aufs Handy schickt (Druck fertig, Spule fast leer …)")
+        Zeile(leiste, btnBenachrichtigungen)
+
         Dim btnSicherungen As New WebButton("Sicherungen", Theme.SymSicherung, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
         AddHandler btnSicherungen.Click, Sub(s, e) SicherungenZeigen()
         tipps.SetToolTip(btnSicherungen, "Sicherungen der Datenbank ansehen, jetzt sichern oder wiederherstellen")

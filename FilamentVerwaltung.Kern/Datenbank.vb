@@ -565,6 +565,19 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         End Using
     End Sub
 
+    Public Function PushGeraeteLaden() As List(Of PushGeraet)
+        Dim liste As New List(Of PushGeraet)
+        Using c = Oeffnen(), cmd = c.CreateCommand()
+            cmd.CommandText = "SELECT Geraet, Erstellt FROM PushAbo ORDER BY Erstellt"
+            Using r = cmd.ExecuteReader()
+                While r.Read()
+                    liste.Add(New PushGeraet With {.Geraet = Text(r, 0), .Erstellt = Text(r, 1)})
+                End While
+            End Using
+        End Using
+        Return liste
+    End Function
+
     Public Function PushAbosLaden() As List(Of PushAbo)
         Dim liste As New List(Of PushAbo)
         Using c = Oeffnen(), cmd = c.CreateCommand()

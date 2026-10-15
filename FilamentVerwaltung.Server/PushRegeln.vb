@@ -1,4 +1,4 @@
-Imports System.Collections.Concurrent
+﻿Imports System.Collections.Concurrent
 Imports Microsoft.Extensions.Logging
 
 ''' <summary>
@@ -7,11 +7,11 @@ Imports Microsoft.Extensions.Logging
 ''' </summary>
 Public Class PushRegeln
 
-    Public Const Druckende As String = "Push.Druckende"
-    Public Const SpuleKnapp As String = "Push.SpuleKnapp"
-    Public Const SpuleKnappGrenze As String = "Push.SpuleKnappGrenze"
-    Public Const DruckerOffline As String = "Push.DruckerOffline"
-    Public Const DruckerFehler As String = "Push.DruckerFehler"
+    Public Const Druckende As String = PushEinstellungen.Druckende
+    Public Const SpuleKnapp As String = PushEinstellungen.SpuleKnapp
+    Public Const SpuleKnappGrenze As String = PushEinstellungen.SpuleKnappGrenze
+    Public Const DruckerOffline As String = PushEinstellungen.DruckerOffline
+    Public Const DruckerFehler As String = PushEinstellungen.DruckerFehler
 
     ''' <summary>So lange muss ein Drucker durchgehend nicht erreichbar sein, bevor eine Nachricht kommt.</summary>
     Private Shared ReadOnly OfflineNach As TimeSpan = TimeSpan.FromMinutes(3)
@@ -36,7 +36,7 @@ Public Class PushRegeln
     ''' <summary>Schalter lesen; ohne Eintrag gilt der Standard (Druckende, Spule knapp und Fehler an, offline aus).</summary>
     Public Function Ein(schluessel As String) As Boolean
         Dim wert = _db.EinstellungLesen(schluessel)
-        If String.IsNullOrEmpty(wert) Then Return schluessel <> DruckerOffline
+        If String.IsNullOrEmpty(wert) Then Return PushEinstellungen.Standard(schluessel)
         Return wert = "1"
     End Function
 

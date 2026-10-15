@@ -511,6 +511,17 @@ Public Class ServerDatenquelle
         End Using
     End Function
 
+    ' ------------------------------------------------------------------ Benachrichtigungen
+
+    Public Function PushGeraete() As List(Of PushGeraet)
+        Return Abrufen(Of List(Of PushGeraet))("push/geraete")
+    End Function
+
+    ''' <summary>Testnachricht an alle angemeldeten Geräte; liefert die Zahl der erreichten.</summary>
+    Public Function PushTest() As Integer
+        Return CInt(Schicken(Of WertAnfrage)(HttpMethod.Post, "push/test", New Object()).Wert)
+    End Function
+
     Public Sub Dispose() Implements IDisposable.Dispose
         _client.Dispose()
     End Sub

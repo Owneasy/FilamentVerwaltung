@@ -1,4 +1,4 @@
-Imports Microsoft.AspNetCore.Mvc
+﻿Imports Microsoft.AspNetCore.Mvc
 
 ''' <summary>Anmelden eines Geräts für Push-Benachrichtigungen (Handy-Seite) und Testnachricht.</summary>
 <ApiController>
@@ -18,6 +18,12 @@ Public Class PushController
     <HttpGet("schluessel")>
     Public Function Schluessel() As WertAnfrage
         Return New WertAnfrage With {.Wert = _push.OeffentlicherSchluessel}
+    End Function
+
+    ''' <summary>Angemeldete Geräte (nur Name und Datum) – für die Anzeige in der App.</summary>
+    <HttpGet("geraete")>
+    Public Function Geraete() As List(Of PushGeraet)
+        Return _db.PushGeraeteLaden()
     End Function
 
     <HttpPost("abo")>
