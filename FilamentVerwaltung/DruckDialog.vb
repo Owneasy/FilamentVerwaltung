@@ -12,6 +12,7 @@ Public Class DruckDialog
     Private Const KeineDatei As String = "(keine Datei)"
 
     Private ReadOnly _b As Buchung
+    Private ReadOnly _foto As Byte()
     Private ReadOnly _original As Buchung
     Private ReadOnly _filamente As List(Of Filament)
 
@@ -29,8 +30,10 @@ Public Class DruckDialog
                                                      .Margin = New Padding(3, 0, 3, 3)}
 
     ''' <param name="b">Neuer (Id = 0) oder zu bearbeitender Druck. Die Werte werden erst bei "Speichern" übernommen.</param>
-    Public Sub New(b As Buchung, filamente As List(Of Filament), dateien As List(Of Datei), titel As String)
+    ''' <param name="foto">Kamerabild vom Druckende (JPEG) oder Nothing.</param>
+    Public Sub New(b As Buchung, filamente As List(Of Filament), dateien As List(Of Datei), titel As String, Optional foto As Byte() = Nothing)
         _b = b
+        _foto = foto
         _original = b.Kopie()
         ' Leere Spulen nur anbieten, wenn der Druck bereits zu ihnen gehört
         _filamente = filamente.Where(Function(f) f.Restgewicht > 0 OrElse f.Id = b.FilamentId).
@@ -100,6 +103,20 @@ Public Class DruckDialog
         datei.Controls.Add(cboDatei)
         datei.Controls.Add(lblDateiInfo)
 
+        ' Kamerabild vom Druckende (Server, Bambu Lab)
+        If _foto IsNot Nothing Then
+            Try
+                Using ms As New IO.MemoryStream(_foto), roh = Image.FromStream(ms)
+                    Dim bild As New PictureBox With {.Image = New Bitmap(roh), .SizeMode = PictureBoxSizeMode.Zoom, .BackColor = Color.Black,
+                                                     .Size = New Size(440, 248), .Margin = New Padding(3, 0, 3, 12), .Anchor = AnchorStyles.Left}
+                    t.Controls.Add(bild, 0, t.RowCount)
+                    t.SetColumnSpan(bild, 2)
+                    t.RowCount += 1
+                End Using
+            Catch ex As Exception
+                ' Beschädigtes Bild – Dialog trotzdem zeigen
+            End Try
+        End If
         Zeile(t, "Bezeichnung:", txtBezeichnung)
         Zeile(t, "Datei:", datei)
         Zeile(t, "Spule:", cboFilament)

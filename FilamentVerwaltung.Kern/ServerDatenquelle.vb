@@ -292,6 +292,18 @@ Public Class ServerDatenquelle
         Schicken(HttpMethod.Delete, $"buchungen/{id}?zurueckbuchen={zurueckbuchenJa.ToString().ToLowerInvariant()}")
     End Sub
 
+    Public Function FotoLaden(name As String) As Byte() Implements IDatenquelle.FotoLaden
+        If String.IsNullOrWhiteSpace(name) Then Return Nothing
+        Try
+            Using antwort = Senden(HttpMethod.Get, "fotos/" & Q(name)), s = antwort.Content.ReadAsStream(), ms As New MemoryStream()
+                s.CopyTo(ms)
+                Return ms.ToArray()
+            End Using
+        Catch ex As InvalidOperationException
+            Return Nothing   ' fehlt auf dem Server
+        End Try
+    End Function
+
     Public Function BuchungenLaden() As List(Of Buchung) Implements IDatenquelle.BuchungenLaden
         Return Abrufen(Of List(Of Buchung))("buchungen")
     End Function

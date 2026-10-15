@@ -77,9 +77,22 @@ Public Class DruckerController
         Return _db.OffeneDruckEnden()
     End Function
 
+    ''' <summary>Verworfen: Druckende entfernen und sein Foto löschen (gebucht wird es dann ja nicht).</summary>
     <HttpDelete("druckenden/{id:long}")>
     Public Function DruckEndeErledigt(id As Long) As IActionResult
-        Return If(_db.DruckEndeErledigt(id), CType(Ok(), IActionResult), NotFound())
+        Dim ende = _db.OffeneDruckEnden().FirstOrDefault(Function(x) x.Id = id)
+        If Not _db.DruckEndeErledigt(id) Then Return NotFound()
+        If ende IsNot Nothing Then _db.FotoLoeschenWennUnbenutzt(ende.Foto)
+        Return Ok()
+    End Function
+
+    ''' <summary>Kamerabild vom Druckende (JPEG).</summary>
+    <HttpGet("fotos/{name}")>
+    Public Function Foto(name As String) As IActionResult
+        Dim bild = _db.FotoLaden(name)
+        If bild Is Nothing Then Return NotFound("Foto nicht gefunden.")
+        Response.Headers.CacheControl = "private, max-age=86400"
+        Return File(bild, "image/jpeg")
     End Function
 
     ''' <summary>

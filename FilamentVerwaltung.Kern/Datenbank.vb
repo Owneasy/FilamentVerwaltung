@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             SpalteErgaenzen(c, "Filament", "Trocknung", "TEXT NOT NULL DEFAULT ''")
             SpalteErgaenzen(c, "Filament", "ShopLink", "TEXT NOT NULL DEFAULT ''")
             SpalteErgaenzen(c, "Filament", "RfidKennung", "TEXT NOT NULL DEFAULT ''")
+            SpalteErgaenzen(c, "Buchung", "Foto", "TEXT NOT NULL DEFAULT ''")
         End Using
     End Sub
 
@@ -381,12 +382,12 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
                 BuchungEinfuegen(c, t, b)
             Else
                 Befehl(c, t, "UPDATE Buchung SET FilamentId = $filament, Datum = $datum, Art = $art, Gramm = $gramm, " &
-                             "Bezeichnung = $bezeichnung, DateiId = $datei, Druckzeit = $zeit, Kosten = $kosten, Notiz = $notiz " &
+                             "Bezeichnung = $bezeichnung, DateiId = $datei, Druckzeit = $zeit, Kosten = $kosten, Notiz = $notiz, Foto = $foto " &
                              "WHERE Id = $id",
                        "$filament", b.FilamentId, "$datum", b.Datum.ToString(DatumZeitFormat, CultureInfo.InvariantCulture),
                        "$art", b.Art, "$gramm", b.Gramm, "$bezeichnung", If(b.Bezeichnung, "").Trim(),
                        "$datei", b.DateiId, "$zeit", b.Druckzeit, "$kosten", CDbl(b.Kosten), "$notiz", If(b.Notiz, ""),
-                       "$id", b.Id).ExecuteNonQuery()
+                       "$foto", If(b.Foto, ""), "$id", b.Id).ExecuteNonQuery()
             End If
             t.Commit()
         End Using
@@ -414,7 +415,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText =
                 "SELECT b.Id, b.FilamentId, b.Datum, b.Art, b.Gramm, b.Bezeichnung, b.DateiId, b.Druckzeit, b.Kosten, b.Notiz, " &
-                "f.Code, f.Hersteller, f.Material, f.Farbe, d.Name " &
+                "f.Code, f.Hersteller, f.Material, f.Farbe, d.Name, b.Foto " &
                 "FROM Buchung b LEFT JOIN Filament f ON f.Id = b.FilamentId LEFT JOIN Datei d ON d.Id = b.DateiId " &
                 "ORDER BY b.Datum DESC, b.Id DESC"
             Using r = cmd.ExecuteReader()
@@ -437,7 +438,8 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
                         .Notiz = Text(r, 9),
                         .FilamentCode = If(vorhanden, Text(r, 10), "(gelöscht)"),
                         .FilamentText = If(vorhanden, String.Join(" ", {Text(r, 11), Text(r, 12), Text(r, 13)}.Where(Function(x) x.Length > 0)), ""),
-                        .DateiName = Text(r, 14)
+                        .DateiName = Text(r, 14),
+                        .Foto = Text(r, 15)
                     })
                 End While
             End Using
@@ -459,11 +461,11 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
 
     Private Sub BuchungEinfuegen(c As SqliteConnection, t As SqliteTransaction, b As Buchung)
         b.Id = Convert.ToInt64(Befehl(c, t,
-            "INSERT INTO Buchung (FilamentId, Datum, Art, Gramm, Bezeichnung, DateiId, Druckzeit, Kosten, Notiz) " &
-            "VALUES ($filament, $datum, $art, $gramm, $bezeichnung, $datei, $zeit, $kosten, $notiz); SELECT last_insert_rowid();",
+            "INSERT INTO Buchung (FilamentId, Datum, Art, Gramm, Bezeichnung, DateiId, Druckzeit, Kosten, Notiz, Foto) " &
+            "VALUES ($filament, $datum, $art, $gramm, $bezeichnung, $datei, $zeit, $kosten, $notiz, $foto); SELECT last_insert_rowid();",
             "$filament", b.FilamentId, "$datum", b.Datum.ToString(DatumZeitFormat, CultureInfo.InvariantCulture),
             "$art", b.Art, "$gramm", b.Gramm, "$bezeichnung", If(b.Bezeichnung, "").Trim(), "$datei", b.DateiId,
-            "$zeit", b.Druckzeit, "$kosten", CDbl(b.Kosten), "$notiz", If(b.Notiz, "")).ExecuteScalar())
+            "$zeit", b.Druckzeit, "$kosten", CDbl(b.Kosten), "$notiz", If(b.Notiz, ""), "$foto", If(b.Foto, "")).ExecuteScalar())
     End Sub
 
     Private Shared Function Kosten(gramm As Integer, preis As Decimal, gewicht As Integer) As Decimal
@@ -609,6 +611,40 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         End Using
         Return liste
     End Function
+
+    ''' <summary>Gespeichertes Druckende ändern (z. B. wenn das Foto nachträglich dazukommt).</summary>
+    Public Sub DruckEndeAktualisieren(ende As DruckEnde)
+        Using c = Oeffnen()
+            Befehl(c, Nothing, "UPDATE DruckEnde SET Daten = $daten WHERE Id = $id",
+                   "$daten", System.Text.Json.JsonSerializer.Serialize(ende), "$id", ende.Id).ExecuteNonQuery()
+        End Using
+    End Sub
+
+    ' ------------------------------------------------------------------ Fotos vom Druckende
+
+    ''' <summary>Ordner neben der Datenbank für die Kamerabilder vom Druckende.</summary>
+    Public ReadOnly Property FotosOrdner As String
+        Get
+            Return Path.Combine(If(Path.GetDirectoryName(Pfad), ""), "Fotos")
+        End Get
+    End Property
+
+    ''' <summary>Foto als JPEG; Nothing, wenn es fehlt. Nur einfache Dateinamen (kein Pfad).</summary>
+    Public Function FotoLaden(name As String) As Byte() Implements IDatenquelle.FotoLaden
+        If String.IsNullOrWhiteSpace(name) OrElse name <> Path.GetFileName(name) Then Return Nothing
+        Dim datei = Path.Combine(FotosOrdner, name)
+        Return If(File.Exists(datei), File.ReadAllBytes(datei), Nothing)
+    End Function
+
+    ''' <summary>Löscht das Foto, wenn keine Buchung es mehr verwendet.</summary>
+    Public Sub FotoLoeschenWennUnbenutzt(name As String)
+        If String.IsNullOrWhiteSpace(name) OrElse name <> Path.GetFileName(name) Then Return
+        Using c = Oeffnen()
+            If Convert.ToInt64(Befehl(c, Nothing, "SELECT COUNT(*) FROM Buchung WHERE Foto = $f", "$f", name).ExecuteScalar()) > 0 Then Return
+        End Using
+        Dim datei = Path.Combine(FotosOrdner, name)
+        If File.Exists(datei) Then File.Delete(datei)
+    End Sub
 
     ''' <summary>Entfernt ein offenes Druckende; False, wenn es schon erledigt war (z. B. an einem anderen PC).</summary>
     Public Function DruckEndeErledigt(id As Long) As Boolean

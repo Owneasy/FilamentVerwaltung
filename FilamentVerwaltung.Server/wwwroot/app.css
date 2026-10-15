@@ -259,3 +259,5 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 .glocke svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .glocke.an { color: var(--akzent); }
 .glocke.an svg { fill: currentColor; fill-opacity: .15; }
+/* Foto vom Druckende */
+.druckfoto { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #000; border-radius: 10px; margin: 12px 0 4px; }

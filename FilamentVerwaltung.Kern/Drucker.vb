@@ -209,6 +209,8 @@ Public Class DruckEnde
     ''' <summary>Datei aus "Dateien", die von der App an den Drucker gesendet wurde (dann sind Gewicht und Datei sicher).</summary>
     Public Property DateiId As Long?
     Public Property Zeitpunkt As Date = Date.Now
+    ''' <summary>Kamerabild vom Druckende (Dateiname im Ordner "Fotos"), leer = keins.</summary>
+    Public Property Foto As String = ""
 End Class
 
 ''' <summary>Umrechnung Filamentlänge / Volumen → Gramm.</summary>

@@ -373,6 +373,14 @@ async function buchenSeite() {
   if (!$('#leiste').hidden && !document.hidden) seitenTimer = setInterval(laden, 10000);
 }
 
+/** Foto vom Druckende in ein <img> laden (die API braucht das Token, deshalb nicht direkt als src). */
+async function fotoLaden(name, img) {
+  try {
+    const url = URL.createObjectURL(await (await api('fotos/' + encodeURIComponent(name))).blob());
+    if (img && img.isConnected) { img.src = url; img.onload = () => URL.revokeObjectURL(url); } else URL.revokeObjectURL(url);
+  } catch { if (img) img.remove(); }
+}
+
 async function buchenFormular(id) {
   let vorschlag, spulen;
   try {
@@ -380,6 +388,7 @@ async function buchenFormular(id) {
   } catch (e) { navigieren(); return fehler(e); }
   const auswahl = spulen.filter(f => f.restgewicht > 0 || f.id === vorschlag.filamentId).sort((a, b) => a.code.localeCompare(b.code));
   blattOeffnen(`<h2>Druck buchen</h2>
+    ${vorschlag.foto ? '<img class="druckfoto" id="bFoto" alt="Foto vom Druckende">' : ''}
     <label>Bezeichnung<input id="bBezeichnung" value="${esc(vorschlag.bezeichnung)}"></label>
     <label>Spule<select id="bSpule">
       <option value="0">– Spule wählen –</option>
@@ -389,6 +398,7 @@ async function buchenFormular(id) {
     ${vorschlag.druckzeit ? `<p class="leise">Druckzeit: ${dauer(vorschlag.druckzeit)}</p>` : ''}
     <p class="leise">${esc(vorschlag.notiz)}</p>
     <div class="knoepfe"><button class="knopf" data-schliessen>Abbrechen</button><button class="primaer" id="bOk">Buchen</button></div>`);
+  if (vorschlag.foto) fotoLaden(vorschlag.foto, $('#bFoto'));
   $('#bOk').onclick = async () => {
     const filamentId = +$('#bSpule').value;
     const gramm = parseInt($('#bGramm').value, 10);

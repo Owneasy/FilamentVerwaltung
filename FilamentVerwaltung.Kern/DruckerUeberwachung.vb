@@ -431,7 +431,8 @@ Public Module DruckErkennung
             .Bezeichnung = If(name.Length > 0, name, "Druck"),
             .DateiId = datei?.Id,
             .Druckzeit = If(ende.DauerSekunden.HasValue AndAlso ende.DauerSekunden.Value > 0, ende.DauerSekunden, CType(Nothing, Integer?)),
-            .Notiz = notiz
+            .Notiz = notiz,
+            .Foto = If(ende.Foto, "")
         }
     End Function
 

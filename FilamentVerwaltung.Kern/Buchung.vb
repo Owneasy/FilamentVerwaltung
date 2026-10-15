@@ -1,4 +1,4 @@
-''' <summary>
+﻿''' <summary>
 ''' Eine Änderung des Restgewichts einer Spule: ein Druck, ein Nachwiegen oder eine Korrektur.
 ''' </summary>
 Public Class Buchung
@@ -20,6 +20,8 @@ Public Class Buchung
     ''' <summary>Kosten zum Zeitpunkt der Buchung (Gramm × Preis pro Gramm der Spule).</summary>
     Public Property Kosten As Decimal
     Public Property Notiz As String = ""
+    ''' <summary>Dateiname des Kamerabilds vom Druckende (Ordner "Fotos"), leer = keins.</summary>
+    Public Property Foto As String = ""
 
     ' --- Anzeige (aus den verknüpften Tabellen geladen)
     Public Property FilamentCode As String = ""

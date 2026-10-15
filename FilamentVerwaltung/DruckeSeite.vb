@@ -330,7 +330,15 @@ Public Class DruckeSeite
                             titel, MessageBoxButtons.OK, MessageBoxIcon.Information)
             Return False
         End If
-        Using dlg As New DruckDialog(b, filamente, dateien, titel)
+        Dim foto As Byte() = Nothing
+        If Not String.IsNullOrEmpty(b.Foto) Then
+            Try
+                foto = db.FotoLaden(b.Foto)
+            Catch ex As Exception
+                ' ohne Foto weiter
+            End Try
+        End If
+        Using dlg As New DruckDialog(b, filamente, dateien, titel, foto)
             If dlg.ShowDialog(besitzer) <> DialogResult.OK Then Return False
         End Using
         Try

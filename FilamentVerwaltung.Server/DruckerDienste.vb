@@ -41,6 +41,39 @@ Public Class DruckerStart
             _log.LogWarning(ex, "Druckende konnte nicht gespeichert werden")
         End Try
         _regeln.DruckBeendet(ende)
+        If ende.Id > 0 Then FotoAufnehmen(ende)
+    End Sub
+
+    ''' <summary>
+    ''' Kamerabild vom Druckende (Bambu) im Hintergrund holen, unter Fotos ablegen und am offenen Druck vermerken –
+    ''' beim Buchen wandert es in die Buchung. Ohne Kamera oder Bild bleibt es einfach weg.
+    ''' </summary>
+    Private Sub FotoAufnehmen(ende As DruckEnde)
+        Dim d = _db.DruckerLaden().FirstOrDefault(Function(x) x.Id = ende.DruckerId)
+        If d Is Nothing OrElse d.Typ <> Drucker.TypBambu Then Return
+        Task.Run(Async Function()
+                     Try
+                         Dim bild = Await _kameras.FotoAsync(d, TimeSpan.FromSeconds(40))
+                         If bild Is Nothing Then
+                             _log.LogInformation("Kein Kamerabild vom Druckende ({Drucker})", d.Name)
+                             Return
+                         End If
+                         IO.Directory.CreateDirectory(_db.FotosOrdner)
+                         Dim name = $"druck-{Date.Now:yyyyMMdd-HHmmss}-{d.Id}.jpg"
+                         Await IO.File.WriteAllBytesAsync(IO.Path.Combine(_db.FotosOrdner, name), bild)
+                         ' Nur wenn der Druck noch offen ist – sonst wurde er inzwischen gebucht oder verworfen
+                         Dim offen = _db.OffeneDruckEnden().FirstOrDefault(Function(x) x.Id = ende.Id)
+                         If offen Is Nothing Then
+                             _db.FotoLoeschenWennUnbenutzt(name)
+                             Return
+                         End If
+                         offen.Foto = name
+                         _db.DruckEndeAktualisieren(offen)
+                         _log.LogInformation("Foto vom Druckende gespeichert: {Name}", name)
+                     Catch ex As Exception
+                         _log.LogWarning(ex, "Foto vom Druckende fehlgeschlagen")
+                     End Try
+                 End Function)
     End Sub
 
     ''' <summary>Für die Benachrichtigungen "Fehler am Drucker" und "nicht erreichbar".</summary>
@@ -112,6 +145,21 @@ Public Class KameraVerwaltung
         End SyncLock
     End Function
 
+    ''' <summary>Ein aktuelles Bild holen (startet die Kamera bei Bedarf); Nothing, wenn innerhalb der Zeit keins kommt.</summary>
+    Public Async Function FotoAsync(d As Drucker, zeitlimit As TimeSpan) As Task(Of Byte())
+        Dim ende = Date.Now + zeitlimit
+        ' Das erste Bild nach dem Start kann noch vom Aufbau der Verbindung stammen – ein, zwei Sekunden warten lohnt
+        Dim ersteGesehen As Date? = Nothing
+        While Date.Now < ende
+            Dim ergebnis = Abrufen(d)
+            If ergebnis.Bild IsNot Nothing Then
+                If Not ersteGesehen.HasValue Then ersteGesehen = Date.Now
+                If Date.Now - ersteGesehen.Value >= TimeSpan.FromSeconds(2) Then Return Abrufen(d).Bild
+            End If
+            Await Task.Delay(500)
+        End While
+        Return Nothing
+    End Function
     Private Sub Aufraeumen()
         SyncLock _sperre
             For Each id In _eintraege.Keys.ToList()
