@@ -164,7 +164,7 @@ function navigieren() {
 
 window.addEventListener('hashchange', navigieren);
 document.addEventListener('click', e => {
-  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden]');
+  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden],[data-wisch]');
   if (!z) return;
   if (z.dataset.seite) { if (location.hash === '#' + z.dataset.seite) navigieren(); else location.hash = z.dataset.seite; }
   else if (z.hasAttribute('data-schliessen')) blattSchliessen();
@@ -172,6 +172,7 @@ document.addEventListener('click', e => {
   else if (z.dataset.buchen) buchenFormular(+z.dataset.buchen);
   else if (z.dataset.verwerfen) verwerfen(+z.dataset.verwerfen);
   else if (z.dataset.senden) sendenFormular(+z.dataset.senden);
+  else if (z.dataset.wisch) wischAktion(z.closest('.wisch'));
 });
 // Im Hintergrund nichts abfragen (spart Akku und Datenvolumen); beim Zurückkehren neu laden –
 // ein offenes Formular (z. B. Buchen) bleibt dabei stehen, nur Kamera und Scanner werden beendet
@@ -291,7 +292,8 @@ async function buchenSeite() {
       const enden = await holen('druckenden');
       zahlBuchen(enden.length);
       if (!enden.length) return inhalt('<p class="leer">Keine Drucke zum Buchen.<br><small>Fertige oder abgebrochene Drucke erscheinen hier automatisch.</small></p>');
-      inhalt(enden.map(e => `<section class="karte">
+      if (document.querySelector('.wisch.offen')) return;   // nicht unter dem Finger neu aufbauen
+      inhalt(enden.map(e => wischen(`<section class="karte">
           <div class="zeile">
             <div><h2>${esc(e.datei || 'Druck')}</h2><small class="leise">${esc(e.druckerName)} · ${datumZeit(e.zeitpunkt)}</small></div>
             <span class="badge ${e.abgebrochen ? 'rot' : 'gruen'}">${e.abgebrochen ? 'Abgebrochen bei ' + prozent(e.fortschritt) : 'Fertig'}</span>
@@ -300,7 +302,7 @@ async function buchenSeite() {
             <button class="primaer" data-buchen="${e.id}">Buchen …</button>
             <button class="knopf" data-verwerfen="${e.id}">Verwerfen</button>
           </div>
-        </section>`).join(''));
+        </section>`, 'druckende', e.id, e.datei, 'Verwerfen')).join(''));
     } catch (e) { fehler(e); }
   };
   await laden();
@@ -372,10 +374,10 @@ async function dateienSeite() {
   const zeigen = () => {
     const q = dateienSuche.toLowerCase();
     const treffer = dateien.filter(d => !q || [d.name, d.material, d.notiz].some(x => (x || '').toLowerCase().includes(q)));
-    $('#dListe').innerHTML = treffer.length ? treffer.map(d => `<button class="karte datei-eintrag" data-senden="${d.id}">
+    $('#dListe').innerHTML = treffer.length ? treffer.map(d => wischen(`<button class="karte datei-eintrag" data-senden="${d.id}">
         <b>${esc(d.name)}</b>
         <small class="leise">${[d.typ, d.gramm ? zahl(d.gramm) + ' g' : '', dauer(d.druckzeit), d.material, datumZeit(d.hinzugefuegt)].filter(Boolean).map(esc).join(' · ')}</small>
-      </button>`).join('')
+      </button>`, 'datei', d.id, d.name)).join('')
       : `<p class="leer">${dateien.length ? 'Keine passenden Dateien.' : 'Noch keine druckfertigen Dateien.<br><small>G-Code oder geslicte 3MF fügst du in der Windows-App unter „Dateien“ hinzu.</small>'}</p>`;
   };
   $('#dSuche').oninput = e => { dateienSuche = e.target.value; zeigen(); };
@@ -530,11 +532,11 @@ async function sendenFormular(dateiId) {
 function spulenKarte(f) {
   const anteil = f.gewicht > 0 ? f.restgewicht / f.gewicht : 0;
   const klasse = f.restgewicht <= 0 ? 'leer' : anteil < 0.15 ? 'knapp' : '';
-  return `<a class="karte spule" href="#spule/${encodeURIComponent(f.code)}">
+  return wischen(`<a class="karte spule" href="#spule/${encodeURIComponent(f.code)}">
       <div><b>${esc(f.code)}</b> <span class="leise">${esc(spulenText(f))}</span>${f.lagerort ? `<br><small class="leise">${esc(f.lagerort)}</small>` : ''}</div>
       <div class="rest">${zahl(f.restgewicht)} g<br><small class="leise">${prozent(anteil)}</small></div>
       <div class="balken ${klasse}"><div style="width:${Math.min(100, anteil * 100)}%"></div></div>
-    </a>`;
+    </a>`, 'spule', f.id, f.code);
 }
 
 async function spulenSeite() {
@@ -1102,6 +1104,98 @@ async function etikettenBilderZeigen(liste, fmt, rahmen) {
     }
   };
   $('#eBilder').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+
+// ------------------------------------------------------------------ Nach links wischen zum Löschen (wie in Handy-Apps)
+// Kurz nach links wischen legt den roten Knopf frei, ein Tipp darauf löscht (nach Rückfrage). Senkrechtes Scrollen
+// bleibt beim Browser (touch-action: pan-y); funktioniert auch mit der Maus.
+
+const WISCH_BREITE = 96;
+let wischZug = null;
+
+function wischen(inhaltHtml, art, id, name, aktion = 'Löschen') {
+  return `<div class="wisch" data-art="${art}" data-id="${id}" data-name="${esc(name)}">
+      <button class="wisch-aktion" data-wisch="1" tabindex="-1">${aktion}</button>
+      <div class="wisch-inhalt">${inhaltHtml}</div>
+    </div>`;
+}
+
+function wischSchliessen(w) {
+  w.classList.remove('offen');
+  w.querySelector('.wisch-inhalt').style.transform = '';
+}
+
+document.addEventListener('pointerdown', e => {
+  if (e.target.closest('.wisch-aktion')) return;          // Tipp auf "Löschen" – Karte offen lassen
+  const inhaltEl = e.target.closest('.wisch-inhalt');
+  document.querySelectorAll('.wisch.offen').forEach(w => { if (!inhaltEl || w !== inhaltEl.parentElement) wischSchliessen(w); });
+  if (!inhaltEl || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const w = inhaltEl.parentElement;
+  wischZug = { w, inhaltEl, x0: e.clientX, y0: e.clientY, start: w.classList.contains('offen') ? -WISCH_BREITE : 0, dx: 0, richtung: null };
+});
+
+document.addEventListener('pointermove', e => {
+  const z = wischZug;
+  if (!z) return;
+  const dx = e.clientX - z.x0, dy = e.clientY - z.y0;
+  if (!z.richtung) {
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    z.richtung = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    if (z.richtung === 'x') z.inhaltEl.classList.add('zieht');
+  }
+  if (z.richtung !== 'x') return;
+  z.dx = dx;
+  z.inhaltEl.style.transform = `translateX(${Math.min(0, Math.max(-WISCH_BREITE * 1.4, z.start + dx))}px)`;
+});
+
+function wischEnde() {
+  const z = wischZug;
+  wischZug = null;
+  if (!z || z.richtung !== 'x') return;
+  z.inhaltEl.classList.remove('zieht');
+  if (z.start + z.dx < -WISCH_BREITE / 2) {
+    z.w.classList.add('offen');
+    z.inhaltEl.style.transform = `translateX(-${WISCH_BREITE}px)`;
+  } else {
+    wischSchliessen(z.w);
+  }
+  // Der Klick, der nach dem Loslassen kommt, soll die Karte nicht öffnen
+  z.w.dataset.gewischt = '1';
+  setTimeout(() => delete z.w.dataset.gewischt, 400);
+}
+document.addEventListener('pointerup', wischEnde);
+document.addEventListener('pointercancel', wischEnde);
+
+// Klick auf eine offene oder gerade gewischte Karte: nur schließen, nicht öffnen
+document.addEventListener('click', e => {
+  const w = e.target.closest('.wisch');
+  if (!w || e.target.closest('.wisch-aktion')) return;
+  if (w.dataset.gewischt || w.classList.contains('offen')) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!w.dataset.gewischt) wischSchliessen(w);
+  }
+}, true);
+
+async function wischAktion(w) {
+  const art = w.dataset.art, id = +w.dataset.id, name = w.dataset.name;
+  if (art === 'druckende') { wischSchliessen(w); return verwerfen(id); }
+  const frage = art === 'spule'
+    ? `Spule ${name} löschen?\n\nBisherige Drucke bleiben im Verlauf erhalten.`
+    : `Datei „${name}“ löschen?\n\nSie wird auch vom Server entfernt. Bereits gebuchte Drucke behalten ihre Daten.`;
+  if (!confirm(frage)) return wischSchliessen(w);
+  try {
+    await schicken(art === 'spule' ? `filament/${id}` : `dateien/${id}`, 'DELETE');
+  } catch (e) {
+    wischSchliessen(w);
+    return fehler(e);
+  }
+  w.style.height = w.offsetHeight + 'px';
+  w.classList.add('weg');
+  requestAnimationFrame(() => { w.style.height = '0'; });
+  toast(art === 'spule' ? `Spule ${name} gelöscht.` : 'Datei gelöscht.');
+  setTimeout(navigieren, 250);
 }
 
 starten();

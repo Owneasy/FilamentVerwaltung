@@ -231,3 +231,14 @@ textarea {
   color: var(--text); background: var(--karte); border: 1px solid var(--rand); border-radius: 9px; resize: vertical;
 }
 input[type="date"] { -webkit-appearance: none; appearance: none; }
+/* Nach links wischen zum Löschen */
+.wisch { position: relative; margin-bottom: 12px; border-radius: 12px; overflow: hidden; transition: height .22s ease, margin .22s ease; }
+.wisch .karte { margin-bottom: 0; }
+.wisch-aktion {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 96px; border: 0; border-radius: 0 12px 12px 0;
+  background: var(--rot); color: #fff; font-weight: 600; font-size: 15px;
+}
+.wisch-inhalt { position: relative; z-index: 1; touch-action: pan-y; transition: transform .2s ease; }
+.wisch-inhalt.zieht { transition: none; }
+.wisch-inhalt a, .wisch-inhalt img { -webkit-user-drag: none; user-select: none; -webkit-user-select: none; }
+.wisch.weg { margin-bottom: 0; }
