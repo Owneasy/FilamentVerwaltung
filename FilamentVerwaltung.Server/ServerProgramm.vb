@@ -53,6 +53,7 @@ Public Module ServerProgramm
         builder.Services.AddSingleton(New KameraVerwaltung(ueberwachung))
         builder.Services.AddSingleton(New SendeAuftraege())
         builder.Services.AddHostedService(Of DruckerStart)()
+        builder.Services.AddSingleton(Of PushDienst)()
         builder.Services.AddControllers()
 
         ' Abgebrochene Uploads vom letzten Lauf entfernen

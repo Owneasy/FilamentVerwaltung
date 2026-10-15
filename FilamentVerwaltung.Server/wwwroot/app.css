@@ -253,3 +253,9 @@ input[type="date"] { -webkit-appearance: none; appearance: none; }
 .fach.aktiv .fach-text small { color: var(--akzent); }
 .vorschlag { margin-top: 4px; color: var(--akzent); font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .knopf.klein, .karte .knopf.klein { min-height: 32px; padding: 3px 10px; font-size: 13px; margin: 0; }
+/* Glocke (Benachrichtigungen) im Kopf */
+.kopf-rechts { display: flex; align-items: center; gap: 14px; }
+.glocke { border: 0; background: none; padding: 4px; color: var(--leise); display: flex; }
+.glocke svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.glocke.an { color: var(--akzent); }
+.glocke.an svg { fill: currentColor; fill-opacity: .15; }

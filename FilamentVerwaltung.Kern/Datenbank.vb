@@ -99,6 +99,13 @@ CREATE TABLE IF NOT EXISTS Drucker (
     Seriennummer TEXT    NOT NULL DEFAULT '',
     Aktiv        INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS PushAbo (
+    Endpunkt  TEXT PRIMARY KEY,
+    P256dh    TEXT NOT NULL,
+    Auth      TEXT NOT NULL,
+    Geraet    TEXT NOT NULL DEFAULT '',
+    Erstellt  TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS DruckEnde (
     Id        INTEGER PRIMARY KEY AUTOINCREMENT,
     Zeitpunkt TEXT    NOT NULL,
@@ -541,6 +548,37 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             Else
                 Befehl(c, Nothing, "DELETE FROM DruckerSpule WHERE DruckerId = $d AND Slot = $s", "$d", druckerId, "$s", slot).ExecuteNonQuery()
             End If
+        End Using
+    End Sub
+
+    ' ------------------------------------------------------------------ Push-Benachrichtigungen (Server)
+
+    ''' <summary>Gerät für Push-Benachrichtigungen anmelden (Endpunkt und Schlüssel aus dem Browser).</summary>
+    Public Sub PushAboSpeichern(a As PushAbo)
+        Using c = Oeffnen()
+            Befehl(c, Nothing, "INSERT INTO PushAbo (Endpunkt, P256dh, Auth, Geraet, Erstellt) VALUES ($e, $p, $a, $g, $z) " &
+                               "ON CONFLICT(Endpunkt) DO UPDATE SET P256dh = excluded.P256dh, Auth = excluded.Auth, Geraet = excluded.Geraet",
+                   "$e", a.Endpunkt, "$p", a.P256dh, "$a", a.Auth, "$g", If(a.Geraet, ""),
+                   "$z", Date.Now.ToString(DatumZeitFormat, CultureInfo.InvariantCulture)).ExecuteNonQuery()
+        End Using
+    End Sub
+
+    Public Function PushAbosLaden() As List(Of PushAbo)
+        Dim liste As New List(Of PushAbo)
+        Using c = Oeffnen(), cmd = c.CreateCommand()
+            cmd.CommandText = "SELECT Endpunkt, P256dh, Auth, Geraet FROM PushAbo"
+            Using r = cmd.ExecuteReader()
+                While r.Read()
+                    liste.Add(New PushAbo With {.Endpunkt = r.GetString(0), .P256dh = r.GetString(1), .Auth = r.GetString(2), .Geraet = Text(r, 3)})
+                End While
+            End Using
+        End Using
+        Return liste
+    End Function
+
+    Public Sub PushAboLoeschen(endpunkt As String)
+        Using c = Oeffnen()
+            Befehl(c, Nothing, "DELETE FROM PushAbo WHERE Endpunkt = $e", "$e", endpunkt).ExecuteNonQuery()
         End Using
     End Sub
 

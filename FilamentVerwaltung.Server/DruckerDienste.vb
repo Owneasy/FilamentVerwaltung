@@ -1,4 +1,4 @@
-Imports System.Collections.Concurrent
+﻿Imports System.Collections.Concurrent
 Imports System.Threading
 Imports Microsoft.Extensions.Hosting
 Imports Microsoft.Extensions.Logging
@@ -13,12 +13,14 @@ Public Class DruckerStart
     Private ReadOnly _ueberwachung As DruckerUeberwachung
     Private ReadOnly _kameras As KameraVerwaltung
     Private ReadOnly _db As Datenbank
+    Private ReadOnly _push As PushDienst
     Private ReadOnly _log As ILogger(Of DruckerStart)
 
-    Public Sub New(ueberwachung As DruckerUeberwachung, kameras As KameraVerwaltung, db As Datenbank, log As ILogger(Of DruckerStart))
+    Public Sub New(ueberwachung As DruckerUeberwachung, kameras As KameraVerwaltung, db As Datenbank, push As PushDienst, log As ILogger(Of DruckerStart))
         _ueberwachung = ueberwachung
         _kameras = kameras
         _db = db
+        _push = push
         _log = log
     End Sub
 
@@ -34,9 +36,25 @@ Public Class DruckerStart
             _db.DruckEndeSpeichern(ende)
             _log.LogInformation("Druck beendet auf {Drucker}: {Datei} ({Ergebnis})", ende.DruckerName, ende.Datei,
                                 If(ende.Abgebrochen, "abgebrochen", "fertig"))
-        Catch ex As Exception
+Catch ex As Exception
             _log.LogWarning(ex, "Druckende konnte nicht gespeichert werden")
         End Try
+        ' Benachrichtigung aufs Handy (im Hintergrund – die Überwachung soll nicht warten)
+        Dim nachricht As New PushNachricht With {
+            .Titel = If(ende.Abgebrochen, $"Druck abgebrochen – {ende.DruckerName}", $"Druck fertig – {ende.DruckerName}"),
+            .Text = String.Join(" · ", {ende.Datei,
+                                       If(ende.Abgebrochen, $"bei {ende.Fortschritt:P0}", ""),
+                                       If(ende.DauerSekunden.GetValueOrDefault() > 0, DauerText(ende.DauerSekunden), "")}.Where(Function(x) x.Length > 0)) &
+                    vbLf & "Antippen zum Buchen",
+            .Ziel = "/#buchen",
+            .Kennung = $"druckende-{ende.Id}"}
+        Task.Run(Async Function()
+                     Try
+                         Await _push.AnAlleAsync(nachricht)
+                     Catch ex As Exception
+                         _log.LogWarning(ex, "Benachrichtigung zum Druckende fehlgeschlagen")
+                     End Try
+                 End Function)
     End Sub
 
     Public Function StopAsync(abbruch As CancellationToken) As Task Implements IHostedService.StopAsync

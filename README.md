@@ -157,6 +157,16 @@ nur über https) und nachwiegen. Beim ersten Öffnen das Zugangs-Token eingeben;
 Einstellungen. Im Browser-Menü „Zum Startbildschirm hinzufügen“ legt sie wie eine App ab. Ist die Domain mit
 Cloudflare Access (Service-Token) geschützt, braucht der Browser zusätzlich eine Regel mit Anmeldung, z. B. Action
 „Allow“ mit der eigenen E-Mail-Adresse (Einmal-Code per Mail) – als zweite Policy neben „Service Auth“.
+
+Auf der Handy-Seite außerdem: Dateien an Drucker senden, Spulen anlegen/bearbeiten, Etiketten drucken oder als Bild teilen,
+AMS-Fächer zuordnen, nach links wischen zum Löschen.
+
+**Benachrichtigungen (Web Push):** Über die Glocke oben rechts auf der Handy-Seite einschalten. Der Server schickt beim
+Druckende (fertig oder abgebrochen) eine Nachricht an alle angemeldeten Geräte – auch wenn die Seite geschlossen ist;
+Antippen öffnet „Buchen“. Auf dem iPhone (ab iOS 16.4) nur, wenn die Seite über „Zum Home-Bildschirm“ abgelegt ist und von
+dort geöffnet wird, und nur über https. Der Server braucht dafür Internetzugang (Push-Dienst von Apple/Google); sein
+VAPID-Schlüssel liegt in `/data/vapid.json`.
+
 ## Projektaufbau
 
 Drei Projekte: `FilamentVerwaltung` (Windows-App), `FilamentVerwaltung.Kern` (Modelle, Datenbank, Drucker-Anbindung, Dateianalyse –

@@ -134,6 +134,9 @@ async function starten() {
     return e instanceof AnmeldeFehler ? anmeldenZeigen(e.message) : inhalt(`<p class="leer">${esc(e.message)}</p>`);
   }
   $('#leiste').hidden = false;
+  $('#glocke').hidden = false;
+  $('#glocke').onclick = benachrichtigungenZeigen;
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(glockeAktualisieren).catch(() => {});
   druckendenZaehlen();
   if (!zaehlTimer) zaehlTimer = setInterval(druckendenZaehlen, 15000);
   navigieren();
@@ -1257,6 +1260,85 @@ async function wischAktion(w) {
   requestAnimationFrame(() => { w.style.height = '0'; });
   toast(art === 'spule' ? `Spule ${name} gelöscht.` : 'Datei gelöscht.');
   setTimeout(navigieren, 250);
+}
+
+
+// ------------------------------------------------------------------ Benachrichtigungen (Web Push)
+// Der Server schickt beim Druckende eine Nachricht an alle angemeldeten Geräte. Auf dem iPhone geht das nur,
+// wenn die Seite über "Zum Home-Bildschirm" abgelegt ist und von dort geöffnet wird (iOS 16.4+).
+
+const istIphone = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const alsApp = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+const pushMoeglich = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext;
+
+function schluesselBytes(b64) {
+  const s = (b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+
+async function pushAbo() {
+  if (!pushMoeglich()) return null;
+  const reg = await navigator.serviceWorker.getRegistration();
+  return reg ? reg.pushManager.getSubscription() : null;
+}
+
+async function glockeAktualisieren() {
+  const an = !!(await pushAbo().catch(() => null)) && Notification.permission === 'granted';
+  $('#glocke').classList.toggle('an', an);
+}
+
+async function benachrichtigungenZeigen() {
+  let hinweis = '', an = false;
+  if (!window.isSecureContext) hinweis = 'Benachrichtigungen gehen nur über https – bitte die Cloudflare-Adresse benutzen.';
+  else if (istIphone && !alsApp()) hinweis = 'Auf dem iPhone: in Safari auf Teilen (□↑) → „Zum Home-Bildschirm“ tippen und die Seite von dort öffnen. Dann hier einschalten.';
+  else if (!pushMoeglich()) hinweis = 'Dieser Browser kann keine Benachrichtigungen empfangen.';
+  else if (Notification.permission === 'denied') hinweis = 'Benachrichtigungen sind für diese Seite blockiert. Auf dem iPhone unter Einstellungen → Mitteilungen → Filament wieder erlauben.';
+  else an = !!(await pushAbo().catch(() => null)) && Notification.permission === 'granted';
+
+  blattOeffnen(`<div class="zeile"><h2>Benachrichtigungen</h2><button class="knopf" data-schliessen>Schließen</button></div>
+    <p class="leise">Wenn ein Druck fertig ist oder abbricht, bekommt dieses Gerät eine Nachricht – auch wenn die Seite geschlossen ist.
+      Antippen öffnet „Buchen“.</p>
+    ${hinweis ? `<p class="warnung">${esc(hinweis)}</p>` : `<p><b>Status:</b> ${an ? '<span style="color:var(--gruen)">eingeschaltet</span>' : 'aus'}</p>
+    <div class="knoepfe">
+      ${an ? '<button class="knopf" id="pushAus">Ausschalten</button><button class="primaer" id="pushTest">Test senden</button>'
+           : '<button class="primaer" id="pushAn">Einschalten</button>'}
+    </div>`}`);
+
+  if ($('#pushAn')) $('#pushAn').onclick = async () => {
+    // iOS verlangt die Rückfrage direkt beim Antippen – deshalb als Erstes
+    const erlaubnis = await Notification.requestPermission();
+    if (erlaubnis !== 'granted') return toast('Benachrichtigungen wurden nicht erlaubt.', true);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const schluessel = (await holen('push/schluessel')).wert;
+      let abo = await reg.pushManager.getSubscription();
+      if (!abo) abo = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: schluesselBytes(schluessel) });
+      const j = abo.toJSON();
+      await schicken('push/abo', 'POST', { endpunkt: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth,
+        geraet: istIphone ? 'iPhone' : (navigator.userAgentData?.platform || navigator.platform || 'Browser') });
+      toast('Benachrichtigungen eingeschaltet.');
+    } catch (e) { fehler(e); }
+    glockeAktualisieren();
+    benachrichtigungenZeigen();
+  };
+  if ($('#pushAus')) $('#pushAus').onclick = async () => {
+    try {
+      const abo = await pushAbo();
+      if (abo) {
+        await schicken('push/abmelden', 'POST', { endpunkt: abo.endpoint });
+        await abo.unsubscribe();
+      }
+      toast('Benachrichtigungen ausgeschaltet.');
+    } catch (e) { fehler(e); }
+    glockeAktualisieren();
+    benachrichtigungenZeigen();
+  };
+  if ($('#pushTest')) $('#pushTest').onclick = async () => {
+    try {
+      const anzahl = +(await (await schicken('push/test', 'POST', {})).json()).wert;
+      toast(anzahl ? `Test an ${anzahl} Gerät${anzahl === 1 ? '' : 'e'} gesendet.` : 'Kein Gerät erreicht – bitte aus- und wieder einschalten.', !anzahl);
+    } catch (e) { fehler(e); }
+  };
 }
 
 starten();
