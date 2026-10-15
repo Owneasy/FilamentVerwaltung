@@ -544,7 +544,7 @@ async function spulenSeite() {
       <button class="knopf" id="scannen" title="QR-Code scannen">${ICON.qr}</button>
     </div>
     <div class="zeile liste-kopf"><label class="schalter"><input type="checkbox" id="nurVorhanden" ${nurVorhanden ? 'checked' : ''}> nur mit Restbestand</label>
-      <button class="knopf" id="etiketten">${ICON.drucken} Etiketten</button></div>
+      <span class="knopf-gruppe"><button class="knopf" id="etiketten">${ICON.drucken} Etiketten</button><button class="primaer" id="neueSpule">+ Neu</button></span></div>
     <div id="liste"><p class="leer">Lade …</p></div>`);
   let spulen;
   try { spulen = await holen('filament'); } catch (e) { return fehler(e); }
@@ -567,6 +567,7 @@ async function spulenSeite() {
   $('#nurVorhanden').onchange = e => { nurVorhanden = e.target.checked; zeigen(); };
   $('#scannen').onclick = () => scannen(spulen);
   $('#etiketten').onclick = () => etikettenDialog(gefiltert(), new Set());
+  $('#neueSpule').onclick = () => spuleFormular(null, spulen);
   zeigen();
 }
 
@@ -682,7 +683,10 @@ async function spuleSeite(code) {
       <label>Wofür? (optional, erscheint im Verlauf)<input id="wBezeichnung" placeholder="z. B. Halterung, Fehldruck …"></label>
       <div class="knoepfe"><button class="primaer" id="wOk">Übernehmen</button></div>
     </section>
+    <div class="knoepfe"><button class="knopf" id="bearbeiten">Bearbeiten</button><button class="knopf" id="duplizieren">Neue Spule wie diese</button></div>
     <button class="knopf breit" id="etikett">${ICON.drucken} Etikett drucken</button>`);
+  $('#bearbeiten').onclick = async () => spuleFormular(f, await holen('filament'), false);
+  $('#duplizieren').onclick = async () => spuleFormular(f, await holen('filament'), true);
   $('#etikett').onclick = () => etikettenDialog([f], new Set([f.id]));
 
   const modus = () => document.querySelector('input[name=modus]:checked').value;
@@ -723,6 +727,127 @@ async function spuleSeite(code) {
   };
 }
 
+
+// ------------------------------------------------------------------ Spule anlegen / bearbeiten (wie FilamentDialog der App)
+
+const STANDARD_HERSTELLER = ['3DJake', 'Anycubic', 'Bambu Lab', 'Creality', 'Das Filament', 'Elegoo', 'eSun', 'Extrudr',
+  'Fiberlogy', 'Geeetech', 'Jayo', 'Overture', 'Polymaker', 'Prusament', 'Sunlu'];
+const STANDARD_MATERIALIEN = ['PLA', 'PLA+', 'PLA Silk', 'PLA Matt', 'PETG', 'ABS', 'ASA', 'TPU', 'PA (Nylon)', 'PC', 'HIPS', 'PVA', 'CF-PLA', 'CF-PETG'];
+
+function vorschlaege(liste) {
+  const eindeutig = new Map();
+  liste.filter(x => x && x.trim()).forEach(x => { const k = x.trim().toLowerCase(); if (!eindeutig.has(k)) eindeutig.set(k, x.trim()); });
+  return [...eindeutig.values()].sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base' }))
+    .map(x => `<option value="${esc(x)}">`).join('');
+}
+
+/**
+ * vorlage = null: neue Spule; mit vorlage und kopie = false: bearbeiten; kopie = true: neue Spule wie diese
+ * (gleiche Angaben, neue ID, voll, heute gekauft).
+ */
+async function spuleFormular(vorlage, alleSpulen, kopie = false) {
+  const neu = !vorlage || kopie;
+  const f = vorlage ? { ...vorlage } : { id: 0, hersteller: '', material: '', farbe: '', durchmesser: 1.75, gewicht: 1000, restgewicht: 1000,
+    spulengewicht: 0, preis: 0, notiz: '', lagerort: '', duesenTemp: 0, bettTemp: 0, trocknung: '', shopLink: '' };
+  if (neu) {
+    f.id = 0;
+    try { f.code = (await holen('filament/naechster-code')).wert; } catch (e) { return fehler(e); }
+    f.restgewicht = f.gewicht;
+    f.kaufdatum = new Date().toISOString().slice(0, 10);
+  }
+  const datum = (f.kaufdatum || new Date().toISOString()).slice(0, 10);
+  blattOeffnen(`<div class="zeile"><h2>${!vorlage ? 'Neue Spule' : kopie ? 'Neue Spule wie ' + esc(vorlage.code) : 'Spule bearbeiten'}</h2>
+      <button class="knopf" data-schliessen>Abbrechen</button></div>
+    <datalist id="lHersteller">${vorschlaege(STANDARD_HERSTELLER.concat(alleSpulen.map(x => x.hersteller)))}</datalist>
+    <datalist id="lMaterial">${vorschlaege(STANDARD_MATERIALIEN.concat(alleSpulen.map(x => x.material)))}</datalist>
+    <datalist id="lLagerort">${vorschlaege(alleSpulen.map(x => x.lagerort))}</datalist>
+    <div class="formular">
+      <label>ID / Nummer<input id="fCode" value="${esc(f.code)}" autocapitalize="characters"></label>
+      <label>Hersteller<input id="fHersteller" list="lHersteller" value="${esc(f.hersteller)}"></label>
+      <label>Material<input id="fMaterial" list="lMaterial" value="${esc(f.material)}"></label>
+      <label>Farbe<input id="fFarbe" value="${esc(f.farbe)}"></label>
+      <div class="zwei">
+        <label>Durchmesser<select id="fDurchmesser"><option value="1.75">1,75 mm</option><option value="2.85" ${f.durchmesser >= 2.5 ? 'selected' : ''}>2,85 mm</option></select></label>
+        <label>Preis (€)<input id="fPreis" type="number" inputmode="decimal" min="0" step="0.01" value="${f.preis || ''}"></label>
+      </div>
+      <div class="zwei">
+        <label>Gewicht netto (g)<input id="fGewicht" type="number" inputmode="numeric" min="0" value="${f.gewicht}"></label>
+        <label>Restgewicht (g)<input id="fRest" type="number" inputmode="numeric" min="0" value="${f.restgewicht}"></label>
+      </div>
+      <div class="zwei">
+        <label>Leerspule (g)<input id="fSpule" type="number" inputmode="numeric" min="0" value="${f.spulengewicht || ''}"><small class="leise" id="fVorlage"></small></label>
+        <label>Kaufdatum<input id="fKauf" type="date" value="${datum}"></label>
+      </div>
+      <label>Lagerort<input id="fLagerort" list="lLagerort" value="${esc(f.lagerort)}"></label>
+      <div class="zwei">
+        <label>Düse (°C)<input id="fDuese" type="number" inputmode="numeric" min="0" value="${f.duesenTemp || ''}"></label>
+        <label>Bett (°C)<input id="fBett" type="number" inputmode="numeric" min="0" value="${f.bettTemp || ''}"></label>
+      </div>
+      <label>Trocknung<input id="fTrocknung" value="${esc(f.trocknung)}" placeholder="z. B. 4 h bei 55 °C"></label>
+      <label>Shop-Link<input id="fShop" type="url" value="${esc(f.shopLink)}" placeholder="https://…"></label>
+      <label>Notiz<textarea id="fNotiz" rows="3">${esc(f.notiz)}</textarea></label>
+    </div>
+    <div class="knoepfe"><button class="primaer" id="fSpeichern">Speichern</button></div>`);
+
+  // War die Spule voll, wandert das Restgewicht beim Ändern des Gewichts mit
+  let letztesGewicht = f.gewicht;
+  $('#fGewicht').oninput = () => {
+    if (+$('#fRest').value === letztesGewicht) $('#fRest').value = $('#fGewicht').value;
+    letztesGewicht = +$('#fGewicht').value;
+  };
+  // Leerspulengewicht des Herstellers vorschlagen – eigene Eingaben bleiben stehen
+  let automatisch = -1;
+  const vorlageAnwenden = async () => {
+    const hersteller = $('#fHersteller').value.trim();
+    let v = { gewicht: null, eigenerWert: false };
+    if (hersteller) { try { v = await holen('leerspulen?hersteller=' + encodeURIComponent(hersteller)); } catch { /* ohne Vorlage */ } }
+    const feld = $('#fSpule');
+    if (!feld) return;
+    const aktuell = +feld.value || 0;
+    if (v.gewicht == null) {
+      $('#fVorlage').textContent = '';
+      if (automatisch > 0 && aktuell === automatisch) feld.value = '';
+      automatisch = -1;
+      return;
+    }
+    $('#fVorlage').textContent = v.eigenerWert ? `zuletzt verwendet: ${v.gewicht} g` : `Richtwert: ca. ${v.gewicht} g`;
+    if (aktuell === 0 || aktuell === automatisch) { feld.value = v.gewicht; automatisch = v.gewicht; }
+  };
+  $('#fHersteller').onchange = vorlageAnwenden;
+  vorlageAnwenden();
+
+  $('#fSpeichern').onclick = async () => {
+    const wert = id => $(id).value.trim();
+    const zahlWert = id => Math.max(0, Math.round(+$(id).value || 0));
+    const daten = {
+      ...f,
+      code: wert('#fCode'), hersteller: wert('#fHersteller'), material: wert('#fMaterial'), farbe: wert('#fFarbe'),
+      durchmesser: +$('#fDurchmesser').value, gewicht: zahlWert('#fGewicht'), restgewicht: zahlWert('#fRest'),
+      spulengewicht: zahlWert('#fSpule'), preis: Math.max(0, +(+$('#fPreis').value || 0).toFixed(2)), kaufdatum: $('#fKauf').value || new Date().toISOString().slice(0, 10),
+      lagerort: wert('#fLagerort'), duesenTemp: zahlWert('#fDuese'), bettTemp: zahlWert('#fBett'),
+      trocknung: wert('#fTrocknung'), shopLink: wert('#fShop'), notiz: $('#fNotiz').value
+    };
+    if (!daten.code) return toast('Bitte eine ID / Nummer eingeben.', true);
+    if (!daten.hersteller) return toast('Bitte einen Hersteller angeben.', true);
+    if (daten.shopLink && !/^https?:\/\//i.test(daten.shopLink)) return toast('Der Shop-Link muss mit http:// oder https:// beginnen.', true);
+    if (daten.restgewicht > daten.gewicht) return toast('Das Restgewicht darf nicht größer als das Gewicht sein.', true);
+    $('#fSpeichern').disabled = true;
+    try {
+      if (await holen(`filament/code-existiert?code=${encodeURIComponent(daten.code)}&ausserId=${daten.id}`)) {
+        $('#fSpeichern').disabled = false;
+        return toast(`Die ID „${daten.code}“ ist bereits vergeben. Bitte eine andere wählen.`, true);
+      }
+      const gespeichert = await (await schicken('filament', 'POST', daten)).json();
+      blattSchliessen();
+      toast(neu ? `Spule ${gespeichert.code} angelegt.` : 'Gespeichert.');
+      if (location.hash === '#spule/' + encodeURIComponent(gespeichert.code)) navigieren();
+      else location.hash = 'spule/' + encodeURIComponent(gespeichert.code);
+    } catch (e) {
+      $('#fSpeichern').disabled = false;
+      fehler(e);
+    }
+  };
+}
 
 // ------------------------------------------------------------------ Etiketten drucken
 // Gleiche Formate (gleiche Reihenfolge, Einstellung "Etiketten.Format" wird mit der App geteilt) und gleicher

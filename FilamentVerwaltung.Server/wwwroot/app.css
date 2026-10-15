@@ -222,3 +222,12 @@ dd { margin: 0; color: var(--text-normal); }
 .warnung { color: var(--gelb); font-size: 13.5px; margin-top: 10px; }
 .punkt-klein { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid rgb(0 0 0 / 35%); margin-right: 6px; vertical-align: -1px; }
 .blatt-flaeche select:disabled, .blatt-flaeche input:disabled { opacity: .6; }
+/* Spule anlegen / bearbeiten */
+.knopf-gruppe { display: flex; gap: 8px; }
+.knopf-gruppe .primaer { min-height: 36px; padding: 4px 14px; }
+.zwei { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+textarea {
+  display: block; width: 100%; margin-top: 4px; padding: 8px 12px; font: inherit; font-size: 16px;
+  color: var(--text); background: var(--karte); border: 1px solid var(--rand); border-radius: 9px; resize: vertical;
+}
+input[type="date"] { -webkit-appearance: none; appearance: none; }
