@@ -13,8 +13,10 @@ Public Class DatenController
     Private ReadOnly _db As Datenbank
     Private ReadOnly _optionen As ServerOptionen
     Private ReadOnly _ueberwachung As DruckerUeberwachung
+    Private ReadOnly _regeln As PushRegeln
 
-    Public Sub New(db As Datenbank, optionen As ServerOptionen, ueberwachung As DruckerUeberwachung)
+    Public Sub New(db As Datenbank, optionen As ServerOptionen, ueberwachung As DruckerUeberwachung, regeln As PushRegeln)
+        _regeln = regeln
         _db = db
         _optionen = optionen
         _ueberwachung = ueberwachung
@@ -53,7 +55,9 @@ Public Class DatenController
 
     <HttpPost("filament")>
     Public Function Speichern(<FromBody> f As Filament) As Filament
+        Dim vorher = If(f.Id <> 0, _regeln.RestVorher(f.Id), Nothing)
         _db.Speichern(f)
+        _regeln.SpuleGeaendert(f.Id, vorher)
         Return f
     End Function
 
@@ -79,7 +83,9 @@ Public Class DatenController
 
     <HttpPost("filament/{id:long}/restgewicht")>
     Public Sub RestgewichtBuchen(id As Long, <FromBody> a As RestgewichtAnfrage)
+        Dim vorher = _regeln.RestVorher(id)
         _db.RestgewichtBuchen(id, a.NeuesRestgewicht, a.Art, a.Bezeichnung)
+        _regeln.SpuleGeaendert(id, vorher)
     End Sub
 
     ' ---------- Buchungen
@@ -91,7 +97,9 @@ Public Class DatenController
 
     <HttpPost("buchungen/druck")>
     Public Function DruckSpeichern(<FromBody> b As Buchung) As Buchung
+        Dim vorher = _regeln.RestVorher(b.FilamentId)
         _db.DruckSpeichern(b)
+        _regeln.SpuleGeaendert(b.FilamentId, vorher)
         Return b
     End Function
 

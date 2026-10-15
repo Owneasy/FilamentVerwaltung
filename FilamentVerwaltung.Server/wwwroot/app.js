@@ -1302,7 +1302,11 @@ async function benachrichtigungenZeigen() {
     <div class="knoepfe">
       ${an ? '<button class="knopf" id="pushAus">Ausschalten</button><button class="primaer" id="pushTest">Test senden</button>'
            : '<button class="primaer" id="pushAn">Einschalten</button>'}
-    </div>`}`);
+    </div>`}
+    <h2 style="margin-top:20px">Wofür?</h2>
+    <p class="leise klein-text">Gilt für alle Geräte.</p>
+    <div id="pushRegeln" class="modi"><p class="leise">Lade …</p></div>`);
+  pushRegelnZeigen();
 
   if ($('#pushAn')) $('#pushAn').onclick = async () => {
     // iOS verlangt die Rückfrage direkt beim Antippen – deshalb als Erstes
@@ -1338,6 +1342,35 @@ async function benachrichtigungenZeigen() {
       const anzahl = +(await (await schicken('push/test', 'POST', {})).json()).wert;
       toast(anzahl ? `Test an ${anzahl} Gerät${anzahl === 1 ? '' : 'e'} gesendet.` : 'Kein Gerät erreicht – bitte aus- und wieder einschalten.', !anzahl);
     } catch (e) { fehler(e); }
+  };
+}
+
+
+// Schalter für die Benachrichtigungen (Einstellungen auf dem Server, Standard wie dort: offline aus, Rest an)
+const PUSH_REGELN = [
+  ['Push.Druckende', 'Druck fertig oder abgebrochen', true],
+  ['Push.SpuleKnapp', 'Spule fast leer bzw. leer (nach einer Buchung)', true],
+  ['Push.DruckerFehler', 'Fehler am Drucker', true],
+  ['Push.DruckerOffline', 'Drucker länger als 3 Minuten nicht erreichbar', false]
+];
+
+async function pushRegelnZeigen() {
+  let werte, grenze;
+  try {
+    werte = await Promise.all(PUSH_REGELN.map(([k]) => holen('einstellungen/' + k).then(x => x.wert)));
+    grenze = (await holen('einstellungen/Push.SpuleKnappGrenze')).wert || '100';
+  } catch (e) { return fehler(e); }
+  if (!$('#pushRegeln')) return;
+  $('#pushRegeln').innerHTML = PUSH_REGELN.map(([k, text, standard], i) => `<label><input type="checkbox" data-regel="${k}"
+      ${(werte[i] ? werte[i] === '1' : standard) ? 'checked' : ''}> ${esc(text)}</label>`).join('') +
+    `<label style="display:block;margin-top:8px;color:var(--leise);font-size:13.5px">„Fast leer“ unter (g)
+      <input id="pushGrenze" type="number" inputmode="numeric" min="1" value="${esc(grenze)}"></label>`;
+  document.querySelectorAll('[data-regel]').forEach(box => box.onchange = () =>
+    schicken('einstellungen/' + box.dataset.regel, 'PUT', { wert: box.checked ? '1' : '0' }).catch(fehler));
+  $('#pushGrenze').onchange = () => {
+    const g = Math.max(1, parseInt($('#pushGrenze').value, 10) || 100);
+    $('#pushGrenze').value = g;
+    schicken('einstellungen/Push.SpuleKnappGrenze', 'PUT', { wert: String(g) }).catch(fehler);
   };
 }
 

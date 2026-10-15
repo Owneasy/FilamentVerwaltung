@@ -13,19 +13,20 @@ Public Class DruckerStart
     Private ReadOnly _ueberwachung As DruckerUeberwachung
     Private ReadOnly _kameras As KameraVerwaltung
     Private ReadOnly _db As Datenbank
-    Private ReadOnly _push As PushDienst
+    Private ReadOnly _regeln As PushRegeln
     Private ReadOnly _log As ILogger(Of DruckerStart)
 
-    Public Sub New(ueberwachung As DruckerUeberwachung, kameras As KameraVerwaltung, db As Datenbank, push As PushDienst, log As ILogger(Of DruckerStart))
+    Public Sub New(ueberwachung As DruckerUeberwachung, kameras As KameraVerwaltung, db As Datenbank, regeln As PushRegeln, log As ILogger(Of DruckerStart))
         _ueberwachung = ueberwachung
         _kameras = kameras
         _db = db
-        _push = push
+        _regeln = regeln
         _log = log
     End Sub
 
     Public Function StartAsync(abbruch As CancellationToken) As Task Implements IHostedService.StartAsync
         AddHandler _ueberwachung.DruckBeendet, AddressOf DruckBeendet
+        AddHandler _ueberwachung.StatusGeaendert, AddressOf StatusGeaendert
         _ueberwachung.Starten()
         _log.LogInformation("Drucker-Überwachung gestartet ({Anzahl} Drucker)", _ueberwachung.DruckerIds().Count)
         Return Task.CompletedTask
@@ -36,25 +37,19 @@ Public Class DruckerStart
             _db.DruckEndeSpeichern(ende)
             _log.LogInformation("Druck beendet auf {Drucker}: {Datei} ({Ergebnis})", ende.DruckerName, ende.Datei,
                                 If(ende.Abgebrochen, "abgebrochen", "fertig"))
-Catch ex As Exception
+        Catch ex As Exception
             _log.LogWarning(ex, "Druckende konnte nicht gespeichert werden")
         End Try
-        ' Benachrichtigung aufs Handy (im Hintergrund – die Überwachung soll nicht warten)
-        Dim nachricht As New PushNachricht With {
-            .Titel = If(ende.Abgebrochen, $"Druck abgebrochen – {ende.DruckerName}", $"Druck fertig – {ende.DruckerName}"),
-            .Text = String.Join(" · ", {ende.Datei,
-                                       If(ende.Abgebrochen, $"bei {ende.Fortschritt:P0}", ""),
-                                       If(ende.DauerSekunden.GetValueOrDefault() > 0, DauerText(ende.DauerSekunden), "")}.Where(Function(x) x.Length > 0)) &
-                    vbLf & "Antippen zum Buchen",
-            .Ziel = "/#buchen",
-            .Kennung = $"druckende-{ende.Id}"}
-        Task.Run(Async Function()
-                     Try
-                         Await _push.AnAlleAsync(nachricht)
-                     Catch ex As Exception
-                         _log.LogWarning(ex, "Benachrichtigung zum Druckende fehlgeschlagen")
-                     End Try
-                 End Function)
+        _regeln.DruckBeendet(ende)
+    End Sub
+
+    ''' <summary>Für die Benachrichtigungen "Fehler am Drucker" und "nicht erreichbar".</summary>
+    Private Sub StatusGeaendert(druckerId As Long)
+        Try
+            _regeln.StatusGeaendert(_db.DruckerLaden().FirstOrDefault(Function(d) d.Id = druckerId), _ueberwachung.Status(druckerId))
+        Catch ex As Exception
+            _log.LogWarning(ex, "Statusprüfung für Benachrichtigungen fehlgeschlagen")
+        End Try
     End Sub
 
     Public Function StopAsync(abbruch As CancellationToken) As Task Implements IHostedService.StopAsync

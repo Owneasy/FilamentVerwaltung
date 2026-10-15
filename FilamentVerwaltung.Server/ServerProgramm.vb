@@ -54,6 +54,7 @@ Public Module ServerProgramm
         builder.Services.AddSingleton(New SendeAuftraege())
         builder.Services.AddHostedService(Of DruckerStart)()
         builder.Services.AddSingleton(Of PushDienst)()
+        builder.Services.AddSingleton(Of PushRegeln)()
         builder.Services.AddControllers()
 
         ' Abgebrochene Uploads vom letzten Lauf entfernen

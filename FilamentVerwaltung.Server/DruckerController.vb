@@ -1,4 +1,4 @@
-Imports Microsoft.AspNetCore.Mvc
+﻿Imports Microsoft.AspNetCore.Mvc
 
 ''' <summary>
 ''' REST-API für die Drucker-Überwachung auf dem Server: Live-Status, Protokoll, Senden, offene Druckenden, Kamera.
@@ -12,8 +12,10 @@ Public Class DruckerController
     Private ReadOnly _ueberwachung As DruckerUeberwachung
     Private ReadOnly _auftraege As SendeAuftraege
     Private ReadOnly _kameras As KameraVerwaltung
+    Private ReadOnly _regeln As PushRegeln
 
-    Public Sub New(db As Datenbank, ueberwachung As DruckerUeberwachung, auftraege As SendeAuftraege, kameras As KameraVerwaltung)
+    Public Sub New(db As Datenbank, ueberwachung As DruckerUeberwachung, auftraege As SendeAuftraege, kameras As KameraVerwaltung, regeln As PushRegeln)
+        _regeln = regeln
         _db = db
         _ueberwachung = ueberwachung
         _auftraege = auftraege
@@ -110,7 +112,9 @@ Public Class DruckerController
         Try
             b.Id = 0
             b.Art = Buchung.ArtDruck
+            Dim vorher = _regeln.RestVorher(b.FilamentId)
             _db.DruckSpeichern(b)
+            _regeln.SpuleGeaendert(b.FilamentId, vorher)
             Return b
         Catch
             _db.DruckEndeSpeichern(ende)
