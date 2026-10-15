@@ -18,6 +18,7 @@ let scanLauf = null;
 let druckerListe = [];
 let spulenSuche = '';
 let nurVorhanden = true;
+let dateienSuche = '';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -156,19 +157,21 @@ function navigieren() {
   window.scrollTo(0, 0);
   if (name === 'buchen') buchenSeite();
   else if (name === 'spulen') spulenSeite();
+  else if (name === 'dateien') dateienSeite();
   else if (name === 'spule') spuleSeite(decodeURIComponent(arg || ''));
   else druckerSeite();
 }
 
 window.addEventListener('hashchange', navigieren);
 document.addEventListener('click', e => {
-  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen]');
+  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden]');
   if (!z) return;
   if (z.dataset.seite) { if (location.hash === '#' + z.dataset.seite) navigieren(); else location.hash = z.dataset.seite; }
   else if (z.hasAttribute('data-schliessen')) blattSchliessen();
   else if (z.dataset.kamera) kameraZeigen(+z.dataset.kamera);
   else if (z.dataset.buchen) buchenFormular(+z.dataset.buchen);
   else if (z.dataset.verwerfen) verwerfen(+z.dataset.verwerfen);
+  else if (z.dataset.senden) sendenFormular(+z.dataset.senden);
 });
 // Im Hintergrund nichts abfragen (spart Akku und Datenvolumen); beim Zurückkehren neu laden –
 // ein offenes Formular (z. B. Buchen) bleibt dabei stehen, nur Kamera und Scanner werden beendet
@@ -349,6 +352,177 @@ async function verwerfen(id) {
   }
   druckendenZaehlen();
   navigieren();
+}
+
+// ------------------------------------------------------------------ Dateien: druckfertige Dateien an einen Drucker senden
+// Wie "An Drucker senden" in der App: G-Code / BGCODE (Klipper, OctoPrint, PrusaLink) oder geslicte 3MF (Bambu Lab).
+// Der Server lädt die Datei aus "Dateien" selbst auf den Drucker – es wird nichts übers Handy übertragen.
+
+const GCODE_TYPEN = ['GCODE', 'GCO', 'G', 'BGCODE'];
+const istDruckbar = d => d.hatDruckdaten || GCODE_TYPEN.includes(d.typ);
+const ZUSTAND_BEREIT = [2, 5, 6];   // Bereit, Fertig, Abgebrochen
+
+async function dateienSeite() {
+  titel('Dateien');
+  inhalt(`<div class="suche"><input id="dSuche" type="search" placeholder="Dateiname, Material …" value="${esc(dateienSuche)}"></div>
+    <p class="leise klein-text">Druckfertige Dateien (G-Code und geslicte 3MF). Antippen, um sie an einen Drucker zu senden.</p>
+    <div id="dListe"><p class="leer">Lade …</p></div>`);
+  let dateien;
+  try { dateien = (await holen('dateien')).filter(istDruckbar); } catch (e) { return fehler(e); }
+  const zeigen = () => {
+    const q = dateienSuche.toLowerCase();
+    const treffer = dateien.filter(d => !q || [d.name, d.material, d.notiz].some(x => (x || '').toLowerCase().includes(q)));
+    $('#dListe').innerHTML = treffer.length ? treffer.map(d => `<button class="karte datei-eintrag" data-senden="${d.id}">
+        <b>${esc(d.name)}</b>
+        <small class="leise">${[d.typ, d.gramm ? zahl(d.gramm) + ' g' : '', dauer(d.druckzeit), d.material, datumZeit(d.hinzugefuegt)].filter(Boolean).map(esc).join(' · ')}</small>
+      </button>`).join('')
+      : `<p class="leer">${dateien.length ? 'Keine passenden Dateien.' : 'Noch keine druckfertigen Dateien.<br><small>G-Code oder geslicte 3MF fügst du in der Windows-App unter „Dateien“ hinzu.</small>'}</p>`;
+  };
+  $('#dSuche').oninput = e => { dateienSuche = e.target.value; zeigen(); };
+  zeigen();
+}
+
+async function sendenFormular(dateiId) {
+  let datei, drucker, live, spulen, platten;
+  try {
+    [datei, drucker, live, spulen, platten] = await Promise.all([
+      holen('dateien').then(l => l.find(d => d.id === dateiId)), holen('drucker'), holen('drucker/live'),
+      holen('filament'), holen(`dateien/${dateiId}/platten`)]);
+  } catch (e) { return fehler(e); }
+  if (!datei) return toast('Die Datei gibt es nicht mehr.', true);
+  drucker = drucker.filter(d => d.aktiv);
+  const kopf = `<div class="zeile"><div><h2>${esc(datei.name)}</h2>
+      <small class="leise">${[datei.gramm ? zahl(datei.gramm) + ' g' : '', dauer(datei.druckzeit), datei.material].filter(Boolean).map(esc).join(' · ')}</small></div>
+      <button class="knopf" id="sAbbrechen">Abbrechen</button></div>`;
+  if (!drucker.length) {
+    blattOeffnen(kopf + '<p class="fehler">Es ist kein Drucker angebunden (Drucker legst du in der Windows-App an).</p>');
+    $('#sAbbrechen').onclick = blattSchliessen;
+    return;
+  }
+  const liveVon = id => live.find(l => l.druckerId === id) || {};
+  const endung = '.' + datei.name.split('.').pop().toLowerCase();
+  const passt = d => (liveVon(d.id).endungen || []).includes(endung) && (d.typ !== 'Bambu' || platten.length > 0);
+  const bereit = d => ZUSTAND_BEREIT.includes(liveVon(d.id).status?.zustand);
+  let index = drucker.findIndex(d => passt(d) && bereit(d));
+  if (index < 0) index = Math.max(0, drucker.findIndex(passt));
+
+  blattOeffnen(kopf + `
+    <label>Drucker<select id="sDrucker">${drucker.map((d, i) => `<option value="${i}" ${i === index ? 'selected' : ''}>${esc(d.name)} (${esc(d.typ)})</option>`).join('')}</select></label>
+    <div id="sStatus" class="leise" style="margin-top:4px"></div>
+    <div id="sBambu">
+      ${platten.length ? `<label>Platte<select id="sPlatte">${platten.map(p => `<option value="${p.nummer}">Platte ${p.nummer}${p.gramm ? ' · ' + zahl(p.gramm) + ' g' : ''}${p.sekunden ? ' · ' + dauer(p.sekunden) : ''}</option>`).join('')}</select></label>` : ''}
+      <div id="sFaecher"></div>
+      <label class="schalter"><input type="checkbox" id="sNivellieren" checked> Bett nivellieren</label>
+      <label class="schalter"><input type="checkbox" id="sZeitraffer"> Zeitraffer aufnehmen</label>
+      <label class="schalter"><input type="checkbox" id="sFluss"> Fluss-Kalibrierung</label>
+    </div>
+    <p id="sWarnung"></p>
+    <div class="balken" id="sBalken" hidden><div style="width:0"></div></div>
+    <p id="sFortschritt" class="leise"></p>
+    <div class="knoepfe"><button class="primaer" id="sStart">${ICON.drucken} Druck starten</button></div>`);
+
+  let auftrag = null, faecherAuswahl = [];
+  const gewaehlt = () => drucker[+$('#sDrucker').value];
+  const platte = () => platten.find(p => p.nummer === +($('#sPlatte')?.value || 1));
+
+  const faecherAufbauen = async (d, s) => {
+    let zuordnung = {};
+    try { zuordnung = await holen(`drucker/${d.id}/spulen`); } catch { /* ohne Vorschlag */ }
+    const verfuegbar = (s?.faecher || []).filter(f => !f.beschreibung.endsWith('(leer)'));
+    if (!verfuegbar.some(f => f.slot === 254)) verfuegbar.push({ slot: 254, beschreibung: 'Externe Spule' });
+    const p = platte();
+    const filamente = p?.filamente?.length ? p.filamente : [{ id: 1, typ: datei.material || '', gramm: 0 }];
+    faecherAuswahl = filamente.map(pf => {
+      // Vorschlag wie in der App: gleiches Material bei zugeordneter Spule > gleiches Material im Fach > aktives Fach
+      let bester = 0, punkteBester = -1;
+      const optionen = verfuegbar.map((f, i) => {
+        const spule = spulen.find(x => x.id === zuordnung[f.slot]);
+        const typ = (pf.typ || '').toUpperCase();
+        const punkte = (typ && spule && spule.material.toUpperCase().includes(typ) ? 4 : 0) +
+          (typ && f.beschreibung.toUpperCase().includes(typ) ? 2 : 0) + (s?.slot === f.slot ? 1 : 0);
+        if (punkte > punkteBester) { punkteBester = punkte; bester = i; }
+        return { slot: f.slot, text: f.beschreibung + (spule ? ` – ${spule.code} ${spulenText(spule)}` : '') };
+      });
+      return { pf, optionen, bester };
+    });
+    $('#sFaecher').innerHTML = faecherAuswahl.map((a, i) => `<label>
+        ${a.pf.farbeHex ? `<span class="punkt-klein" style="background:${esc(a.pf.farbeHex)}"></span>` : ''}Filament ${a.pf.id}: ${esc(a.pf.typ || '?')}${a.pf.gramm ? ` (${zahl(a.pf.gramm)} g)` : ''} → AMS-Fach
+        <select data-fach="${i}">${a.optionen.map((o, j) => `<option value="${o.slot}" ${j === a.bester ? 'selected' : ''}>${esc(o.text)}</option>`).join('')}</select>
+      </label>`).join('');
+  };
+
+  const pruefen = async () => {
+    const d = gewaehlt(), s = liveVon(d.id).status, z = s?.zustand ?? 0;
+    const laeuft = z === DRUCKT || z === PAUSIERT;
+    $('#sStatus').textContent = 'Status: ' + (ZUSTAND[z] || '?') + (laeuft && s.datei ? ' – ' + s.datei : '');
+    $('#sStatus').style.color = bereit(d) ? 'var(--gruen)' : 'var(--rot)';
+    $('#sBambu').hidden = d.typ !== 'Bambu';
+    if (d.typ === 'Bambu') await faecherAufbauen(d, s);
+    let problem = '';
+    if (!passt(d)) {
+      problem = d.typ === 'Bambu' ? 'Für Bambu Lab wird eine in Bambu Studio geslicte 3MF (mit G-Code) benötigt.'
+        : `${d.typ} druckt nur ${(liveVon(d.id).endungen || []).join(' / ')}-Dateien aus dem passenden Slicer.`;
+    } else if (d.typ === 'Bambu' && platte()?.ohneDruckerstart) {
+      problem = 'Diese Datei enthält nicht den Start-G-Code des Druckers – der Drucker würde kein Filament laden. Bitte in der App neu slicen.';
+    } else if (z === OFFLINE || z === 0) {
+      problem = 'Der Drucker ist gerade nicht erreichbar.';
+    } else if (laeuft) {
+      problem = 'Der Drucker ist beschäftigt – warte, bis der aktuelle Druck fertig ist.';
+    }
+    $('#sWarnung').className = problem ? 'fehler' : 'warnung';
+    $('#sWarnung').textContent = problem || '⚠ Der Druck startet sofort nach dem Hochladen. Ist die Druckplatte frei, sauber und richtig eingelegt?';
+    $('#sStart').disabled = !!problem;
+  };
+  $('#sDrucker').onchange = pruefen;
+  if ($('#sPlatte')) $('#sPlatte').onchange = pruefen;
+  await pruefen();
+
+  $('#sAbbrechen').onclick = async () => {
+    if (!auftrag) return blattSchliessen();
+    try { await schicken(`sendeauftraege/${auftrag}`, 'DELETE'); } catch { /* läuft evtl. schon nicht mehr */ }
+  };
+
+  $('#sStart').onclick = async () => {
+    const d = gewaehlt();
+    const optionen = {
+      platte: platte()?.nummer || 1,
+      nivellieren: $('#sNivellieren').checked,
+      zeitraffer: $('#sZeitraffer').checked,
+      flussKalibrierung: $('#sFluss').checked,
+      amsZuordnung: d.typ === 'Bambu'
+        ? faecherAuswahl.map((a, i) => ({ id: a.pf.id, slot: +document.querySelector(`[data-fach="${i}"]`).value })).sort((x, y) => x.id - y.id).map(x => x.slot)
+        : []
+    };
+    document.querySelectorAll('#blattInhalt select, #blattInhalt input').forEach(e => e.disabled = true);
+    $('#sStart').disabled = true;
+    $('#sBalken').hidden = false;
+    $('#sFortschritt').textContent = 'Der Server lädt die Datei auf den Drucker …';
+    try {
+      auftrag = (await (await schicken(`drucker/${d.id}/senden`, 'POST', { dateiId: datei.id, optionen })).json()).id;
+      while (true) {
+        await pause(1000);
+        if ($('#blatt').hidden) return;   // Fenster geschlossen – der Server macht trotzdem weiter
+        const info = await holen(`sendeauftraege/${auftrag}`);
+        $('#sBalken').firstElementChild.style.width = (info.fortschritt * 100) + '%';
+        $('#sFortschritt').textContent = info.fortschritt >= 0.999 ? 'Sende Startbefehl …' : `Lade auf den Drucker hoch … ${prozent(info.fortschritt)}`;
+        if (info.fertig) {
+          if (info.fehler) throw new Error(info.fehler);
+          blattSchliessen();
+          toast(`Druck auf ${d.name} gestartet.`);
+          location.hash = 'drucker';
+          return;
+        }
+      }
+    } catch (e) {
+      auftrag = null;
+      $('#sBalken').hidden = true;
+      $('#sFortschritt').textContent = '';
+      $('#sWarnung').className = 'fehler';
+      $('#sWarnung').textContent = 'Senden fehlgeschlagen: ' + e.message + ' Details stehen im Protokoll des Druckers (Windows-App).';
+      document.querySelectorAll('#blattInhalt select, #blattInhalt input').forEach(e => e.disabled = false);
+      $('#sStart').disabled = false;
+    }
+  };
 }
 
 // ------------------------------------------------------------------ Spulen

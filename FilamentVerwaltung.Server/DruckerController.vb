@@ -42,6 +42,20 @@ Public Class DruckerController
         Return _auftraege.Starten(_ueberwachung, id, pfad, d.Id, If(a.Optionen, New SendeOptionen()))
     End Function
 
+    ''' <summary>Platten einer geslicten 3MF (für die Auswahl von Platte und AMS-Fächern beim Senden); sonst leer.</summary>
+    <HttpGet("dateien/{id:long}/platten")>
+    Public Function Platten(id As Long) As ActionResult(Of List(Of PlattenInfo))
+        Dim d = _db.DateienLaden().FirstOrDefault(Function(x) x.Id = id)
+        If d Is Nothing Then Return NotFound("Die Datei gibt es auf dem Server nicht (mehr).")
+        Dim pfad = _db.DateiPfad(d)
+        If d.Typ <> "3MF" OrElse Not System.IO.File.Exists(pfad) Then Return New List(Of PlattenInfo)
+        Dim liste = DreiMfPlatten(pfad)
+        For Each p In liste
+            p.OhneDruckerstart = DreiMfOhneDruckerstart(pfad, p.Nummer)
+        Next
+        Return liste
+    End Function
+
     <HttpGet("sendeauftraege/{id}")>
     Public Function SendeAuftrag(id As String) As ActionResult(Of SendeAuftragInfo)
         Dim info = _auftraege.Abrufen(id)

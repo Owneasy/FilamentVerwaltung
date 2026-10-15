@@ -11,8 +11,16 @@ Public Class PlattenFilament
     ''' <summary>Filament-Nummer im Projekt (1-basiert).</summary>
     Public Property Id As Integer
     Public Property Typ As String = ""
+    <Text.Json.Serialization.JsonIgnore>
     Public Property Farbe As Drawing.Color?
     Public Property Gramm As Double
+
+    ''' <summary>Farbe für die Übertragung an die Handy-Seite als "#RRGGBB" (leer = unbekannt).</summary>
+    Public ReadOnly Property FarbeHex As String
+        Get
+            Return If(Farbe.HasValue, $"#{Farbe.Value.R:X2}{Farbe.Value.G:X2}{Farbe.Value.B:X2}", "")
+        End Get
+    End Property
 End Class
 
 ''' <summary>Eine geslicte Platte einer Bambu-Studio-3MF.</summary>
@@ -21,6 +29,8 @@ Public Class PlattenInfo
     Public Property Gramm As Double
     Public Property Sekunden As Integer
     Public Property Filamente As New List(Of PlattenFilament)
+    ''' <summary>Nur für die API: mit einer alten Version geslict, ohne Start-G-Code des Druckers (würde kein Filament laden).</summary>
+    Public Property OhneDruckerstart As Boolean
     Public Overrides Function ToString() As String
         Return $"Platte {Nummer}" & If(Gramm > 0, $" · {Gramm:N0} g", "") & If(Sekunden > 0, " · " & DauerText(Sekunden), "")
     End Function
