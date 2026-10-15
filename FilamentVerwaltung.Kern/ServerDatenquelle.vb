@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Net
 Imports System.Net.Http
 Imports System.Net.Http.Headers
@@ -266,6 +266,10 @@ Public Class ServerDatenquelle
     Public Function CodeExistiert(code As String, ausserId As Long) As Boolean Implements IDatenquelle.CodeExistiert
         Return Abrufen(Of Boolean)($"filament/code-existiert?code={Q(code.Trim())}&ausserId={ausserId}")
     End Function
+
+    Public Sub RfidKennungSetzen(filamentId As Long, kennung As String) Implements IDatenquelle.RfidKennungSetzen
+        Schicken(HttpMethod.Put, $"filament/{filamentId}/rfid", New WertAnfrage With {.Wert = If(kennung, "")})
+    End Sub
 
     Public Function NaechsterCode() As String Implements IDatenquelle.NaechsterCode
         Return Abrufen(Of WertAnfrage)("filament/naechster-code").Wert

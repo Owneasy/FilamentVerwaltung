@@ -72,6 +72,11 @@ Public Class DatenController
         Return New WertAnfrage With {.Wert = _db.NaechsterCode()}
     End Function
 
+    <HttpPut("filament/{id:long}/rfid")>
+    Public Sub RfidKennungSetzen(id As Long, <FromBody> a As WertAnfrage)
+        _db.RfidKennungSetzen(id, a.Wert)
+    End Sub
+
     <HttpPost("filament/{id:long}/restgewicht")>
     Public Sub RestgewichtBuchen(id As Long, <FromBody> a As RestgewichtAnfrage)
         _db.RestgewichtBuchen(id, a.NeuesRestgewicht, a.Art, a.Bezeichnung)

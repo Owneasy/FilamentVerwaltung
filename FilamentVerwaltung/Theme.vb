@@ -203,24 +203,5 @@ Public Module Theme
         f.Font = Schrift
     End Sub
 
-    ''' <summary>Ordnet bekannten Farbnamen eine Anzeigefarbe zu (für den Farbpunkt in der Tabelle).</summary>
-    Public Function FarbeZuName(name As String) As Color?
-        If String.IsNullOrWhiteSpace(name) Then Return Nothing
-        Dim n = name.ToLowerInvariant()
-        Dim tabelle As (Wort As String, Farbe As String)() = {
-            ("schwarz", "#111827"), ("black", "#111827"), ("weiß", "#FFFFFF"), ("weiss", "#FFFFFF"), ("white", "#FFFFFF"),
-            ("natur", "#F5F0E1"), ("transparent", "#E0F2FE"), ("klar", "#E0F2FE"),
-            ("dunkelgrau", "#4B5563"), ("grau", "#9CA3AF"), ("grey", "#9CA3AF"), ("gray", "#9CA3AF"), ("silber", "#C0C4CC"),
-            ("gold", "#D4A72C"), ("dunkelblau", "#1E3A8A"), ("hellblau", "#7DD3FC"), ("blau", "#2563EB"), ("blue", "#2563EB"),
-            ("türkis", "#14B8A6"), ("tuerkis", "#14B8A6"), ("dunkelgrün", "#166534"), ("hellgrün", "#86EFAC"),
-            ("grün", "#16A34A"), ("gruen", "#16A34A"), ("green", "#16A34A"), ("gelb", "#FACC15"), ("yellow", "#FACC15"),
-            ("orange", "#F97316"), ("dunkelrot", "#991B1B"), ("rot", "#DC2626"), ("red", "#DC2626"),
-            ("rosa", "#F9A8D4"), ("pink", "#EC4899"), ("magenta", "#D946EF"), ("lila", "#9333EA"), ("violett", "#7C3AED"),
-            ("purple", "#9333EA"), ("braun", "#92400E"), ("brown", "#92400E"), ("holz", "#B07A4A"), ("beige", "#E7D8B9")}
-        For Each eintrag In tabelle
-            If n.Contains(eintrag.Wort) Then Return ColorTranslator.FromHtml(eintrag.Farbe)
-        Next
-        Return Nothing
-    End Function
 
 End Module

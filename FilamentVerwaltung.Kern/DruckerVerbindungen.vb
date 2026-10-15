@@ -689,6 +689,10 @@ Public Class BambuVerbindung
         Dim ams = feld("ams")
         Dim aktiv As Double? = Zahl(ams, "tray_now")
         If aktiv.HasValue AndAlso aktiv.Value <> 255 Then s.Slot = CInt(aktiv.Value)
+        ' Welche Fächer belegt sind, meldet das AMS als Bitfeld (Bit = Slot); fehlt es, gilt ein Fach mit Material als belegt
+        Dim belegtBits As Long = -1
+        Dim bitsText = Text(ams, "tray_exist_bits")
+        If bitsText.Length > 0 AndAlso Not Long.TryParse(bitsText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, belegtBits) Then belegtBits = -1
         Dim einheiten = Kind(ams, "ams")
         If einheiten.HasValue AndAlso einheiten.Value.ValueKind = JsonValueKind.Array Then
             For Each einheit In einheiten.Value.EnumerateArray()
@@ -697,24 +701,42 @@ Public Class BambuVerbindung
                 If Not faecher.HasValue OrElse faecher.Value.ValueKind <> JsonValueKind.Array Then Continue For
                 For Each fach In faecher.Value.EnumerateArray()
                     Dim nr = CInt(If(Zahl(fach, "id"), 0.0))
+                    Dim slot = amsNr * 4 + nr
                     Dim typ = Text(fach, "tray_type")
-                    s.Faecher.Add(New DruckerFach With {
-                        .Slot = amsNr * 4 + nr,
-                        .Beschreibung = $"AMS {amsNr + 1} · Fach {nr + 1}" & If(typ.Length > 0, ": " & typ, " (leer)"),
-                        .Farbe = Farbe(Text(fach, "tray_color"))})
+                    Dim belegt = If(belegtBits >= 0, ((belegtBits >> slot) And 1) = 1, typ.Length > 0)
+                    Dim f = FachLesen(fach, slot, belegt)
+                    f.LeerSicher = belegtBits >= 0 AndAlso Not belegt
+                    f.Beschreibung = $"AMS {amsNr + 1} · Fach {nr + 1}" &
+                                     If(Not belegt, " (leer)", If(typ.Length > 0, ": " & typ, ": Material nicht eingestellt"))
+                    s.Faecher.Add(f)
                 Next
             Next
         End If
         Dim extern = feld("vt_tray")
         If extern.HasValue Then
-            Dim typ = Text(extern, "tray_type")
-            s.Faecher.Add(New DruckerFach With {.Slot = Drucker.SlotExtern,
-                                               .Beschreibung = "Externe Spule" & If(typ.Length > 0, ": " & typ, ""),
-                                               .Farbe = Farbe(Text(extern, "tray_color"))})
+            Dim f = FachLesen(extern.Value, Drucker.SlotExtern, True)
+            f.Beschreibung = "Externe Spule" & If(f.Typ.Length > 0, ": " & f.Typ, "")
+            s.Faecher.Add(f)
         End If
         Return s
     End Function
 
+    ''' <summary>Angaben eines AMS-Fachs (bzw. der externen Spule): Material, Sorte, Farbe, RFID-Kennung, Restmenge.</summary>
+    Private Shared Function FachLesen(fach As JsonElement, slot As Integer, belegt As Boolean) As DruckerFach
+        ' Kennung: tray_uuid (Spule), sonst tag_uid (Chip); ohne Chip meldet der Drucker nur Nullen
+        Dim kennung = Text(fach, "tray_uuid")
+        If kennung.Trim("0"c).Length = 0 Then kennung = Text(fach, "tag_uid")
+        If kennung.Trim("0"c).Length = 0 Then kennung = ""
+        Dim rest = Zahl(fach, "remain")
+        Return New DruckerFach With {
+            .Slot = slot,
+            .Typ = Text(fach, "tray_type"),
+            .Sorte = Text(fach, "tray_sub_brands"),
+            .Kennung = If(belegt, kennung.ToUpperInvariant(), ""),
+            .Rest = If(belegt AndAlso kennung.Length > 0 AndAlso rest.HasValue AndAlso rest.Value >= 0, CInt(rest.Value), CType(Nothing, Integer?)),
+            .Belegt = belegt,
+            .Farbe = If(belegt, Farbe(Text(fach, "tray_color")), Nothing)}
+    End Function
     Public Overrides ReadOnly Property DruckbareEndungen As String() = {".3mf"}
 
     ''' <summary>

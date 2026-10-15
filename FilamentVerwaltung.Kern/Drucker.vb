@@ -65,6 +65,18 @@ End Enum
 Public Class DruckerFach
     Public Property Slot As Integer
     Public Property Beschreibung As String = ""
+    ''' <summary>Material laut Drucker (z. B. "PLA"), leer wenn nicht eingestellt.</summary>
+    Public Property Typ As String = ""
+    ''' <summary>Sorte laut Drucker (z. B. "PLA Basic"), leer wenn unbekannt.</summary>
+    Public Property Sorte As String = ""
+    ''' <summary>Eindeutige Kennung aus dem RFID-Chip (Bambu-Spulen), leer ohne Chip.</summary>
+    Public Property Kennung As String = ""
+    ''' <summary>Restmenge in Prozent laut RFID-Chip, Nothing wenn unbekannt.</summary>
+    Public Property Rest As Integer?
+    ''' <summary>False, wenn das Fach leer ist.</summary>
+    Public Property Belegt As Boolean = True
+    ''' <summary>True, wenn der Drucker ausdrücklich meldet, dass das Fach leer ist (dann darf die Zuordnung weg).</summary>
+    Public Property LeerSicher As Boolean
     ''' <summary>Farbe laut Drucker (z. B. aus dem RFID-Chip), leer wenn unbekannt.</summary>
     <Text.Json.Serialization.JsonIgnore>
     Public Property Farbe As Drawing.Color?
@@ -134,6 +146,10 @@ Public Class DruckerStatus
     Public Property Faecher As New List(Of DruckerFach)
     ''' <summary>Temperaturen (Düse, Bett, ggf. Kammer) – leer, wenn der Drucker keine meldet.</summary>
     Public Property Temperaturen As New List(Of DruckerTemperatur)
+    ''' <summary>Spulen-Zuordnung je Fach (Slot → FilamentId), von der Überwachung mitgeliefert.</summary>
+    Public Property Zuordnung As New Dictionary(Of Integer, Long)
+    ''' <summary>Vorgeschlagene Spule je noch nicht zugeordnetem Fach (nach Material und Farbe).</summary>
+    Public Property Vorschlaege As New Dictionary(Of Integer, Long)
     ''' <summary>Aktuelle Schicht und Gesamtzahl laut Drucker (Bambu, Klipper mit SET_PRINT_STATS_INFO), sonst Nothing.</summary>
     Public Property Schicht As Integer?
     Public Property SchichtenGesamt As Integer?

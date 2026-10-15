@@ -175,7 +175,7 @@ Public Class DruckerKarte
     Public Sub Aktualisieren(s As DruckerStatus, filamente As List(Of Filament))
         _filamente = filamente
         If s Is Nothing Then
-            SpulenAufbauen(New List(Of DruckerFach))
+            SpulenAufbauen(Nothing)
             Return
         End If
         Dim farbe = If(s.Zustand = DruckerZustand.Druckt, Theme.Akzent,
@@ -204,7 +204,7 @@ Public Class DruckerKarte
         WerteAnzeigen(s)
         lblMeldung.Text = s.Meldung
         lblMeldung.Visible = s.Zustand = DruckerZustand.Offline AndAlso s.Meldung.Length > 0
-        SpulenAufbauen(s.Faecher, s.Slot)
+        SpulenAufbauen(s)
     End Sub
 
     ''' <summary>
@@ -248,19 +248,28 @@ Public Class DruckerKarte
         temperaturen.Visible = werte.Count > 0
     End Sub
 
-    ''' <summary>Zuordnung Fach → Spule. Wird nur neu aufgebaut, wenn sich die Fächer ändern.</summary>
-    Private Sub SpulenAufbauen(faecher As List(Of DruckerFach), Optional aktivesFach As Integer? = Nothing)
+    ''' <summary>
+    ''' Zuordnung Fach → Spule, mit Vorschlag nach Material und Farbe für Fächer ohne Zuordnung.
+    ''' Zuordnung und Vorschläge liefert die Überwachung im Status; neu aufgebaut wird nur bei Änderungen.
+    ''' </summary>
+    Private Sub SpulenAufbauen(s As DruckerStatus)
+        Dim faecher = If(s?.Faecher, New List(Of DruckerFach))
+        Dim aktivesFach = s?.Slot
         Dim liste = If(faecher.Count > 0, faecher, New List(Of DruckerFach) From {New DruckerFach With {.Slot = Drucker.SlotStandard, .Beschreibung = "Spule"}})
-        Dim signatur = String.Join("|", liste.Select(Function(f) $"{f.Slot}:{f.Beschreibung}")) & "#" & _filamente.Count & "#" & aktivesFach
+        Dim zuordnung As Dictionary(Of Integer, Long) = s?.Zuordnung
+        If zuordnung Is Nothing Then
+            Try
+                zuordnung = _db.SpulenZuordnung(Drucker.Id)
+            Catch ex As Exception
+                zuordnung = New Dictionary(Of Integer, Long)
+            End Try
+        End If
+        Dim vorschlaege = If(s?.Vorschlaege, New Dictionary(Of Integer, Long))
+        Dim signatur = String.Join("|", liste.Select(Function(f) $"{f.Slot}:{f.Beschreibung}:{f.Rest}")) & "#" & _filamente.Count & "#" & aktivesFach &
+                       "#" & String.Join(",", zuordnung.OrderBy(Function(p) p.Key).Select(Function(p) $"{p.Key}={p.Value}")) &
+                       "#" & String.Join(",", vorschlaege.OrderBy(Function(p) p.Key).Select(Function(p) $"{p.Key}={p.Value}"))
         If signatur = _fachSignatur Then Return
         _fachSignatur = signatur
-
-        Dim zuordnung As Dictionary(Of Integer, Long)
-        Try
-            zuordnung = _db.SpulenZuordnung(Drucker.Id)
-        Catch ex As Exception
-            zuordnung = New Dictionary(Of Integer, Long)
-        End Try
 
         spulen.SuspendLayout()
         For Each c As Control In spulen.Controls.Cast(Of Control)().ToList()
@@ -270,8 +279,9 @@ Public Class DruckerKarte
         spulen.RowCount = 0
         For Each fach In liste
             Dim slot = fach.Slot
-            Dim beschriftung As New Label With {.Text = fach.Beschreibung & If(aktivesFach.HasValue AndAlso aktivesFach.Value = slot, "  ●", ""),
-                                                .AutoSize = True, .ForeColor = If(aktivesFach.HasValue AndAlso aktivesFach.Value = slot, Theme.AkzentText, Theme.TextLeise),
+            Dim aktiv = aktivesFach.HasValue AndAlso aktivesFach.Value = slot
+            Dim beschriftung As New Label With {.Text = fach.Beschreibung & If(fach.Rest.HasValue, $" · {fach.Rest.Value} %", "") & If(aktiv, "  ●", ""),
+                                                .AutoSize = True, .ForeColor = If(aktiv, Theme.AkzentText, Theme.TextLeise),
                                                 .Font = Theme.SchriftKlein, .Anchor = AnchorStyles.Left, .Margin = New Padding(0, 6, 10, 2)}
             Dim auswahl As New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList, .Dock = DockStyle.Fill, .Margin = New Padding(0, 2, 0, 2)}
             FilamentSeite.FilterGestalten(auswahl, 260)
@@ -285,17 +295,43 @@ Public Class DruckerKarte
                 auswahl.Items.Add($"{f.Code} · {f.Hersteller} {f.Material} {f.Farbe} ({f.Restgewicht:N0} g)")
             Next
             auswahl.SelectedIndex = Math.Max(0, angeboten.FindIndex(Function(f) f.Id = zugeordnet) + 1)
-            AddHandler auswahl.SelectionChangeCommitted, Sub(s, e)
+            Dim zuordnen = Sub(filamentId As Long?)
+                               Try
+                                   _db.SpuleZuordnen(Drucker.Id, slot, filamentId)
+                                   ' Bis die Überwachung neu abfragt, die eigene Änderung im Status vormerken
+                                   If s IsNot Nothing Then
+                                       If filamentId.HasValue Then s.Zuordnung(slot) = filamentId.Value Else s.Zuordnung.Remove(slot)
+                                       s.Vorschlaege.Remove(slot)
+                                   End If
+                               Catch ex As Exception
+                                   MessageBox.Show(FindForm(), ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                               End Try
+                           End Sub
+            AddHandler auswahl.SelectionChangeCommitted, Sub(x, y)
                                                              Dim index = auswahl.SelectedIndex
-                                                             Try
-                                                                 _db.SpuleZuordnen(Drucker.Id, slot, If(index <= 0, CType(Nothing, Long?), angeboten(index - 1).Id))
-                                                             Catch ex As Exception
-                                                                 MessageBox.Show(FindForm(), ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                                                             End Try
+                                                             zuordnen(If(index <= 0, CType(Nothing, Long?), angeboten(index - 1).Id))
                                                          End Sub
             spulen.Controls.Add(beschriftung, 0, spulen.RowCount)
             spulen.Controls.Add(auswahl, 1, spulen.RowCount)
             spulen.RowCount += 1
+
+            ' Vorschlag nach Material und Farbe (nur für Fächer ohne Zuordnung)
+            Dim vorschlagId As Long = 0
+            Dim vorschlag = If(zugeordnet = 0 AndAlso vorschlaege.TryGetValue(slot, vorschlagId), _filamente.FirstOrDefault(Function(f) f.Id = vorschlagId), Nothing)
+            If vorschlag IsNot Nothing Then
+                Dim zeile As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False, .Margin = New Padding(0, 0, 0, 4)}
+                zeile.Controls.Add(New Label With {.Text = $"Vorschlag: {vorschlag.Code} · {vorschlag.Hersteller} {vorschlag.Material} {vorschlag.Farbe}",
+                                                   .AutoSize = True, .Font = Theme.SchriftKlein, .ForeColor = Theme.AkzentText, .Margin = New Padding(0, 6, 8, 0)})
+                Dim btn As New WebButton("Übernehmen") With {.Margin = New Padding(0)}
+                AddHandler btn.Click, Sub(x, y)
+                                          zuordnen(vorschlag.Id)
+                                          auswahl.SelectedIndex = angeboten.FindIndex(Function(f) f.Id = vorschlag.Id) + 1
+                                          zeile.Visible = False
+                                      End Sub
+                zeile.Controls.Add(btn)
+                spulen.Controls.Add(zeile, 1, spulen.RowCount)
+                spulen.RowCount += 1
+            End If
         Next
         spulen.ResumeLayout()
     End Sub

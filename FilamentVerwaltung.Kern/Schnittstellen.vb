@@ -20,6 +20,8 @@ Public Interface IDatenquelle
     Sub Loeschen(id As Long)
     Function CodeExistiert(code As String, ausserId As Long) As Boolean
     Function NaechsterCode() As String
+    ''' <summary>RFID-Kennung an einer Spule merken (wird von anderen Spulen entfernt).</summary>
+    Sub RfidKennungSetzen(filamentId As Long, kennung As String)
 
     ' Buchungen
     Sub RestgewichtBuchen(filamentId As Long, neuesRestgewicht As Integer, art As String, bezeichnung As String)

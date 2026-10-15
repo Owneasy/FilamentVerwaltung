@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             SpalteErgaenzen(c, "Filament", "BettTemp", "INTEGER NOT NULL DEFAULT 0")
             SpalteErgaenzen(c, "Filament", "Trocknung", "TEXT NOT NULL DEFAULT ''")
             SpalteErgaenzen(c, "Filament", "ShopLink", "TEXT NOT NULL DEFAULT ''")
+            SpalteErgaenzen(c, "Filament", "RfidKennung", "TEXT NOT NULL DEFAULT ''")
         End Using
     End Sub
 
@@ -180,7 +181,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         Dim liste As New List(Of Filament)
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText = "SELECT Id, Code, Hersteller, Material, Farbe, Durchmesser, Gewicht, Restgewicht, " &
-                              "Spulengewicht, Preis, Kaufdatum, Notiz, Lagerort, DuesenTemp, BettTemp, Trocknung, ShopLink " &
+                              "Spulengewicht, Preis, Kaufdatum, Notiz, Lagerort, DuesenTemp, BettTemp, Trocknung, ShopLink, RfidKennung " &
                               "FROM Filament ORDER BY Code"
             Using r = cmd.ExecuteReader()
                 While r.Read()
@@ -201,7 +202,8 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
                         .DuesenTemp = r.GetInt32(13),
                         .BettTemp = r.GetInt32(14),
                         .Trocknung = Text(r, 15),
-                        .ShopLink = Text(r, 16)
+                        .ShopLink = Text(r, 16),
+                        .RfidKennung = Text(r, 17)
                     })
                 End While
             End Using
@@ -225,15 +227,15 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             If f.Id = 0 Then
                 cmd.CommandText =
                     "INSERT INTO Filament (Code, Hersteller, Material, Farbe, Durchmesser, Gewicht, Restgewicht, " &
-                    "Spulengewicht, Preis, Kaufdatum, Notiz, Lagerort, DuesenTemp, BettTemp, Trocknung, ShopLink) " &
+                    "Spulengewicht, Preis, Kaufdatum, Notiz, Lagerort, DuesenTemp, BettTemp, Trocknung, ShopLink, RfidKennung) " &
                     "VALUES ($code, $hersteller, $material, $farbe, $durchmesser, $gewicht, $rest, $spule, $preis, $kauf, " &
-                    "$notiz, $lagerort, $duese, $bett, $trocknung, $shop); SELECT last_insert_rowid();"
+                    "$notiz, $lagerort, $duese, $bett, $trocknung, $shop, $rfid); SELECT last_insert_rowid();"
             Else
                 cmd.CommandText =
                     "UPDATE Filament SET Code = $code, Hersteller = $hersteller, Material = $material, Farbe = $farbe, " &
                     "Durchmesser = $durchmesser, Gewicht = $gewicht, Restgewicht = $rest, Spulengewicht = $spule, " &
                     "Preis = $preis, Kaufdatum = $kauf, Notiz = $notiz, Lagerort = $lagerort, DuesenTemp = $duese, " &
-                    "BettTemp = $bett, Trocknung = $trocknung, ShopLink = $shop WHERE Id = $id"
+                    "BettTemp = $bett, Trocknung = $trocknung, ShopLink = $shop, RfidKennung = $rfid WHERE Id = $id"
                 cmd.Parameters.AddWithValue("$id", f.Id)
             End If
 
@@ -253,6 +255,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             cmd.Parameters.AddWithValue("$bett", Math.Max(0, f.BettTemp))
             cmd.Parameters.AddWithValue("$trocknung", If(f.Trocknung, "").Trim())
             cmd.Parameters.AddWithValue("$shop", If(f.ShopLink, "").Trim())
+            cmd.Parameters.AddWithValue("$rfid", If(f.RfidKennung, "").Trim().ToUpperInvariant())
 
             If f.Id = 0 Then
                 f.Id = Convert.ToInt64(cmd.ExecuteScalar())
@@ -274,6 +277,16 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
                     .Bezeichnung = "Restgewicht im Filament geändert",
                     .Kosten = Kosten(gramm, f.Preis, f.Gewicht)})
             End If
+            t.Commit()
+        End Using
+    End Sub
+
+    ''' <summary>Merkt die RFID-Kennung an der Spule (eine Kennung gehört nur zu einer Spule; leer = vergessen).</summary>
+    Public Sub RfidKennungSetzen(filamentId As Long, kennung As String) Implements IDatenquelle.RfidKennungSetzen
+        Dim k = If(kennung, "").Trim().ToUpperInvariant()
+        Using c = Oeffnen(), t = c.BeginTransaction()
+            If k.Length > 0 Then Befehl(c, t, "UPDATE Filament SET RfidKennung = '' WHERE RfidKennung = $k AND Id <> $id", "$k", k, "$id", filamentId).ExecuteNonQuery()
+            Befehl(c, t, "UPDATE Filament SET RfidKennung = $k WHERE Id = $id", "$k", k, "$id", filamentId).ExecuteNonQuery()
             t.Commit()
         End Using
     End Sub

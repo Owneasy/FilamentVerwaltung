@@ -19,6 +19,7 @@ let druckerListe = [];
 let spulenSuche = '';
 let nurVorhanden = true;
 let dateienSuche = '';
+let spulenCache = [];
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -164,7 +165,7 @@ function navigieren() {
 
 window.addEventListener('hashchange', navigieren);
 document.addEventListener('click', e => {
-  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden],[data-wisch]');
+  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden],[data-wisch],[data-fach-waehlen],[data-fach-uebernehmen]');
   if (!z) return;
   if (z.dataset.seite) { if (location.hash === '#' + z.dataset.seite) navigieren(); else location.hash = z.dataset.seite; }
   else if (z.hasAttribute('data-schliessen')) blattSchliessen();
@@ -173,6 +174,8 @@ document.addEventListener('click', e => {
   else if (z.dataset.verwerfen) verwerfen(+z.dataset.verwerfen);
   else if (z.dataset.senden) sendenFormular(+z.dataset.senden);
   else if (z.dataset.wisch) wischAktion(z.closest('.wisch'));
+  else if (z.dataset.fachWaehlen) fachWaehlen(...z.dataset.fachWaehlen.split(':').map(Number));
+  else if (z.dataset.fachUebernehmen) fachZuordnen(...z.dataset.fachUebernehmen.split(':').map(Number));
 });
 // Im Hintergrund nichts abfragen (spart Akku und Datenvolumen); beim Zurückkehren neu laden –
 // ein offenes Formular (z. B. Buchen) bleibt dabei stehen, nur Kamera und Scanner werden beendet
@@ -197,7 +200,7 @@ function phaseText(s) {
   return heizt.length ? heizt[0] + ' heizt auf' : '';
 }
 
-function druckerKarte(d, s) {
+function druckerKarte(d, s, spulen = []) {
   if (!d.aktiv) {
     return `<section class="karte"><div class="zeile"><h2>${esc(d.name)}</h2><span class="badge grau">Nicht überwacht</span></div></section>`;
   }
@@ -226,19 +229,77 @@ function druckerKarte(d, s) {
       ${phase ? `<div class="phase">${esc(phase)}</div>` : ''}
       ${werte.length ? `<div class="werte">${werte.join('')}</div>` : ''}
       ${z === OFFLINE && s.meldung ? `<div class="fehler">${esc(s.meldung)}</div>` : ''}
+      ${z !== OFFLINE && z !== 0 ? faecherHtml(d, s, spulen) : ''}
       ${d.typ === 'Bambu' ? `<button class="knopf" data-kamera="${d.id}">${ICON.kamera} Kamera</button>` : ''}
     </section>`;
+}
+
+// ------------------------------------------------------------------ AMS-Fächer: Zuordnung Fach → Spule
+// Die Überwachung (Server) liefert im Status die Zuordnung und Vorschläge nach Material und Farbe;
+// RFID-Spulen ordnet sie selbst zu, sobald sie ihre Kennung einmal gelernt hat.
+
+const fachFarbe = hex => hex && hex.length === 9 ? '#' + hex.slice(3) : '';   // "#AARRGGBB" -> "#RRGGBB"
+
+function faecherHtml(d, s, spulen) {
+  const faecher = s.faecher && s.faecher.length ? s.faecher : [{ slot: 0, beschreibung: 'Spule', belegt: true }];
+  const zuordnung = s.zuordnung || {}, vorschlaege = s.vorschlaege || {};
+  const name = id => { const f = spulen.find(x => x.id === id); return f ? `${f.code} · ${spulenText(f)}` : ''; };
+  return `<div class="faecher">${faecher.map(f => {
+      const zugeordnet = zuordnung[f.slot], vorschlag = !zugeordnet ? vorschlaege[f.slot] : null;
+      const aktiv = s.slot === f.slot;
+      return `<div class="fach${aktiv ? ' aktiv' : ''}">
+          <span class="fach-farbe" style="${fachFarbe(f.farbeHex) ? 'background:' + fachFarbe(f.farbeHex) : ''}"></span>
+          <div class="fach-text">
+            <small>${esc(f.beschreibung)}${f.rest != null ? ` · ${f.rest} %` : ''}${aktiv ? ' · aktiv' : ''}</small>
+            <b>${zugeordnet ? esc(name(zugeordnet) || 'Spule #' + zugeordnet) : '<span class="leise">keine Spule zugeordnet</span>'}</b>
+            ${vorschlag && name(vorschlag) ? `<div class="vorschlag">Vorschlag: ${esc(name(vorschlag))}
+              <button class="knopf klein" data-fach-uebernehmen="${d.id}:${f.slot}:${vorschlag}">Übernehmen</button></div>` : ''}
+          </div>
+          ${f.belegt !== false ? `<button class="knopf klein" data-fach-waehlen="${d.id}:${f.slot}">Ändern</button>` : ''}
+        </div>`;
+    }).join('')}</div>`;
+}
+
+async function fachZuordnen(druckerId, slot, filamentId) {
+  try {
+    await schicken(`drucker/${druckerId}/spulen/${slot}`, 'PUT', { filamentId: filamentId || null });
+    toast(filamentId ? 'Spule zugeordnet.' : 'Zuordnung entfernt.');
+  } catch (e) { return fehler(e); }
+  blattSchliessen();
+  if ((location.hash.slice(1) || 'drucker') === 'drucker') navigieren();
+}
+
+async function fachWaehlen(druckerId, slot) {
+  let live, spulen;
+  try { [live, spulen] = await Promise.all([holen('drucker/live'), holen('filament')]); } catch (e) { return fehler(e); }
+  const s = (live.find(l => l.druckerId === druckerId) || {}).status || {};
+  const fach = (s.faecher || []).find(f => f.slot === slot) || { slot, beschreibung: 'Spule' };
+  const zugeordnet = (s.zuordnung || {})[slot], vorschlag = (s.vorschlaege || {})[slot];
+  // Passende (gleiches Material) zuerst, dann der Rest
+  const typ = (fach.typ || '').toUpperCase().replace(/[\s-]/g, '');
+  const passt = f => typ && (f.material || '').toUpperCase().replace(/[\s-]/g, '').includes(typ);
+  const angeboten = spulen.filter(f => f.restgewicht > 0 || f.id === zugeordnet)
+    .sort((a, b) => (b.id === vorschlag) - (a.id === vorschlag) || passt(b) - passt(a) || a.code.localeCompare(b.code));
+  blattOeffnen(`<div class="zeile"><h2>${esc(fach.beschreibung)}</h2><button class="knopf" data-schliessen>Abbrechen</button></div>
+    ${fach.kennung ? '<p class="leise">Spule mit RFID-Chip – nach dem Zuordnen erkennt die App sie künftig selbst, auch in einem anderen Fach.</p>' : ''}
+    <label>Spule<select id="fachSpule">
+      <option value="0">– keine Spule –</option>
+      ${angeboten.map(f => `<option value="${f.id}" ${f.id === (zugeordnet || vorschlag) ? 'selected' : ''}>${esc(f.code)} · ${esc(spulenText(f))} (${zahl(f.restgewicht)} g)${f.id === vorschlag ? ' – Vorschlag' : ''}</option>`).join('')}
+    </select></label>
+    <div class="knoepfe"><button class="primaer" id="fachOk">Speichern</button></div>`);
+  $('#fachOk').onclick = () => fachZuordnen(druckerId, slot, +$('#fachSpule').value);
 }
 
 async function druckerSeite() {
   titel('Drucker');
   const aktualisieren = async () => {
     try {
-      const [drucker, live] = await Promise.all([holen('drucker'), holen('drucker/live')]);
+      const [drucker, live, spulen] = await Promise.all([holen('drucker'), holen('drucker/live'), holen('filament')]);
+      spulenCache = spulen;
       druckerListe = drucker;
       if (!drucker.length) return inhalt('<p class="leer">Noch kein Drucker angelegt.<br><small>Drucker legst du in der Windows-App unter „Drucker“ an.</small></p>');
       const status = Object.fromEntries(live.map(l => [l.druckerId, l.status]));
-      inhalt(drucker.map(d => druckerKarte(d, status[d.id])).join(''));
+      inhalt(drucker.map(d => druckerKarte(d, status[d.id], spulen)).join(''));
     } catch (e) { fehler(e); }
   };
   await aktualisieren();

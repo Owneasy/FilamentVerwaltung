@@ -226,8 +226,58 @@ Public Class DruckerUeberwachung
             If Not _eintraege.ContainsValue(e) Then Return  ' inzwischen entfernt
             ende = Auswerten(e, neu)
         End SyncLock
+        SpulenAbgleichen(e, neu)
         RaiseEvent StatusGeaendert(e.Drucker.Id)
         If ende IsNot Nothing Then RaiseEvent DruckBeendet(ende)
+    End Sub
+
+    ''' <summary>
+    ''' Spulen im AMS: bekannte RFID-Spulen automatisch ihrem Fach zuordnen, die Kennung einer zugeordneten Spule lernen,
+    ''' Zuordnungen sicher leerer Fächer entfernen und für die übrigen Fächer Vorschläge berechnen.
+    ''' Die aktuelle Zuordnung und die Vorschläge kommen in den Status (für App und Handy).
+    ''' </summary>
+    Private Sub SpulenAbgleichen(e As Eintrag, s As DruckerStatus)
+        If s.Zustand = DruckerZustand.Offline OrElse s.Zustand = DruckerZustand.Unbekannt Then Return
+        Try
+            Dim id = e.Drucker.Id
+            Dim zuordnung = _db.SpulenZuordnung(id)
+            If s.Faecher.Count > 0 Then
+                Dim filamente = _db.AlleLaden()
+                For Each fach In s.Faecher.Where(Function(f) f.Belegt AndAlso f.Kennung.Length > 0)
+                    Dim aktuell As Long = 0
+                    zuordnung.TryGetValue(fach.Slot, aktuell)
+                    Dim bekannt = filamente.FirstOrDefault(Function(f) f.RfidKennung = fach.Kennung)
+                    If bekannt IsNot Nothing Then
+                        If aktuell = bekannt.Id Then Continue For
+                        ' Bekannte Spule eingelegt oder umgesteckt: ins Fach eintragen, aus dem alten Fach entfernen
+                        For Each alt In zuordnung.Where(Function(p) p.Value = bekannt.Id).Select(Function(p) p.Key).ToList()
+                            _db.SpuleZuordnen(id, alt, Nothing)
+                            zuordnung.Remove(alt)
+                        Next
+                        _db.SpuleZuordnen(id, fach.Slot, bekannt.Id)
+                        zuordnung(fach.Slot) = bekannt.Id
+                        e.Protokoll.Schreiben($"Spule {bekannt.Code} am RFID-Chip erkannt: {fach.Beschreibung}")
+                    ElseIf aktuell <> 0 Then
+                        ' Zugeordnete Spule hat noch keine Kennung: diese hier merken
+                        Dim spule = filamente.FirstOrDefault(Function(f) f.Id = aktuell)
+                        If spule IsNot Nothing AndAlso String.IsNullOrEmpty(spule.RfidKennung) Then
+                            _db.RfidKennungSetzen(spule.Id, fach.Kennung)
+                            spule.RfidKennung = fach.Kennung
+                            e.Protokoll.Schreiben($"RFID-Chip von Spule {spule.Code} gelernt ({fach.Beschreibung})")
+                        End If
+                    End If
+                Next
+                ' Spule herausgenommen (der Drucker meldet das Fach ausdrücklich als leer)
+                For Each fach In s.Faecher.Where(Function(f) f.LeerSicher AndAlso zuordnung.ContainsKey(f.Slot))
+                    _db.SpuleZuordnen(id, fach.Slot, Nothing)
+                    zuordnung.Remove(fach.Slot)
+                Next
+                s.Vorschlaege = Vorschlaege(s.Faecher, filamente, zuordnung)
+            End If
+            s.Zuordnung = zuordnung
+        Catch ex As Exception
+            e.Protokoll.Schreiben("Spulen-Abgleich: " & ex.Message)
+        End Try
     End Sub
 
     Private Shared Function KurzeFehlermeldung(ex As Exception) As String

@@ -46,6 +46,9 @@ Public Class Filament
     ''' <summary>Link zum Shop für den Nachkauf.</summary>
     Public Property ShopLink As String = ""
 
+    ''' <summary>RFID-Kennung der Spule (Bambu-Chip), wird beim Einlegen ins AMS gelernt; leer = keine bekannt.</summary>
+    Public Property RfidKennung As String = ""
+
     ''' <summary>Temperaturen kompakt, z. B. "215 / 60 °C".</summary>
     Public ReadOnly Property Temperaturen As String
         Get
