@@ -1,4 +1,4 @@
-Imports System.Drawing
+﻿Imports System.Drawing
 Imports System.Windows.Forms
 
 ''' <summary>
@@ -19,6 +19,8 @@ Public Class SchnellsucheDialog
     Public ReadOnly Property Ergebnis As Filament
     ''' <summary>True = Verbrauch-/Wiege-Dialog öffnen, False = nur anzeigen.</summary>
     Public ReadOnly Property ZumWiegen As Boolean
+    ''' <summary>Gescannter Verpackungs-Barcode: neue Spule dieser Sorte anlegen (Nothing = nein).</summary>
+    Public ReadOnly Property NeuMitBarcode As String
 
     Public Sub New(spulen As List(Of Filament))
         _alle = spulen.OrderBy(Function(f) f.Code).ToList()
@@ -50,7 +52,7 @@ Public Class SchnellsucheDialog
         t.RowStyles.Add(New RowStyle(SizeType.AutoSize))
         t.RowStyles.Add(New RowStyle(SizeType.AutoSize))
 
-        t.Controls.Add(New Label With {.Text = "QR-Code scannen oder ID / Name eingeben", .Font = Theme.SchriftFett, .ForeColor = Theme.TextStark,
+        t.Controls.Add(New Label With {.Text = "QR-Code oder Verpackungs-Barcode scannen, ID / Name eingeben", .Font = Theme.SchriftFett, .ForeColor = Theme.TextStark,
                                        .AutoSize = True, .Margin = New Padding(0, 0, 0, 8)}, 0, 0)
         suche.Dock = DockStyle.Fill
         suche.Margin = New Padding(0, 0, 0, 10)
@@ -131,10 +133,25 @@ Public Class SchnellsucheDialog
         Return MyBase.ProcessCmdKey(msg, keyData)
     End Function
 
+    ''' <summary>EAN-8/EAN-13/UPC: nur Ziffern, 8 bis 14 Stellen.</summary>
+    Private Shared Function IstBarcode(text As String) As Boolean
+        Return text.Length >= 8 AndAlso text.Length <= 14 AndAlso text.All(AddressOf Char.IsDigit)
+    End Function
+
     Private Sub Uebernehmen(zumWiegen As Boolean)
         Dim begriff = suche.Eingabe.Text.Trim()
         ' Genaue ID hat Vorrang (Scan), sonst die markierte Zeile
-        Dim f = _alle.FirstOrDefault(Function(x) String.Equals(x.Code, begriff, StringComparison.OrdinalIgnoreCase))
+Dim f = _alle.FirstOrDefault(Function(x) String.Equals(x.Code, begriff, StringComparison.OrdinalIgnoreCase))
+        ' Barcode einer Verpackung: neue Spule dieser Sorte (bzw. mit diesem Barcode) anlegen
+        If f Is Nothing AndAlso IstBarcode(begriff) Then
+            Dim bekannt = _alle.Any(Function(x) x.Barcode = begriff)
+            If bekannt OrElse MessageBox.Show(Me, $"Der Barcode {begriff} ist noch keiner Sorte zugeordnet. Neue Spule mit diesem Barcode anlegen?",
+                                               "Barcode", MessageBoxButtons.YesNo, MessageBoxIcon.Question) = DialogResult.Yes Then
+                _NeuMitBarcode = begriff
+                DialogResult = DialogResult.OK
+            End If
+            Return
+        End If
         If f Is Nothing Then f = grid.Ausgewaehlt(Of Filament)()
         If f Is Nothing Then
             System.Media.SystemSounds.Beep.Play()

@@ -49,6 +49,9 @@ Public Class Filament
     ''' <summary>RFID-Kennung der Spule (Bambu-Chip), wird beim Einlegen ins AMS gelernt; leer = keine bekannt.</summary>
     Public Property RfidKennung As String = ""
 
+    ''' <summary>Barcode der Verpackung (EAN/UPC) – gleiche Sorte, gleicher Code; damit lassen sich neue Spulen per Scan anlegen.</summary>
+    Public Property Barcode As String = ""
+
     ''' <summary>Temperaturen kompakt, z. B. "215 / 60 °C".</summary>
     Public ReadOnly Property Temperaturen As String
         Get
@@ -94,7 +97,7 @@ Public Class Filament
 
     ''' <summary>Prüft, ob der Suchbegriff in einem der Textfelder vorkommt.</summary>
     Public Function Passt(suchbegriff As String) As Boolean
-        For Each feld In {Code, Hersteller, Material, Farbe, Notiz, Lagerort}
+        For Each feld In {Code, Hersteller, Material, Farbe, Notiz, Lagerort, Barcode}
             If feld IsNot Nothing AndAlso feld.IndexOf(suchbegriff, StringComparison.OrdinalIgnoreCase) >= 0 Then
                 Return True
             End If

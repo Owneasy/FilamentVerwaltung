@@ -594,9 +594,40 @@ Public Class FilamentSeite
         DialogZeigenUndSpeichern(f.Kopie(), "Filament bearbeiten – " & f.Code)
     End Sub
 
+    ''' <summary>
+    ''' Nach einem Scan der Verpackung: neue Spule wie die zuletzt gekaufte mit diesem Barcode anlegen –
+    ''' oder, wenn der Barcode noch unbekannt ist, eine leere neue Spule mit eingetragenem Barcode.
+    ''' </summary>
+    Public Sub NeueSpuleNachBarcode(barcode As String)
+        Dim vorlage As Filament = Nothing
+        Try
+            vorlage = _db.AlleLaden().Where(Function(x) x.Barcode = barcode).
+                OrderByDescending(Function(x) x.Kaufdatum).ThenByDescending(Function(x) x.Id).FirstOrDefault()
+        Catch ex As Exception
+            Fehler("Die Spulen konnten nicht geladen werden.", ex)
+            Return
+        End Try
+        If vorlage IsNot Nothing Then
+            DuplizierenVon(vorlage)
+            Return
+        End If
+        Dim f As New Filament With {.Barcode = barcode}
+        Try
+            f.Code = _db.NaechsterCode()
+        Catch ex As Exception
+            Fehler("Es konnte keine neue ID ermittelt werden.", ex)
+            Return
+        End Try
+        DialogZeigenUndSpeichern(f, "Neues Filament (Barcode " & barcode & ")")
+    End Sub
+
     Private Sub Duplizieren()
         Dim vorlage = Ausgewaehlt()
         If vorlage Is Nothing Then Return
+        DuplizierenVon(vorlage)
+    End Sub
+
+    Private Sub DuplizierenVon(vorlage As Filament)
         Dim f = vorlage.Kopie()
         f.Id = 0
         f.Restgewicht = f.Gewicht

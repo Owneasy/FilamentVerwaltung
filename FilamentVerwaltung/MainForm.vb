@@ -254,8 +254,13 @@ Public Class MainForm
             Return
         End Try
         Using dlg As New SchnellsucheDialog(spulen)
-            If dlg.ShowDialog(Me) <> DialogResult.OK OrElse dlg.Ergebnis Is Nothing Then Return
+            If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
             SeiteZeigen(filamentSeite)
+            If dlg.NeuMitBarcode IsNot Nothing Then
+                filamentSeite.NeueSpuleNachBarcode(dlg.NeuMitBarcode)
+                Return
+            End If
+            If dlg.Ergebnis Is Nothing Then Return
             filamentSeite.SpuleOeffnen(dlg.Ergebnis.Code, dlg.ZumWiegen)
         End Using
     End Sub

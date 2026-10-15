@@ -37,6 +37,7 @@ Public Class FilamentDialog
     Private ReadOnly numBett As New NumericUpDown With {.Maximum = 200, .Width = 70, .Increment = 5}
     Private ReadOnly txtTrocknung As New TextBox With {.Width = 280, .PlaceholderText = "z. B. 4 h bei 55 °C"}
     Private ReadOnly txtShop As New TextBox With {.Width = 280, .PlaceholderText = "https://…"}
+    Private ReadOnly txtBarcode As New TextBox With {.Width = 280, .PlaceholderText = "EAN von der Verpackung (scannen)"}
     Private ReadOnly lblVorlage As New Label With {.AutoSize = False, .Size = New Size(200, 20), .ForeColor = Theme.TextLeise,
                                                    .Font = Theme.SchriftKlein, .Margin = New Padding(8, 7, 0, 0)}
     ''' <summary>Zuletzt automatisch eingetragenes Leerspulengewicht (wird bei Herstellerwechsel ersetzt, eigene Eingaben nicht).</summary>
@@ -55,6 +56,15 @@ Public Class FilamentDialog
         ' Erst nach der Eingabe anwenden – während des Tippens würde das die Autovervollständigung stören
         AddHandler cboHersteller.Leave, Sub(s, e) VorlageAnwenden()
         AddHandler cboHersteller.SelectionChangeCommitted, Sub(s, e) BeginInvoke(Sub() VorlageAnwenden())
+        ' Der Scanner schickt nach dem Barcode ein Enter – das soll nicht speichern, sondern nur weiterspringen
+        AddHandler txtBarcode.PreviewKeyDown, Sub(s, e)
+                                                  If e.KeyCode = Keys.Enter Then e.IsInputKey = True
+                                              End Sub
+        AddHandler txtBarcode.KeyDown, Sub(s, e)
+                                           If e.KeyCode <> Keys.Enter Then Return
+                                           e.SuppressKeyPress = True
+                                           SelectNextControl(txtBarcode, True, True, True, True)
+                                       End Sub
         VorlageAnwenden()
     End Sub
 
@@ -120,6 +130,7 @@ Public Class FilamentDialog
         Zeile(t, "Temperaturen:", tempZeile)
         Zeile(t, "Trocknung:", txtTrocknung)
         Zeile(t, "Shop-Link:", txtShop)
+        Zeile(t, "Barcode:", txtBarcode)
         Zeile(t, "Notiz:", txtNotiz)
 
         AddHandler numGewicht.ValueChanged, AddressOf Gewicht_ValueChanged
@@ -187,6 +198,7 @@ Public Class FilamentDialog
         numBett.Value = Begrenzen(_f.BettTemp, numBett)
         txtTrocknung.Text = _f.Trocknung
         txtShop.Text = _f.ShopLink
+        txtBarcode.Text = _f.Barcode
         _letztesGewicht = CInt(numGewicht.Value)
     End Sub
 
@@ -282,6 +294,7 @@ Public Class FilamentDialog
         _f.BettTemp = CInt(numBett.Value)
         _f.Trocknung = txtTrocknung.Text.Trim()
         _f.ShopLink = txtShop.Text.Trim()
+        _f.Barcode = txtBarcode.Text.Trim()
 
         DialogResult = DialogResult.OK
     End Sub

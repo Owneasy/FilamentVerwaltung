@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             SpalteErgaenzen(c, "Filament", "ShopLink", "TEXT NOT NULL DEFAULT ''")
             SpalteErgaenzen(c, "Filament", "RfidKennung", "TEXT NOT NULL DEFAULT ''")
             SpalteErgaenzen(c, "Buchung", "Foto", "TEXT NOT NULL DEFAULT ''")
+            SpalteErgaenzen(c, "Filament", "Barcode", "TEXT NOT NULL DEFAULT ''")
         End Using
     End Sub
 
@@ -189,7 +190,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         Dim liste As New List(Of Filament)
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText = "SELECT Id, Code, Hersteller, Material, Farbe, Durchmesser, Gewicht, Restgewicht, " &
-                              "Spulengewicht, Preis, Kaufdatum, Notiz, Lagerort, DuesenTemp, BettTemp, Trocknung, ShopLink, RfidKennung " &
+                              "Spulengewicht, Preis, Kaufdatum, Notiz, Lagerort, DuesenTemp, BettTemp, Trocknung, ShopLink, RfidKennung, Barcode " &
                               "FROM Filament ORDER BY Code"
             Using r = cmd.ExecuteReader()
                 While r.Read()
@@ -211,7 +212,8 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
                         .BettTemp = r.GetInt32(14),
                         .Trocknung = Text(r, 15),
                         .ShopLink = Text(r, 16),
-                        .RfidKennung = Text(r, 17)
+                        .RfidKennung = Text(r, 17),
+                        .Barcode = Text(r, 18)
                     })
                 End While
             End Using
@@ -235,15 +237,15 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             If f.Id = 0 Then
                 cmd.CommandText =
                     "INSERT INTO Filament (Code, Hersteller, Material, Farbe, Durchmesser, Gewicht, Restgewicht, " &
-                    "Spulengewicht, Preis, Kaufdatum, Notiz, Lagerort, DuesenTemp, BettTemp, Trocknung, ShopLink, RfidKennung) " &
+                    "Spulengewicht, Preis, Kaufdatum, Notiz, Lagerort, DuesenTemp, BettTemp, Trocknung, ShopLink, RfidKennung, Barcode) " &
                     "VALUES ($code, $hersteller, $material, $farbe, $durchmesser, $gewicht, $rest, $spule, $preis, $kauf, " &
-                    "$notiz, $lagerort, $duese, $bett, $trocknung, $shop, $rfid); SELECT last_insert_rowid();"
+                    "$notiz, $lagerort, $duese, $bett, $trocknung, $shop, $rfid, $barcode); SELECT last_insert_rowid();"
             Else
                 cmd.CommandText =
                     "UPDATE Filament SET Code = $code, Hersteller = $hersteller, Material = $material, Farbe = $farbe, " &
                     "Durchmesser = $durchmesser, Gewicht = $gewicht, Restgewicht = $rest, Spulengewicht = $spule, " &
                     "Preis = $preis, Kaufdatum = $kauf, Notiz = $notiz, Lagerort = $lagerort, DuesenTemp = $duese, " &
-                    "BettTemp = $bett, Trocknung = $trocknung, ShopLink = $shop, RfidKennung = $rfid WHERE Id = $id"
+                    "BettTemp = $bett, Trocknung = $trocknung, ShopLink = $shop, RfidKennung = $rfid, Barcode = $barcode WHERE Id = $id"
                 cmd.Parameters.AddWithValue("$id", f.Id)
             End If
 
@@ -264,6 +266,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             cmd.Parameters.AddWithValue("$trocknung", If(f.Trocknung, "").Trim())
             cmd.Parameters.AddWithValue("$shop", If(f.ShopLink, "").Trim())
             cmd.Parameters.AddWithValue("$rfid", If(f.RfidKennung, "").Trim().ToUpperInvariant())
+            cmd.Parameters.AddWithValue("$barcode", If(f.Barcode, "").Trim())
 
             If f.Id = 0 Then
                 f.Id = Convert.ToInt64(cmd.ExecuteScalar())

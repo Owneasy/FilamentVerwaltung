@@ -625,7 +625,7 @@ async function spulenSeite() {
   titel('Spulen');
   inhalt(reiter('spulen') + `<div class="suche">
       <input id="suche" type="search" placeholder="ID, Hersteller, Farbe, Lagerort …" value="${esc(spulenSuche)}">
-      <button class="knopf" id="scannen" title="QR-Code scannen">${ICON.qr}</button>
+      <button class="knopf" id="scannen" title="QR-Code oder Barcode scannen">${ICON.qr}</button>
     </div>
     <div class="zeile liste-kopf"><label class="schalter"><input type="checkbox" id="nurVorhanden" ${nurVorhanden ? 'checked' : ''}> nur mit Restbestand</label>
       <span class="knopf-gruppe"><button class="knopf" id="etiketten">${ICON.drucken} Etiketten</button><button class="primaer" id="neueSpule">+ Neu</button></span></div>
@@ -655,83 +655,132 @@ async function spulenSeite() {
   zeigen();
 }
 
-async function scannen(spulen) {
-  if (!window.isSecureContext) return toast('Die Kamera geht im Browser nur über https – bitte die Cloudflare-Adresse benutzen.', true);
+/**
+ * Kamera öffnen und den ersten QR-Code oder Strichcode (EAN/UPC/Code 128) lesen.
+ * Liefert den Text oder null (abgebrochen / Kamera nicht verfügbar – dann gibt es schon einen Hinweis).
+ */
+async function scanAuslesen(titelText, hinweis) {
+  if (!window.isSecureContext) { toast('Die Kamera geht im Browser nur über https – bitte die Cloudflare-Adresse benutzen.', true); return null; }
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } } });
   } catch (e) {
-    return toast('Kamera nicht verfügbar: ' + e.message, true);
+    toast('Kamera nicht verfügbar: ' + e.message, true);
+    return null;
   }
-  blattOeffnen(`<div class="zeile"><h2>QR-Code scannen</h2><button class="knopf" data-schliessen>Abbrechen</button></div>
-    <video id="scanVideo" playsinline muted></video>
-    <p class="leise">QR-Code auf der Spule ins Bild halten.</p>`);
+  // Ein offenes Formular (z. B. "Neue Spule") bleibt erhalten: der Scanner liegt als eigene Ebene darüber
+  const ebene = document.createElement('div');
+  ebene.className = 'blatt scan-ebene';
+  ebene.innerHTML = `<div class="blatt-hinter"></div><div class="blatt-flaeche">
+      <div class="zeile"><h2>${esc(titelText)}</h2><button class="knopf" id="scanAbbrechen">Abbrechen</button></div>
+      <video id="scanVideo" playsinline muted></video>
+      <p class="leise">${esc(hinweis)}</p></div>`;
+  document.body.appendChild(ebene);
   const lauf = { aktiv: true, stream };
   scanLauf = lauf;
-  const video = $('#scanVideo');
+  const schliessen = () => { scanStopp(); ebene.remove(); };
+  ebene.querySelector('#scanAbbrechen').onclick = schliessen;
+  ebene.querySelector('.blatt-hinter').onclick = schliessen;
+  const video = ebene.querySelector('#scanVideo');
   video.srcObject = stream;
   try { await video.play(); } catch { /* startet trotzdem */ }
   let erkennen;
   try {
-    erkennen = await qrErkenner();
+    erkennen = await codeErkenner();
   } catch (e) {
-    blattSchliessen();
-    return toast(e.message, true);
+    schliessen();
+    toast(e.message, true);
+    return null;
   }
   while (lauf.aktiv) {
     try {
       const gelesen = await erkennen(video);
       if (gelesen && lauf.aktiv) {
-        const wert = gelesen.trim();
-        blattSchliessen();
-        const f = spulen.find(x => x.code.toLowerCase() === wert.toLowerCase());
-        if (f) location.hash = 'spule/' + encodeURIComponent(f.code);
-        else { spulenSuche = wert; $('#suche').value = wert; $('#suche').dispatchEvent(new Event('input')); toast(`Keine Spule mit der ID „${wert}“.`, true); }
-        return;
+        schliessen();
+        if (navigator.vibrate) navigator.vibrate(60);
+        return gelesen.trim();
       }
     } catch { /* Bild noch nicht bereit */ }
-    await pause(250);
+    await pause(200);
   }
+  return null;
 }
 
-// QR-Erkennung: eingebaut, wo vorhanden (Chrome/Edge auf Android), sonst jsQR (iPhone/Safari, Firefox) –
-// die Bibliothek wird erst beim ersten Scannen geladen. Liefert eine Funktion video -> Text oder null.
-let jsqrLaden = null;
-function jsqrHolen() {
-  if (window.jsQR) return Promise.resolve(window.jsQR);
-  return jsqrLaden ??= new Promise((ok, fehlschlag) => {
+/** Scan-Knopf der Spulen-Seite: Spulen-QR öffnet die Spule, Verpackungs-Barcode legt eine neue Spule dieser Sorte an. */
+async function scannen(spulen) {
+  const wert = await scanAuslesen('Scannen', 'QR-Code einer Spule oder Barcode einer Verpackung ins Bild halten.');
+  if (!wert) return;
+  const f = spulen.find(x => x.code.toLowerCase() === wert.toLowerCase());
+  if (f) { location.hash = 'spule/' + encodeURIComponent(f.code); return; }
+  if (istBarcode(wert)) return neueSpuleNachBarcode(wert, spulen);
+  spulenSuche = wert;
+  if ($('#suche')) { $('#suche').value = wert; $('#suche').dispatchEvent(new Event('input')); }
+  toast(`Keine Spule mit der ID „${wert}“.`, true);
+}
+
+const istBarcode = text => /^\d{8,14}$/.test(text);
+
+/** Neue Spule wie die zuletzt gekaufte mit diesem Barcode – oder leer mit eingetragenem Barcode. */
+function neueSpuleNachBarcode(barcode, spulen) {
+  const vorlage = spulen.filter(x => x.barcode === barcode)
+    .sort((a, b) => (b.kaufdatum || '').localeCompare(a.kaufdatum || '') || b.id - a.id)[0];
+  if (vorlage) toast(`Bekannte Sorte: ${spulenText(vorlage)}`);
+  else toast('Neuer Barcode – bitte die Angaben einmal eintragen. Beim nächsten Scan sind sie ausgefüllt.');
+  return vorlage ? spuleFormular(vorlage, spulen, true) : spuleFormular(null, spulen, false, { barcode });
+}
+
+// Code-Erkennung: eingebaut, wo vorhanden (Chrome/Edge auf Android), sonst jsQR für QR-Codes und ZXing für
+// Strichcodes (iPhone/Safari, Firefox). Die Bibliotheken werden erst beim ersten Scannen geladen.
+const skripte = {};
+function skriptHolen(pfad, globalName) {
+  if (window[globalName]) return Promise.resolve(window[globalName]);
+  return skripte[pfad] ??= new Promise((ok, fehlschlag) => {
     const s = document.createElement('script');
-    s.src = 'lib/jsQR.js';
-    s.onload = () => ok(window.jsQR);
-    s.onerror = () => { jsqrLaden = null; fehlschlag(new Error('Die QR-Erkennung konnte nicht geladen werden.')); };
+    s.src = pfad;
+    s.onload = () => ok(window[globalName]);
+    s.onerror = () => { delete skripte[pfad]; fehlschlag(new Error('Die Code-Erkennung konnte nicht geladen werden.')); };
     document.head.appendChild(s);
   });
 }
 
-async function qrErkenner() {
+async function codeErkenner() {
+  const gewuenscht = ['qr_code', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'];
   if ('BarcodeDetector' in window) {
     try {
-      if ((await BarcodeDetector.getSupportedFormats()).includes('qr_code')) {
-        const erkenner = new BarcodeDetector({ formats: ['qr_code'] });
+      const formate = (await BarcodeDetector.getSupportedFormats()).filter(f => gewuenscht.includes(f));
+      if (formate.includes('qr_code') && formate.includes('ean_13')) {
+        const erkenner = new BarcodeDetector({ formats: formate });
         return async video => (await erkenner.detect(video))[0]?.rawValue || null;
       }
-    } catch { /* weiter mit jsQR */ }
+    } catch { /* weiter mit den Bibliotheken */ }
   }
-  const jsQR = await jsqrHolen();
+  const [jsQR, ZX] = await Promise.all([skriptHolen('lib/jsQR.js', 'jsQR'), skriptHolen('lib/zxing.min.js', 'ZXing')]);
+  const leser = new ZX.MultiFormatReader();
+  leser.setHints(new Map([[ZX.DecodeHintType.POSSIBLE_FORMATS,
+    [ZX.BarcodeFormat.EAN_13, ZX.BarcodeFormat.EAN_8, ZX.BarcodeFormat.UPC_A, ZX.BarcodeFormat.UPC_E, ZX.BarcodeFormat.CODE_128]]]));
   const leinwand = document.createElement('canvas');
   const ctx = leinwand.getContext('2d', { willReadFrequently: true });
   return async video => {
     if (!video.videoWidth) return null;
-    // Auf höchstens 640 px verkleinern – reicht für Etiketten und schont den Akku
-    const f = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight));
-    leinwand.width = Math.round(video.videoWidth * f);
-    leinwand.height = Math.round(video.videoHeight * f);
-    ctx.drawImage(video, 0, 0, leinwand.width, leinwand.height);
-    const bild = ctx.getImageData(0, 0, leinwand.width, leinwand.height);
-    return jsQR(bild.data, bild.width, bild.height, { inversionAttempts: 'dontInvert' })?.data || null;
+    // Strichcodes brauchen etwas mehr Auflösung als QR-Codes – 960 px reichen und schonen den Akku
+    const f = Math.min(1, 960 / Math.max(video.videoWidth, video.videoHeight));
+    const w = leinwand.width = Math.round(video.videoWidth * f);
+    const h = leinwand.height = Math.round(video.videoHeight * f);
+    ctx.drawImage(video, 0, 0, w, h);
+    const bild = ctx.getImageData(0, 0, w, h);
+    const qr = jsQR(bild.data, w, h, { inversionAttempts: 'dontInvert' });
+    if (qr && qr.data) return qr.data;
+    const grau = new Uint8ClampedArray(w * h);
+    for (let i = 0, j = 0; i < grau.length; i++, j += 4) grau[i] = (bild.data[j] * 299 + bild.data[j + 1] * 587 + bild.data[j + 2] * 114) / 1000;
+    try {
+      return leser.decodeWithState(new ZX.BinaryBitmap(new ZX.HybridBinarizer(new ZX.RGBLuminanceSource(grau, w, h)))).getText();
+    } catch {
+      return null;   // kein Code in diesem Bild
+    }
   };
 }
 function scanStopp() {
+  document.querySelectorAll('.scan-ebene').forEach(e => e.remove());
   if (!scanLauf) return;
   scanLauf.aktiv = false;
   scanLauf.stream.getTracks().forEach(t => t.stop());
@@ -829,7 +878,7 @@ function vorschlaege(liste) {
  * vorlage = null: neue Spule; mit vorlage und kopie = false: bearbeiten; kopie = true: neue Spule wie diese
  * (gleiche Angaben, neue ID, voll, heute gekauft).
  */
-async function spuleFormular(vorlage, alleSpulen, kopie = false) {
+async function spuleFormular(vorlage, alleSpulen, kopie = false, extra = {}) {
   const neu = !vorlage || kopie;
   const f = vorlage ? { ...vorlage } : { id: 0, hersteller: '', material: '', farbe: '', durchmesser: 1.75, gewicht: 1000, restgewicht: 1000,
     spulengewicht: 0, preis: 0, notiz: '', lagerort: '', duesenTemp: 0, bettTemp: 0, trocknung: '', shopLink: '' };
@@ -839,6 +888,7 @@ async function spuleFormular(vorlage, alleSpulen, kopie = false) {
     f.restgewicht = f.gewicht;
     f.kaufdatum = new Date().toISOString().slice(0, 10);
   }
+  Object.assign(f, extra);
   const datum = (f.kaufdatum || new Date().toISOString()).slice(0, 10);
   blattOeffnen(`<div class="zeile"><h2>${!vorlage ? 'Neue Spule' : kopie ? 'Neue Spule wie ' + esc(vorlage.code) : 'Spule bearbeiten'}</h2>
       <button class="knopf" data-schliessen>Abbrechen</button></div>
@@ -869,6 +919,8 @@ async function spuleFormular(vorlage, alleSpulen, kopie = false) {
       </div>
       <label>Trocknung<input id="fTrocknung" value="${esc(f.trocknung)}" placeholder="z. B. 4 h bei 55 °C"></label>
       <label>Shop-Link<input id="fShop" type="url" value="${esc(f.shopLink)}" placeholder="https://…"></label>
+      <label>Barcode der Verpackung<span class="suche"><input id="fBarcode" inputmode="numeric" value="${esc(f.barcode)}" placeholder="EAN – zum Wiedererkennen der Sorte">
+        <button type="button" class="knopf" id="fBarcodeScan" title="Barcode scannen">${ICON.qr}</button></span></label>
       <label>Notiz<textarea id="fNotiz" rows="3">${esc(f.notiz)}</textarea></label>
     </div>
     <div class="knoepfe"><button class="primaer" id="fSpeichern">Speichern</button></div>`);
@@ -898,6 +950,22 @@ async function spuleFormular(vorlage, alleSpulen, kopie = false) {
     if (aktuell === 0 || aktuell === automatisch) { feld.value = v.gewicht; automatisch = v.gewicht; }
   };
   $('#fHersteller').onchange = vorlageAnwenden;
+  // Barcode scannen; bei einer neuen Spule und bekannter Sorte die Angaben übernehmen
+  $('#fBarcodeScan').onclick = async () => {
+    const code = await scanAuslesen('Barcode scannen', 'Barcode der Verpackung ins Bild halten.');
+    if (!code || !$('#fBarcode')) return;
+    $('#fBarcode').value = code;
+    const bekannt = alleSpulen.filter(x => x.barcode === code && x.id !== f.id)
+      .sort((a, b) => (b.kaufdatum || '').localeCompare(a.kaufdatum || '') || b.id - a.id)[0];
+    if (!bekannt || !neu || $('#fHersteller').value.trim()) return;
+    const setze = (id, wert) => { const e = $(id); if (e) e.value = wert ?? ''; };
+    setze('#fHersteller', bekannt.hersteller); setze('#fMaterial', bekannt.material); setze('#fFarbe', bekannt.farbe);
+    setze('#fDurchmesser', bekannt.durchmesser >= 2.5 ? '2.85' : '1.75'); setze('#fPreis', bekannt.preis || '');
+    setze('#fGewicht', bekannt.gewicht); setze('#fRest', bekannt.gewicht); setze('#fSpule', bekannt.spulengewicht || '');
+    setze('#fDuese', bekannt.duesenTemp || ''); setze('#fBett', bekannt.bettTemp || ''); setze('#fTrocknung', bekannt.trocknung);
+    setze('#fShop', bekannt.shopLink); setze('#fLagerort', bekannt.lagerort);
+    toast(`Bekannte Sorte übernommen: ${spulenText(bekannt)}`);
+  };
   vorlageAnwenden();
 
   $('#fSpeichern').onclick = async () => {
@@ -909,7 +977,7 @@ async function spuleFormular(vorlage, alleSpulen, kopie = false) {
       durchmesser: +$('#fDurchmesser').value, gewicht: zahlWert('#fGewicht'), restgewicht: zahlWert('#fRest'),
       spulengewicht: zahlWert('#fSpule'), preis: Math.max(0, +(+$('#fPreis').value || 0).toFixed(2)), kaufdatum: $('#fKauf').value || new Date().toISOString().slice(0, 10),
       lagerort: wert('#fLagerort'), duesenTemp: zahlWert('#fDuese'), bettTemp: zahlWert('#fBett'),
-      trocknung: wert('#fTrocknung'), shopLink: wert('#fShop'), notiz: $('#fNotiz').value
+      trocknung: wert('#fTrocknung'), shopLink: wert('#fShop'), barcode: wert('#fBarcode'), notiz: $('#fNotiz').value
     };
     if (!daten.code) return toast('Bitte eine ID / Nummer eingeben.', true);
     if (!daten.hersteller) return toast('Bitte einen Hersteller angeben.', true);
