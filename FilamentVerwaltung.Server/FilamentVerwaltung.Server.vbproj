@@ -10,7 +10,7 @@
     <OptionStrict>On</OptionStrict>
     <OptionExplicit>On</OptionExplicit>
     <OptionInfer>On</OptionInfer>
-    <Version>0.2.1</Version>
+    <Version>0.2.2</Version>
   </PropertyGroup>
 
   <ItemGroup>
