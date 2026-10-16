@@ -97,7 +97,7 @@ Public Class MainForm
             .Width = 240,
             .BackColor = Theme.Leiste,
             .ColumnCount = 1,
-            .Padding = New Padding(12, 18, 12, 14)
+            .Padding = New Padding(12, 18, 12, 4)
         }
         leiste.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
 
@@ -204,7 +204,11 @@ Public Class MainForm
         Else
             tipps.SetToolTip(lblPfad, "Verbunden mit " & _db.Ort)
         End If
-        Zeile(leiste, lblPfad)
+        ' Serveradresse, Version und Verbindungspunkt stehen fest unten und scrollen nicht mit
+        Dim unten As New TableLayoutPanel With {.Dock = DockStyle.Bottom, .AutoSize = True, .ColumnCount = 1,
+                                                .BackColor = Theme.Leiste, .Padding = New Padding(12, 4, 12, 14)}
+        unten.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
+        Zeile(unten, lblPfad)
         ' Version links, Verbindungspunkt rechtsbündig in derselben Zeile
         Dim fuss As New Panel With {.Dock = DockStyle.Fill, .Height = Px(Me, 22), .Margin = New Padding(16, 0, 4, 0), .BackColor = Theme.Leiste}
         fuss.Controls.Add(New Label With {
@@ -215,7 +219,7 @@ Public Class MainForm
             .Location = New Point(0, Px(Me, 4))
         })
         fuss.Controls.Add(btnVerbindung)
-        Zeile(leiste, fuss)
+        Zeile(unten, fuss)
 
         BannerAufbauen()
         DruckBannerAufbauen()
@@ -224,7 +228,7 @@ Public Class MainForm
         Controls.Add(inhalt)
         Controls.Add(banner)
         Controls.Add(druckBanner)
-        Controls.Add(LeisteMitScrollen(leiste))
+        Controls.Add(LeisteMitScrollen(leiste, unten))
 
         SeiteZeigen(uebersichtSeite)
         ResumeLayout(False)
@@ -235,9 +239,13 @@ Public Class MainForm
     ''' Rahmen um die Seitenleiste: Die Leiste ist mindestens so hoch wie der Rahmen (der Platzhalter schiebt den unteren
     ''' Block nach unten) und höchstens so hoch, wie ihr Inhalt braucht – dann erscheint eine Bildlaufleiste.
     ''' </summary>
-    Private Shared Function LeisteMitScrollen(leiste As TableLayoutPanel) As Panel
-        Dim rahmen As New Panel With {.Dock = DockStyle.Left, .Width = leiste.Width, .BackColor = Theme.Leiste, .AutoScroll = True}
+    Private Shared Function LeisteMitScrollen(leiste As TableLayoutPanel, unten As Control) As Panel
+        Dim aussen As New Panel With {.Dock = DockStyle.Left, .Width = leiste.Width, .BackColor = Theme.Leiste}
+        Dim rahmen As New Panel With {.Dock = DockStyle.Fill, .BackColor = Theme.Leiste, .AutoScroll = True}
         rahmen.Controls.Add(leiste)
+        ' Reihenfolge fürs Andocken: zuerst die füllende Fläche, dann der feste Fuß
+        aussen.Controls.Add(rahmen)
+        aussen.Controls.Add(unten)
         Dim anpassen = Sub()
                            Dim noetig = leiste.GetPreferredSize(New Size(rahmen.Width, 0)).Height
                            Dim scrollen = noetig > rahmen.ClientSize.Height
@@ -258,7 +266,7 @@ Public Class MainForm
             AddHandler c.VisibleChanged, Sub(s, e) anpassen()
         Next
         AddHandler leiste.MouseWheel, rad
-        Return rahmen
+        Return aussen
     End Function
 
     Private Shared Sub Zeile(t As TableLayoutPanel, c As Control)
