@@ -57,6 +57,16 @@ Public Class MainForm
     Private ReadOnly btnUpdate As New WebButton("Nach Updates suchen", Theme.SymExport, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
     Private _update As UpdateInfo
 
+    ' --- Server älter als die App: Hinweis zum Aktualisieren (die App läuft trotzdem, neue Funktionen fehlen nur)
+    Private ReadOnly serverBanner As New TableLayoutPanel With {
+        .Dock = DockStyle.Top, .Height = 52, .Visible = False, .ColumnCount = 2, .RowCount = 1,
+        .BackColor = Hell(Theme.Gelb, 0.14), .Padding = New Padding(28, 8, 20, 8)
+    }
+    Private ReadOnly lblServerBanner As New Label With {.AutoSize = True, .Anchor = AnchorStyles.Left, .ForeColor = Theme.TextStark,
+                                                        .Font = Theme.SchriftFett}
+    ''' <summary>Für diese Server-Version wurde der Hinweis weggeklickt (bis zum nächsten Start).</summary>
+    Private _serverBannerAus As String = ""
+
     Public Sub New(db As IDatenquelle, ueberwachung As IDruckerDienst)
         _db = db
         filamentSeite = New FilamentSeite(db)
@@ -215,11 +225,13 @@ Public Class MainForm
         Zeile(unten, fuss)
 
         BannerAufbauen()
+        ServerBannerAufbauen()
         DruckBannerAufbauen()
 
         ' Reihenfolge wichtig für das Andocken: zuerst die füllende Fläche, dann der Balken über dem Inhalt, dann die Leiste
         Controls.Add(inhalt)
         Controls.Add(banner)
+        Controls.Add(serverBanner)
         Controls.Add(druckBanner)
         Controls.Add(LeisteMitScrollen(leiste, unten))
 
@@ -368,6 +380,7 @@ Public Class MainForm
         Try
             Dim ok = Await Task.Run(Function() server.Erreichbar())
             If Not IsDisposed Then VerbindungAnzeigen(ok)
+            If ok AndAlso Not IsDisposed Then ServerVersionPruefen()
             If ok AndAlso Not IsDisposed Then Await GlockePruefenAsync()
         Finally
             _verbindungPruefenLaeuft = False
@@ -419,7 +432,7 @@ Public Class MainForm
             _glockeNeu = neu
             btnGlocke.Invalidate()
             tipps.SetToolTip(btnGlocke, If(neu, "Neue Benachrichtigungen", "Benachrichtigungen"))
-        Catch ex As Exception When ex.Message.Contains("404")
+        Catch ex As Exception When ex.Message = ServerDatenquelle.ServerZuAlt
             ' Älterer Server ohne Benachrichtigungs-Verlauf: Glocke ausblenden statt Fehler
             If Not IsDisposed Then btnGlocke.Visible = False
         Catch ex As Exception
@@ -729,6 +742,43 @@ Public Class MainForm
                                          e.Graphics.DrawLine(p, 0, banner.Height - 1, banner.Width, banner.Height - 1)
                                      End Using
                                  End Sub
+    End Sub
+
+    Private Sub ServerBannerAufbauen()
+        serverBanner.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
+        serverBanner.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
+        Dim btnSchliessen As New WebButton("Ausblenden") With {.Anchor = AnchorStyles.Right, .Margin = New Padding(0)}
+        AddHandler btnSchliessen.Click, Sub(s, e)
+                                            _serverBannerAus = If(TryCast(_db, ServerDatenquelle)?.ServerVersion, "")
+                                            serverBanner.Visible = False
+                                        End Sub
+        serverBanner.Controls.Add(lblServerBanner, 0, 0)
+        serverBanner.Controls.Add(btnSchliessen, 1, 0)
+        AddHandler serverBanner.Paint, Sub(s, e)
+                                           Using p As New Pen(Hell(Theme.Gelb, 0.35))
+                                               e.Graphics.DrawLine(p, 0, serverBanner.Height - 1, serverBanner.Width, serverBanner.Height - 1)
+                                           End Using
+                                       End Sub
+    End Sub
+
+    ''' <summary>
+    ''' Ist der Server älter als die App, oben einen Hinweis zeigen (nach jeder Verbindungsprüfung; verschwindet von selbst,
+    ''' sobald der Server aktualisiert ist). Die App läuft mit dem älteren Server weiter – nur neue Funktionen fehlen.
+    ''' </summary>
+    Private Sub ServerVersionPruefen()
+        Dim server = TryCast(_db, ServerDatenquelle)
+        Dim sv As Version = Nothing
+        If server Is Nothing OrElse Not Version.TryParse(server.ServerVersion, sv) Then Return
+        ' Nur Major.Minor.Build vergleichen (die App hat zusätzlich eine Revision, der Server nicht)
+        Dim av = AktuelleVersion
+        Dim zuAlt = New Version(sv.Major, sv.Minor, Math.Max(0, sv.Build)) < New Version(av.Major, av.Minor, Math.Max(0, av.Build))
+        If zuAlt AndAlso server.ServerVersion <> _serverBannerAus Then
+            lblServerBanner.Text = $"Der Server ist älter (Version {server.ServerVersion}) als die App ({av.ToString(3)}). " &
+                                   "Neue Funktionen gehen erst nach einem Update – in Unraid beim Container ""filament-server"" auf ""Update"" klicken."
+            serverBanner.Visible = True
+        ElseIf Not zuAlt Then
+            serverBanner.Visible = False
+        End If
     End Sub
 
     ''' <summary>Sucht nach einer neuen Version. stumm = beim Start: kein Hinweis bei Fehlern oder aktueller Version.</summary>

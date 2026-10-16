@@ -63,6 +63,13 @@ Public Class ServerDatenquelle
 
     ' ------------------------------------------------------------------ Verbindung
 
+    ''' <summary>Version des Servers (aus /api/info, bei jeder Verbindungsprüfung aktualisiert); leer = noch unbekannt.</summary>
+    Public ReadOnly Property ServerVersion As String = ""
+
+    ''' <summary>Meldung, wenn der Server eine Funktion der App noch nicht kennt (älteres Server-Image).</summary>
+    Public Const ServerZuAlt As String = "Diese Funktion kennt der Server noch nicht. Bitte den Server aktualisieren " &
+                                         "(in Unraid beim Container ""filament-server"" auf ""Update"" bzw. ""Force update"")."
+
     Private Function Adressen() As List(Of String)
         Return {_zugang.Intern, _zugang.Extern}.Select(AddressOf Normalisieren).Where(Function(a) a.Length > 0).Distinct().ToList()
     End Function
@@ -130,6 +137,7 @@ Public Class ServerDatenquelle
                 If info Is Nothing OrElse info.App <> "Filament-Verwaltung" Then
                     Throw New HttpRequestException("Unter dieser Adresse antwortet kein Filament-Verwaltung-Server.")
                 End If
+                _ServerVersion = If(info.Version, "")
                 Return info
             End Using
         End Using
@@ -198,6 +206,8 @@ Public Class ServerDatenquelle
                                                   "Bei Cloudflare Access Client-ID und Secret prüfen und ob die Policy auf ""Service Auth"" steht" &
                                                   If(cf.Success, "; bei 1010/1020 greift der Bot-Schutz bzw. eine Firewall-Regel von Cloudflare.", "."))
         End If
+        ' 404 ohne Text: Der Server kennt die Adresse nicht – älteres Server-Image (eigene 404 wie "Sicherung nicht gefunden" haben Text)
+        If antwort.StatusCode = HttpStatusCode.NotFound AndAlso text.Trim().Length = 0 Then Throw New InvalidOperationException(ServerZuAlt)
         Dim istHtml = If(antwort.Content.Headers.ContentType?.MediaType, "").Contains("html")
         If istHtml OrElse text.Trim().Length = 0 Then text = $"Der Server meldet Fehler {code} ({antwort.ReasonPhrase})."
         Throw New InvalidOperationException(text.Trim())
