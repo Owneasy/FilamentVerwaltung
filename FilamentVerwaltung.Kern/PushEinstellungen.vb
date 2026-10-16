@@ -25,3 +25,18 @@ Public Module BuchenEinstellungen
     ''' <summary>"1" = auch abgebrochene Drucke (Gewicht anteilig geschätzt; Standard: aus).</summary>
     Public Const AuchAbgebrochene As String = "Buchen.AutomatischAbgebrochen"
 End Module
+
+''' <summary>Eine verschickte Benachrichtigung (Glocke in der App).</summary>
+Public Class Benachrichtigung
+    Public Property Id As Long
+    Public Property Zeitpunkt As Date = Date.Now
+    Public Property Titel As String = ""
+    Public Property Text As String = ""
+    ''' <summary>Ziel auf der Handy-Seite, z. B. "/#buchen", "/#drucker", "/#spule/FIL-0001".</summary>
+    Public Property Ziel As String = ""
+End Class
+
+''' <summary>Wann die Benachrichtigungen zuletzt angesehen wurden (für den Punkt an der Glocke, gilt für alle PCs).</summary>
+Public Module GlockeEinstellungen
+    Public Const Gelesen As String = "Glocke.GelesenBis"
+End Module

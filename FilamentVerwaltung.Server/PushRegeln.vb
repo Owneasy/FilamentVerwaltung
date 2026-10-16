@@ -47,6 +47,12 @@ Public Class PushRegeln
 
     ''' <summary>Im Hintergrund an alle Geräte senden – wer auslöst, soll nicht warten.</summary>
     Private Sub Senden(n As PushNachricht)
+        ' Für die Glocke in der App merken – auch wenn kein Handy angemeldet ist
+        Try
+            _db.BenachrichtigungSpeichern(New Benachrichtigung With {.Titel = n.Titel, .Text = n.Text, .Ziel = n.Ziel})
+        Catch ex As Exception
+            _log.LogWarning(ex, "Benachrichtigung konnte nicht gespeichert werden")
+        End Try
         Task.Run(Async Function()
                      Try
                          Await _push.AnAlleAsync(n)

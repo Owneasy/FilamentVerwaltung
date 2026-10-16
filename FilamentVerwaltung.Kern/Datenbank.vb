@@ -106,6 +106,13 @@ CREATE TABLE IF NOT EXISTS PushAbo (
     Geraet    TEXT NOT NULL DEFAULT '',
     Erstellt  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS Benachrichtigung (
+    Id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    Zeitpunkt TEXT    NOT NULL,
+    Titel     TEXT    NOT NULL,
+    Text      TEXT    NOT NULL DEFAULT '',
+    Ziel      TEXT    NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS DruckEnde (
     Id        INTEGER PRIMARY KEY AUTOINCREMENT,
     Zeitpunkt TEXT    NOT NULL,
@@ -627,6 +634,36 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             Befehl(c, Nothing, "DELETE FROM PushAbo WHERE Endpunkt = $e", "$e", endpunkt).ExecuteNonQuery()
         End Using
     End Sub
+
+    ' ------------------------------------------------------------------ Verschickte Benachrichtigungen (Server)
+
+    Private Const MaxBenachrichtigungen As Integer = 200
+
+    ''' <summary>Verschickte Benachrichtigung merken (für die Glocke in der App); behält die letzten 200.</summary>
+    Public Sub BenachrichtigungSpeichern(b As Benachrichtigung)
+        Using c = Oeffnen()
+            b.Id = Convert.ToInt64(Befehl(c, Nothing,
+                "INSERT INTO Benachrichtigung (Zeitpunkt, Titel, Text, Ziel) VALUES ($zeit, $titel, $text, $ziel); SELECT last_insert_rowid();",
+                "$zeit", b.Zeitpunkt.ToString("o"), "$titel", If(b.Titel, ""), "$text", If(b.Text, ""), "$ziel", If(b.Ziel, "")).ExecuteScalar())
+            Befehl(c, Nothing, "DELETE FROM Benachrichtigung WHERE Id <= $grenze", "$grenze", b.Id - MaxBenachrichtigungen).ExecuteNonQuery()
+        End Using
+    End Sub
+
+    ''' <summary>Die neuesten zuerst.</summary>
+    Public Function BenachrichtigungenLaden(Optional anzahl As Integer = 50) As List(Of Benachrichtigung)
+        Dim liste As New List(Of Benachrichtigung)
+        Using c = Oeffnen()
+            Using r = Befehl(c, Nothing, "SELECT Id, Zeitpunkt, Titel, Text, Ziel FROM Benachrichtigung ORDER BY Id DESC LIMIT $n", "$n", anzahl).ExecuteReader()
+                While r.Read()
+                    liste.Add(New Benachrichtigung With {
+                        .Id = r.GetInt64(0),
+                        .Zeitpunkt = Date.Parse(Text(r, 1), Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.RoundtripKind),
+                        .Titel = Text(r, 2), .Text = Text(r, 3), .Ziel = Text(r, 4)})
+                End While
+            End Using
+        End Using
+        Return liste
+    End Function
 
     ' ------------------------------------------------------------------ Offene Druckenden (Server)
 

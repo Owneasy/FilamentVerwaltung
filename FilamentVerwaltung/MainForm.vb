@@ -38,6 +38,12 @@ Public Class MainForm
     Private ReadOnly btnVerbindung As New StatusPunkt With {.Dock = DockStyle.Right, .BackColor = Theme.Leiste}
     ''' <summary>Prüft beim Server regelmäßig, ob die Verbindung steht (grüner / roter Punkt).</summary>
     Private ReadOnly verbindungsTimer As New Timer With {.Interval = 20000}
+    ''' <summary>Glocke unten in der Leiste: Liste der verschickten Benachrichtigungen.</summary>
+    Private ReadOnly btnGlocke As New Label With {.Text = Theme.SymGlocke, .Font = Theme.SymbolSchrift, .ForeColor = Theme.LeisteText,
+                                                 .BackColor = Theme.Leiste, .Dock = DockStyle.Right, .Width = 26,
+                                                 .TextAlign = ContentAlignment.MiddleCenter, .Cursor = Cursors.Hand}
+    ''' <summary>Neueste Benachrichtigung ist noch nicht angesehen (roter Punkt an der Glocke).</summary>
+    Private _glockeNeu As Boolean
     Private _verbindungPruefenLaeuft As Boolean
 
     ' --- Updates
@@ -157,22 +163,10 @@ Public Class MainForm
 
         AddHandler btnVerbindung.Click, Sub(s, e) VerbindungZeigen()
         VerbindungAnzeigen(True)
-        Dim btnBenachrichtigungen As New WebButton("Benachrichtigungen", Theme.SymGlocke, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
-        AddHandler btnBenachrichtigungen.Click, Sub(s, e)
-                                                    Using dlg As New BenachrichtigungenDialog(_db)
-                                                        dlg.ShowDialog(Me)
-                                                    End Using
-                                                End Sub
-        tipps.SetToolTip(btnBenachrichtigungen, "Wofür der Server Nachrichten aufs Handy schickt (Druck fertig, Spule fast leer …)")
-        Zeile(leiste, btnBenachrichtigungen)
-        Dim btnHomeAssistant As New WebButton("Home Assistant", Theme.SymHaus, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
-        AddHandler btnHomeAssistant.Click, Sub(s, e)
-                                               Using dlg As New HomeAssistantDialog(_db)
-                                                   dlg.ShowDialog(Me)
-                                               End Using
-                                           End Sub
-        tipps.SetToolTip(btnHomeAssistant, "Drucker und Lager per MQTT an Home Assistant melden")
-        Zeile(leiste, btnHomeAssistant)
+        Dim btnEinstellungen As New WebButton("Einstellungen", Theme.SymEinstellungen, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
+        AddHandler btnEinstellungen.Click, Sub(s, e) EinstellungenMenueZeigen(btnEinstellungen)
+        tipps.SetToolTip(btnEinstellungen, "Benachrichtigungen und Home Assistant")
+        Zeile(leiste, btnEinstellungen)
 
         Dim btnSicherungen As New WebButton("Sicherungen", Theme.SymSicherung, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
         AddHandler btnSicherungen.Click, Sub(s, e) SicherungenZeigen()
@@ -205,7 +199,16 @@ Public Class MainForm
             .AutoSize = True,
             .Location = New Point(0, Px(Me, 4))
         })
-        ' Andocken von rechts: zuletzt hinzugefügt = ganz rechts (Punkt), davor das Design
+        ' Glocke: verschickte Benachrichtigungen (nur mit Server), roter Punkt bei neuen
+        AddHandler btnGlocke.Click, Sub(s, e) GlockeOeffnen()
+        AddHandler btnGlocke.MouseEnter, Sub(s, e) btnGlocke.ForeColor = Theme.LeisteTextAktiv
+        AddHandler btnGlocke.MouseLeave, Sub(s, e) btnGlocke.ForeColor = Theme.LeisteText
+        AddHandler btnGlocke.Paint, AddressOf GlockeZeichnen
+        btnGlocke.Width = Px(Me, 26)
+        btnGlocke.Visible = TypeOf _db Is ServerDatenquelle
+        tipps.SetToolTip(btnGlocke, "Benachrichtigungen")
+        ' Andocken von rechts: zuletzt hinzugefügt = ganz rechts (Punkt), davor das Design, dann die Glocke
+        fuss.Controls.Add(btnGlocke)
         fuss.Controls.Add(btnDesign)
         fuss.Controls.Add(btnVerbindung)
         Zeile(unten, fuss)
@@ -364,9 +367,117 @@ Public Class MainForm
         Try
             Dim ok = Await Task.Run(Function() server.Erreichbar())
             If Not IsDisposed Then VerbindungAnzeigen(ok)
+            If ok AndAlso Not IsDisposed Then Await GlockePruefenAsync()
         Finally
             _verbindungPruefenLaeuft = False
         End Try
+    End Sub
+
+    ' ------------------------------------------------------------------ Einstellungen und Glocke
+
+    Private Sub EinstellungenMenueZeigen(knopf As Control)
+        Dim menue As New ContextMenuStrip With {.Font = Theme.Schrift}
+        menue.Items.Add("Benachrichtigungen …", Nothing, Sub(s, e)
+                                                           Using dlg As New BenachrichtigungenDialog(_db)
+                                                               dlg.ShowDialog(Me)
+                                                           End Using
+                                                       End Sub).ToolTipText = "Wofür der Server Nachrichten aufs Handy schickt (Druck fertig, Spule fast leer …)"
+        menue.Items.Add("Home Assistant …", Nothing, Sub(s, e)
+                                                         Using dlg As New HomeAssistantDialog(_db)
+                                                             dlg.ShowDialog(Me)
+                                                         End Using
+                                                     End Sub).ToolTipText = "Drucker und Lager per MQTT an Home Assistant melden"
+        AddHandler menue.Closed, Sub(s, e) BeginInvoke(Sub() menue.Dispose())
+        menue.Show(knopf, New Point(knopf.Width, 0), ToolStripDropDownDirection.AboveRight)
+    End Sub
+
+    ''' <summary>Roter Punkt oben rechts an der Glocke, solange es ungelesene Benachrichtigungen gibt.</summary>
+    Private Sub GlockeZeichnen(sender As Object, e As PaintEventArgs)
+        If Not _glockeNeu Then Return
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias
+        Dim d = Px(btnGlocke, 7)
+        Using b As New SolidBrush(Theme.Rot), rand As New Pen(Theme.Leiste, Px(btnGlocke, 2))
+            Dim r As New Rectangle(btnGlocke.Width \ 2 + Px(btnGlocke, 2), btnGlocke.Height \ 2 - Px(btnGlocke, 8), d, d)
+            e.Graphics.FillEllipse(b, r)
+            e.Graphics.DrawEllipse(rand, r)
+        End Using
+    End Sub
+
+    ''' <summary>Gibt es eine Benachrichtigung, die neuer ist als die zuletzt angesehene? (Hintergrund, mit der Verbindungsprüfung)</summary>
+    Private Async Function GlockePruefenAsync() As Task
+        Dim server = TryCast(_db, ServerDatenquelle)
+        If server Is Nothing Then Return
+        Try
+            Dim neu = Await Task.Run(Function()
+                                         Dim neueste = server.Benachrichtigungen(1).FirstOrDefault()
+                                         Return neueste IsNot Nothing AndAlso neueste.Id > GelesenBis(server)
+                                     End Function)
+            If IsDisposed OrElse neu = _glockeNeu Then Return
+            _glockeNeu = neu
+            btnGlocke.Invalidate()
+            tipps.SetToolTip(btnGlocke, If(neu, "Neue Benachrichtigungen", "Benachrichtigungen"))
+        Catch ex As Exception
+            ' Glocke bleibt, wie sie ist
+        End Try
+    End Function
+
+    Private Shared Function GelesenBis(db As IDatenquelle) As Long
+        Dim wert As Long
+        Return If(Long.TryParse(db.EinstellungLesen(GlockeEinstellungen.Gelesen), wert), wert, 0)
+    End Function
+
+    Private Async Sub GlockeOeffnen()
+        Dim server = TryCast(_db, ServerDatenquelle)
+        If server Is Nothing Then Return
+        Dim eintraege As List(Of Benachrichtigung)
+        Dim bisher As Long
+        Try
+            Dim ergebnis = Await Task.Run(Function() (server.Benachrichtigungen(50), GelesenBis(server)))
+            eintraege = ergebnis.Item1
+            bisher = ergebnis.Item2
+        Catch ex As Exception
+            MessageBox.Show(Me, "Die Benachrichtigungen konnten nicht geladen werden." & Environment.NewLine & Environment.NewLine & ex.Message,
+                            "Benachrichtigungen", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End Try
+        If IsDisposed Then Return
+
+        Dim liste As New BenachrichtigungenListe(eintraege, bisher)
+        AddHandler liste.ZielGewaehlt, AddressOf BenachrichtigungsZiel
+        AddHandler liste.EinstellungenGewaehlt, Sub()
+                                                    Using dlg As New BenachrichtigungenDialog(_db)
+                                                        dlg.ShowDialog(Me)
+                                                    End Using
+                                                End Sub
+        liste.ZeigenUeber(btnGlocke)
+
+        ' Jetzt alles gesehen: Punkt weg, auf dem Server merken (gilt für alle PCs)
+        _glockeNeu = False
+        btnGlocke.Invalidate()
+        tipps.SetToolTip(btnGlocke, "Benachrichtigungen")
+        If eintraege.Count > 0 AndAlso eintraege(0).Id > bisher Then
+            Dim neueste = eintraege(0).Id
+            Await Task.Run(Sub()
+                               Try
+                                   server.EinstellungSpeichern(GlockeEinstellungen.Gelesen, neueste.ToString())
+                               Catch ex As Exception
+                                   ' Beim nächsten Mal wieder als neu markiert
+                               End Try
+                           End Sub)
+        End If
+    End Sub
+
+    ''' <summary>Ziel einer Benachrichtigung (wie auf der Handy-Seite, z. B. "/#buchen") in der App öffnen.</summary>
+    Private Sub BenachrichtigungsZiel(ziel As String)
+        Dim teile = If(ziel, "").TrimStart("/"c).TrimStart("#"c).Split("/"c)
+        Select Case teile(0)
+            Case "buchen", "verlauf" : SeiteZeigen(druckeSeite)
+            Case "drucker" : SeiteZeigen(druckerSeite)
+            Case "nachkauf" : SeiteZeigen(nachkaufSeite)
+            Case "spule"
+                SeiteZeigen(filamentSeite)
+                If teile.Length > 1 Then filamentSeite.SpuleOeffnen(Uri.UnescapeDataString(teile(1)), False)
+        End Select
     End Sub
 
     ''' <summary>Verbindung ändern; danach startet die App neu (alle Seiten hängen an der Datenquelle).</summary>
@@ -457,6 +568,7 @@ Public Class MainForm
         If TypeOf _db Is ServerDatenquelle Then
             AddHandler verbindungsTimer.Tick, Sub(s, x) VerbindungPruefen()
             verbindungsTimer.Start()
+            VerbindungPruefen()
         End If
     End Sub
 

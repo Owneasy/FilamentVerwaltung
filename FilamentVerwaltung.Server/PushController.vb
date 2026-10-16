@@ -48,4 +48,10 @@ Public Class PushController
         Return New WertAnfrage With {.Wert = anzahl.ToString()}
     End Function
 
+    ''' <summary>Zuletzt verschickte Benachrichtigungen (neueste zuerst) – für die Glocke in der App.</summary>
+    <HttpGet("verlauf")>
+    Public Function Verlauf(<FromQuery> Optional anzahl As Integer = 50) As List(Of Benachrichtigung)
+        Return _db.BenachrichtigungenLaden(Math.Max(1, Math.Min(200, anzahl)))
+    End Function
+
 End Class

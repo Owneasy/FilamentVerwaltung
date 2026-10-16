@@ -522,6 +522,11 @@ Public Class ServerDatenquelle
         Return CInt(Schicken(Of WertAnfrage)(HttpMethod.Post, "push/test", New Object()).Wert)
     End Function
 
+    ''' <summary>Zuletzt verschickte Benachrichtigungen, neueste zuerst.</summary>
+    Public Function Benachrichtigungen(Optional anzahl As Integer = 50) As List(Of Benachrichtigung)
+        Return Abrufen(Of List(Of Benachrichtigung))("push/verlauf?anzahl=" & anzahl)
+    End Function
+
     ''' <summary>Verbindung des Servers zu Home Assistant (MQTT).</summary>
     Public Function HomeAssistantStatus() As HaStatus
         Return Abrufen(Of HaStatus)("homeassistant/status")
