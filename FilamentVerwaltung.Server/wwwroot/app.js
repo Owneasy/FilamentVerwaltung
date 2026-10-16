@@ -165,6 +165,7 @@ function navigieren() {
   else if (name === 'verlauf') verlaufSeite();
   else if (name === 'nachkauf') nachkaufSeite();
   else if (name === 'spule') spuleSeite(decodeURIComponent(arg || ''));
+  else if (name === 'status') statusSeite();
   else druckerSeite();
 }
 
@@ -1670,3 +1671,78 @@ function automatikVerdrahten() {
 }
 
 starten();
+
+// ------------------------------------------------------------------ Status: Zustand des Servers (Punkt oben rechts antippen)
+
+let statusNurProbleme = false;
+
+function bytes(n) {
+  if (n == null) return '–';
+  const e = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (n >= 1024 && i < e.length - 1) { n /= 1024; i++; }
+  return `${n.toLocaleString('de-DE', { maximumFractionDigits: i < 2 ? 0 : 1 })} ${e[i]}`;
+}
+
+function laufzeit(sek) {
+  const t = Math.floor(sek / 86400), h = Math.floor(sek % 86400 / 3600), m = Math.floor(sek % 3600 / 60);
+  return t ? `${t} T ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
+}
+
+async function statusSeite() {
+  titel('Status');
+  const laden = async () => {
+    let z;
+    try { z = await holen('status'); } catch (e) { return fehler(e); }
+    if (location.hash !== '#status') return;
+    const sicherungAlt = !z.letzteSicherung || Date.now() - new Date(z.letzteSicherung) > 2 * 86400000;
+    const probleme = z.protokoll.filter(p => p.stufe !== 'Info');
+    const liste = (statusNurProbleme ? probleme : z.protokoll).slice(0, 100);
+    const punkt = ok => `<span class="status ${ok ? 'ok' : 'weg'}"></span>`;
+    inhalt(`<div class="status-seite">
+      <div class="kennzahlen">
+        <div><b>${esc(z.version)}</b><small>Version</small></div>
+        <div><b>${laufzeit(z.laufzeitSekunden)}</b><small>läuft seit</small></div>
+        <div><b>${probleme.length}</b><small>Warnungen</small></div>
+      </div>
+      <section class="karte">
+        <h2>Server</h2>
+        <dl>
+          <dt>Gestartet</dt><dd>${new Date(z.gestartet).toLocaleString('de-DE')}</dd>
+          <dt>Sicherung</dt><dd${sicherungAlt ? ' style="color:var(--rot)"' : ''}>${z.letzteSicherung ? new Date(z.letzteSicherung).toLocaleString('de-DE') : 'noch keine'}
+            <small class="leise">(${z.sicherungen} gespeichert)</small></dd>
+          <dt>Frei</dt><dd>${bytes(z.freiBytes)}</dd>
+          ${z.speicher.map(s => `<dt>${esc(s.name)}</dt><dd>${bytes(s.bytes)}</dd>`).join('')}
+        </dl>
+        <small class="leise">Datenordner: ${esc(z.datenOrdner)}</small>
+      </section>
+      <section class="karte">
+        <h2>Drucker</h2>
+        ${z.drucker.length ? z.drucker.map(d => `<div class="dienst">${d.aktiv ? punkt(d.erreichbar) : '<span class="status"></span>'}
+            <div><b>${esc(d.name)}</b> <small class="leise">${esc(d.typ)} · ${esc(d.zustand)}</small>
+            ${d.meldung && !d.erreichbar ? `<small class="fehler-text">${esc(d.meldung)}</small>` : ''}</div></div>`).join('')
+          : '<p class="leise">Noch kein Drucker eingerichtet.</p>'}
+      </section>
+      <section class="karte">
+        <h2>Dienste</h2>
+        <div class="dienst">${z.pushGeraete ? punkt(true) : '<span class="status"></span>'}<div><b>Benachrichtigungen</b>
+          <small class="leise">${z.pushGeraete ? `${z.pushGeraete} Gerät${z.pushGeraete === 1 ? '' : 'e'} angemeldet` : 'kein Gerät angemeldet'}</small></div></div>
+        <div class="dienst">${z.homeAssistant.meldung === 'Aus' ? '<span class="status"></span>' : punkt(z.homeAssistant.verbunden)}<div><b>Home Assistant</b>
+          <small class="leise">${esc(z.homeAssistant.meldung)}</small></div></div>
+        <div class="dienst">${z.automatischBuchen ? punkt(true) : '<span class="status"></span>'}<div><b>Automatisch buchen</b>
+          <small class="leise">${z.automatischBuchen ? 'an' : 'aus'} · ${z.offeneDrucke} ${z.offeneDrucke === 1 ? 'Druck' : 'Drucke'} zum Buchen</small></div></div>
+      </section>
+      <section class="karte">
+        <div class="zeile"><h2>Protokoll</h2>
+          <label class="schalter" style="margin:0"><input type="checkbox" id="stProbleme" ${statusNurProbleme ? 'checked' : ''}> nur Probleme</label></div>
+        ${liste.length ? `<ul class="protokoll">${liste.map(p => `<li class="${p.stufe === 'Fehler' ? 'fehler-zeile' : p.stufe === 'Warnung' ? 'warn-zeile' : ''}">
+            <small class="leise">${datumZeit(p.zeit)} · ${esc(p.quelle)}</small>${esc(p.text)}</li>`).join('')}</ul>`
+          : `<p class="leise">${statusNurProbleme ? 'Keine Warnungen oder Fehler seit dem Start.' : 'Noch keine Einträge.'}</p>`}
+        <small class="leise">Seit dem letzten Start des Servers, höchstens 200 Einträge.</small>
+      </section>
+    </div>`);
+    $('#stProbleme').onchange = e => { statusNurProbleme = e.target.checked; laden(); };
+  };
+  await laden();
+  if (!$('#leiste').hidden && !document.hidden) seitenTimer = setInterval(laden, 10000);
+}

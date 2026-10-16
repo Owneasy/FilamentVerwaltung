@@ -295,3 +295,16 @@ label .suche { margin-top: 4px; }
 .fehl-hinweis b { color: var(--rot); }
 .fehl-hinweis small { display: block; color: var(--akzent); margin-top: 2px; }
 .fehl-hinweis.aktiv { border-color: var(--rot); }
+
+/* Status-Seite: Punkt oben rechts öffnet sie */
+.status-knopf { border: 0; background: none; padding: 8px; margin: -8px; display: flex; cursor: pointer; }
+.dienst { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; }
+.dienst + .dienst { border-top: 1px solid var(--rand); }
+.dienst .status { flex: none; transform: translateY(-1px); }
+.dienst small { display: block; }
+.fehler-text { color: var(--rot); }
+.protokoll { list-style: none; padding: 0; margin: 10px 0; font-size: 13.5px; color: var(--text-normal); }
+.protokoll li { padding: 6px 0 6px 10px; border-left: 3px solid var(--rand); margin-bottom: 4px; overflow-wrap: anywhere; }
+.protokoll li small { display: block; }
+.protokoll li.warn-zeile { border-left-color: var(--gelb); }
+.protokoll li.fehler-zeile { border-left-color: var(--rot); }

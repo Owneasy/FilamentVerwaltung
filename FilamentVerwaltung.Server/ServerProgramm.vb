@@ -43,6 +43,11 @@ Public Module ServerProgramm
             builder.WebHost.UseUrls("http://0.0.0.0:8080")
         End If
 
+        ' Letzte Meldungen für die Status-Seite
+        Dim protokoll As New ServerProtokoll()
+        builder.Logging.AddProvider(protokoll)
+        builder.Services.AddSingleton(protokoll)
+
         Dim db As New Datenbank(Path.Combine(optionen.DatenOrdner, "filament.db"))
         builder.Services.AddSingleton(optionen)
         builder.Services.AddSingleton(db)

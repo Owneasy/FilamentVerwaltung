@@ -62,8 +62,9 @@ Public Class HomeAssistantDienst
             End Try
             If fehler IsNot Nothing Then
                 ' Nur bei einer neuen Meldung ins Protokoll (sonst alle 30 s dieselbe Zeile)
-                Dim meldung = "Fehler: " & fehler.Message
-                If Status.Meldung <> meldung Then _log.LogWarning("Home Assistant: {Meldung}", fehler.Message)
+                Dim ursache = Grund(fehler)
+                Dim meldung = "Fehler: " & ursache
+                If Status.Meldung <> meldung Then _log.LogWarning("Home Assistant: {Meldung}", ursache)
                 Status = New HaStatus With {.Meldung = meldung}
                 _kennung = ""
                 Await TrennenAsync(CancellationToken.None)
@@ -178,9 +179,18 @@ Public Class HomeAssistantDienst
             End Using
             Return New HaStatus With {.Verbunden = True, .Meldung = $"Verbindung zu {v.Host}:{v.Port} klappt."}
         Catch ex As Exception
-            Dim grund = If(TypeOf ex.InnerException Is Net.Sockets.SocketException, ex.InnerException.Message, ex.Message)
-            Return New HaStatus With {.Meldung = grund}
+            Return New HaStatus With {.Meldung = Grund(ex)}
         End Try
+    End Function
+
+    ''' <summary>Verständlicher Grund: die Netzwerk-Meldung (z. B. "Verbindung verweigert") statt der englischen von MQTTnet.</summary>
+    Private Shared Function Grund(ex As Exception) As String
+        Dim e = ex
+        While e IsNot Nothing
+            If TypeOf e Is Net.Sockets.SocketException Then Return e.Message
+            e = e.InnerException
+        End While
+        Return ex.Message
     End Function
 
     Private Async Function TrennenAsync(abbruch As CancellationToken) As Task

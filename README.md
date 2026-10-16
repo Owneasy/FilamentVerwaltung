@@ -159,7 +159,7 @@ Cloudflare Access (Service-Token) geschützt, braucht der Browser zusätzlich ei
 „Allow“ mit der eigenen E-Mail-Adresse (Einmal-Code per Mail) – als zweite Policy neben „Service Auth“.
 
 Auf der Handy-Seite außerdem: Dateien an Drucker senden, Spulen anlegen/bearbeiten, Etiketten drucken oder als Bild teilen,
-AMS-Fächer zuordnen, nach links wischen zum Löschen.
+AMS-Fächer zuordnen, nach links wischen zum Löschen. Der Punkt oben rechts (grün = verbunden) öffnet die Status-Seite: Version, Laufzeit, letzte Sicherung, Speicher, Drucker-Verbindungen, Push, Home Assistant und die letzten Meldungen des Servers.
 
 **Benachrichtigungen (Web Push):** Über die Glocke oben rechts auf der Handy-Seite einschalten. Der Server schickt beim
 Druckende (fertig oder abgebrochen) eine Nachricht an alle angemeldeten Geräte – auch wenn die Seite geschlossen ist;
