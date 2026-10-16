@@ -89,8 +89,10 @@ Public Class MainForm
         StartPosition = FormStartPosition.CenterScreen
 
         ' --- Seitenleiste
+        ' Die Leiste liegt in einem scrollbaren Rahmen: Ist das Fenster zu niedrig, lässt sie sich scrollen
+        ' (sonst wäre der untere Teil – Verbindung, Sicherungen, Design … – abgeschnitten)
         Dim leiste As New TableLayoutPanel With {
-            .Dock = DockStyle.Left,
+            .Location = New Point(0, 0),
             .Width = 240,
             .BackColor = Theme.Leiste,
             .ColumnCount = 1,
@@ -218,12 +220,42 @@ Public Class MainForm
         Controls.Add(inhalt)
         Controls.Add(banner)
         Controls.Add(druckBanner)
-        Controls.Add(leiste)
+        Controls.Add(LeisteMitScrollen(leiste))
 
         SeiteZeigen(uebersichtSeite)
         ResumeLayout(False)
         PerformLayout()
     End Sub
+
+    ''' <summary>
+    ''' Rahmen um die Seitenleiste: Die Leiste ist mindestens so hoch wie der Rahmen (der Platzhalter schiebt den unteren
+    ''' Block nach unten) und höchstens so hoch, wie ihr Inhalt braucht – dann erscheint eine Bildlaufleiste.
+    ''' </summary>
+    Private Shared Function LeisteMitScrollen(leiste As TableLayoutPanel) As Panel
+        Dim rahmen As New Panel With {.Dock = DockStyle.Left, .Width = leiste.Width, .BackColor = Theme.Leiste, .AutoScroll = True}
+        rahmen.Controls.Add(leiste)
+        Dim anpassen = Sub()
+                           Dim noetig = leiste.GetPreferredSize(New Size(rahmen.Width, 0)).Height
+                           Dim scrollen = noetig > rahmen.ClientSize.Height
+                           Dim breite = rahmen.Width - If(scrollen, SystemInformation.VerticalScrollBarWidth, 0)
+                           Dim hoehe = Math.Max(noetig, rahmen.ClientSize.Height)
+                           If leiste.Width <> breite OrElse leiste.Height <> hoehe Then leiste.Size = New Size(breite, hoehe)
+                       End Sub
+        AddHandler rahmen.Resize, Sub(s, e) anpassen()
+        ' Mausrad über den Knöpfen scrollt die Leiste (das Rad geht sonst an den Knopf unter der Maus)
+        Dim rad As MouseEventHandler = Sub(s, e)
+                                           If Not rahmen.VerticalScroll.Visible Then Return
+                                           Dim y = -rahmen.AutoScrollPosition.Y - Math.Sign(e.Delta) * 60
+                                           rahmen.AutoScrollPosition = New Point(0, Math.Max(0, y))
+                                       End Sub
+        For Each c As Control In leiste.Controls
+            AddHandler c.MouseWheel, rad
+            ' Untermenü "Filament" klappt auf und zu – Höhe neu berechnen
+            AddHandler c.VisibleChanged, Sub(s, e) anpassen()
+        Next
+        AddHandler leiste.MouseWheel, rad
+        Return rahmen
+    End Function
 
     Private Shared Sub Zeile(t As TableLayoutPanel, c As Control)
         t.RowStyles.Add(New RowStyle(SizeType.AutoSize))
