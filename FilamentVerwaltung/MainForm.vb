@@ -34,7 +34,8 @@ Public Class MainForm
     Private ReadOnly lblDruckBanner As New Label With {.AutoSize = True, .Anchor = AnchorStyles.Left, .Font = Theme.SchriftFett,
                                                        .ForeColor = Theme.TextStark}
     Private ReadOnly tipps As New ToolTip()
-    Private ReadOnly btnVerbindung As New WebButton("Verbindung", Theme.SymServer, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
+    ''' <summary>Punkt unten rechts neben der Version: grün = verbunden, rot = keine Verbindung; Klick öffnet die Verbindung.</summary>
+    Private ReadOnly btnVerbindung As New StatusPunkt With {.Dock = DockStyle.Right, .BackColor = Theme.Leiste}
     ''' <summary>Prüft beim Server regelmäßig, ob die Verbindung steht (grüner / roter Punkt).</summary>
     Private ReadOnly verbindungsTimer As New Timer With {.Interval = 20000}
     Private _verbindungPruefenLaeuft As Boolean
@@ -156,7 +157,6 @@ Public Class MainForm
 
         AddHandler btnVerbindung.Click, Sub(s, e) VerbindungZeigen()
         VerbindungAnzeigen(True)
-        Zeile(leiste, btnVerbindung)
         Dim btnBenachrichtigungen As New WebButton("Benachrichtigungen", Theme.SymGlocke, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
         AddHandler btnBenachrichtigungen.Click, Sub(s, e)
                                                     Using dlg As New BenachrichtigungenDialog(_db)
@@ -205,13 +205,17 @@ Public Class MainForm
             tipps.SetToolTip(lblPfad, "Verbunden mit " & _db.Ort)
         End If
         Zeile(leiste, lblPfad)
-        Zeile(leiste, New Label With {
+        ' Version links, Verbindungspunkt rechtsbündig in derselben Zeile
+        Dim fuss As New Panel With {.Dock = DockStyle.Fill, .Height = Px(Me, 22), .Margin = New Padding(16, 0, 4, 0), .BackColor = Theme.Leiste}
+        fuss.Controls.Add(New Label With {
             .Text = $"Version {AktuelleVersion}",
             .Font = New Font("Segoe UI", 8.0F),
             .ForeColor = Color.FromArgb(100, 116, 139),
             .AutoSize = True,
-            .Margin = New Padding(16, 2, 4, 0)
+            .Location = New Point(0, Px(Me, 4))
         })
+        fuss.Controls.Add(btnVerbindung)
+        Zeile(leiste, fuss)
 
         BannerAufbauen()
         DruckBannerAufbauen()
@@ -339,7 +343,7 @@ Public Class MainForm
 
     ''' <summary>Punkt am Knopf "Verbindung": grün = verbunden bzw. lokale Datenbank offen, rot = Server nicht erreichbar.</summary>
     Private Sub VerbindungAnzeigen(verbunden As Boolean)
-        btnVerbindung.Punkt = If(verbunden, Theme.Gruen, Theme.Rot)
+        btnVerbindung.Farbe = If(verbunden, Theme.Gruen, Theme.Rot)
         Dim server = TryCast(_db, ServerDatenquelle)
         tipps.SetToolTip(btnVerbindung,
             If(server Is Nothing, "Lokale Datenbank – klicken, um Datenbank oder Server zu wählen",

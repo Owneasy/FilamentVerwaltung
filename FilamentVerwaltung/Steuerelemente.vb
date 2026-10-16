@@ -785,3 +785,58 @@ Public Module Eingabe
     End Function
 
 End Module
+
+''' <summary>Anklickbarer Statuspunkt (z. B. Verbindung zum Server): farbiger Kreis, beim Überfahren mit Ring.</summary>
+Public Class StatusPunkt
+    Inherits Control
+
+    Private _farbe As Color = Theme.Grau
+    Private _hover As Boolean
+
+    Public Sub New()
+        SetStyle(ControlStyles.UserPaint Or ControlStyles.AllPaintingInWmPaint Or ControlStyles.OptimizedDoubleBuffer Or
+                 ControlStyles.ResizeRedraw Or ControlStyles.SupportsTransparentBackColor, True)
+        Cursor = Cursors.Hand
+        Size = New Size(22, 22)
+    End Sub
+
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property Farbe As Color
+        Get
+            Return _farbe
+        End Get
+        Set(value As Color)
+            _farbe = value
+            Invalidate()
+        End Set
+    End Property
+
+    Protected Overrides Sub OnMouseEnter(e As EventArgs)
+        MyBase.OnMouseEnter(e)
+        _hover = True
+        Invalidate()
+    End Sub
+
+    Protected Overrides Sub OnMouseLeave(e As EventArgs)
+        MyBase.OnMouseLeave(e)
+        _hover = False
+        Invalidate()
+    End Sub
+
+    Protected Overrides Sub OnPaint(e As PaintEventArgs)
+        Dim g = e.Graphics
+        g.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
+        Dim d = Px(Me, 10)
+        Dim r As New Rectangle((Width - d) \ 2, (Height - d) \ 2, d, d)
+        If _hover Then
+            Dim ring = r
+            ring.Inflate(Px(Me, 4), Px(Me, 4))
+            Using b As New SolidBrush(Color.FromArgb(60, _farbe))
+                g.FillEllipse(b, ring)
+            End Using
+        End If
+        Using b As New SolidBrush(_farbe)
+            g.FillEllipse(b, r)
+        End Using
+    End Sub
+End Class
