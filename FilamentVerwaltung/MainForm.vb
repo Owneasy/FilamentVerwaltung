@@ -188,27 +188,10 @@ Public Class MainForm
         tipps.SetToolTip(btnUpdate, $"Auf GitHub ({GitHubRepo}) nach einer neueren Version suchen")
         Zeile(leiste, btnUpdate)
 
-        Dim lblPfad As New Label With {
-            .Text = _db.Ort,
-            .Font = New Font("Segoe UI", 8.0F),
-            .ForeColor = Color.FromArgb(100, 116, 139),
-            .AutoEllipsis = True,
-            .Dock = DockStyle.Fill,
-            .Height = 20,
-            .Margin = New Padding(16, 2, 4, 0)
-        }
-        If TypeOf _db Is Datenbank Then
-            lblPfad.Cursor = Cursors.Hand
-            AddHandler lblPfad.Click, Sub(s, e) DbOrdnerOeffnen()
-            tipps.SetToolTip(lblPfad, _db.Ort & Environment.NewLine & "Klicken, um den Ordner zu öffnen")
-        Else
-            tipps.SetToolTip(lblPfad, "Verbunden mit " & _db.Ort)
-        End If
-        ' Serveradresse, Version und Verbindungspunkt stehen fest unten und scrollen nicht mit
+        ' Version und Verbindungspunkt stehen fest unten und scrollen nicht mit
         Dim unten As New TableLayoutPanel With {.Dock = DockStyle.Bottom, .AutoSize = True, .ColumnCount = 1,
                                                 .BackColor = Theme.Leiste, .Padding = New Padding(12, 4, 12, 14)}
         unten.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
-        Zeile(unten, lblPfad)
         ' Version links, Verbindungspunkt rechtsbündig in derselben Zeile
         Dim fuss As New Panel With {.Dock = DockStyle.Fill, .Height = Px(Me, 22), .Margin = New Padding(16, 0, 4, 0), .BackColor = Theme.Leiste}
         fuss.Controls.Add(New Label With {
@@ -669,14 +652,5 @@ Public Class MainForm
             Return ""
         End Try
     End Function
-
-    Private Sub DbOrdnerOeffnen()
-        Try
-            Process.Start("explorer.exe", "/select,""" & _db.Ort & """")
-        Catch ex As Exception
-            MessageBox.Show(Me, "Der Ordner konnte nicht geöffnet werden." & Environment.NewLine & Environment.NewLine & ex.Message,
-                            "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)
-        End Try
-    End Sub
 
 End Class
