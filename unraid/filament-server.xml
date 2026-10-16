@@ -14,7 +14,7 @@
   <Icon></Icon>
   <ExtraParams></ExtraParams>
   <PostArgs></PostArgs>
-  <Config Name="Port" Target="8080" Default="8080" Mode="tcp" Description="Port der API. In der App: http://IP-des-Servers:Port" Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Port" Target="8080" Default="8090" Mode="tcp" Description="Port der API. In der App: http://IP-des-Servers:Port" Type="Port" Display="always" Required="true" Mask="false">8090</Config>
   <Config Name="Daten" Target="/data" Default="/mnt/user/appdata/filament" Mode="rw" Description="Datenbank, Dateien (STL, G-Code …), Sicherungen und token.txt" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/filament</Config>
   <Config Name="Zugangs-Token" Target="FILAMENT_TOKEN" Default="" Mode="" Description="Optional. Leer lassen = der Server erzeugt beim ersten Start eins und speichert es in token.txt." Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="Zeitzone" Target="TZ" Default="Europe/Berlin" Mode="" Description="Für Zeitstempel der Sicherungen" Type="Variable" Display="advanced" Required="false" Mask="false">Europe/Berlin</Config>

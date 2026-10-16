@@ -125,26 +125,26 @@ und Kamerabild (Bambu Lab; für X1/H2D ist ffmpeg im Image enthalten) – damit 
 
 1. `unraid/filament-server.xml` nach `\\<Unraid>\flash\config\plugins\dockerMan\templates-user\my-filament-server.xml` kopieren.
 2. In Unraid: **Docker → Add Container → Template:** „filament-server“ wählen, Port und Datenordner prüfen, **Apply**.
-3. `http://<Unraid-IP>:8080/api/info` im Browser öffnen; das Token steht in `/mnt/user/appdata/filament/token.txt`.
+3. `http://<Unraid-IP>:8090/api/info` im Browser öffnen; das Token steht in `/mnt/user/appdata/filament/token.txt`.
 
 **Ohne Vorlage (Image selbst bauen):** Quellcode nach Unraid kopieren, dann im Terminal
 
 ```
 docker build -t filament-server .
-docker run -d --name filament-server --restart unless-stopped -p 8080:8080 \
+docker run -d --name filament-server --restart unless-stopped -p 8090:8080 \
   -v /mnt/user/appdata/filament:/data filament-server
 ```
 
 - **Daten:** alles liegt im Volume `/data` (`filament.db`, `Dateien/`, `Backups/`). Einmal pro Tag wird automatisch gesichert.
 - **Zugangs-Token:** Jede Anfrage braucht `Authorization: Bearer <Token>`. Ohne `FILAMENT_TOKEN` erzeugt der Server
   beim ersten Start eins und speichert es in `/data/token.txt` (steht auch im Container-Log).
-- **Umgebungsvariablen:** `FILAMENT_TOKEN` (eigenes Token), `FILAMENT_DATEN` (Standard `/data`), `ASPNETCORE_HTTP_PORTS` (Standard `8080`).
-- **Von unterwegs (Cloudflare-Tunnel):** Im Tunnel einen Public Hostname auf `http://<Unraid-IP>:8080` anlegen und
+- **Umgebungsvariablen:** `FILAMENT_TOKEN` (eigenes Token), `FILAMENT_DATEN` (Standard `/data`), `ASPNETCORE_HTTP_PORTS` (Port im Container, Standard `8080`; nach außen standardmäßig `8090`).
+- **Von unterwegs (Cloudflare-Tunnel):** Im Tunnel einen Public Hostname auf `http://<Unraid-IP>:8090` anlegen und
   zusätzlich per Cloudflare Access (Service-Token) schützen. Große Dateien werden in 16-MB-Stücken hochgeladen
   (Cloudflare lässt höchstens 100 MB pro Anfrage zu).
-- **Test:** `http://<Unraid-IP>:8080/api/info` liefert Name und Version (ohne Token).
+- **Test:** `http://<Unraid-IP>:8090/api/info` liefert Name und Version (ohne Token).
 
-**App verbinden:** In der Seitenleiste „Verbindung“ → „Server“ wählen, Adresse im Heimnetz (z. B. `http://192.168.1.10:8080`),
+**App verbinden:** In der Seitenleiste „Verbindung“ → „Server“ wählen, Adresse im Heimnetz (z. B. `http://192.168.1.10:8090`),
 Adresse unterwegs (z. B. `https://filament.meinedomain.de`), Token und ggf. Cloudflare-Service-Token eintragen, „Verbindung
 testen“, speichern – die App startet neu. Die App versucht zuerst die Heimnetz-Adresse, sonst die für unterwegs, und wechselt
 bei einem Verbindungsabbruch automatisch. Die Verbindung wird nur auf dem PC gespeichert (`%AppData%\FilamentVerwaltung\verbindung.json`,

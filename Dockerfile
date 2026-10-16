@@ -1,6 +1,6 @@
 # Filament-Verwaltung Server
 #   docker build -t filament-server .
-#   docker run -d --name filament-server -p 8080:8080 -v /mnt/user/appdata/filament:/data filament-server
+#   docker run -d --name filament-server -p 8090:8080 -v /mnt/user/appdata/filament:/data filament-server
 # Datenbank, Dateien, Sicherungen und token.txt liegen im Volume /data.
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
