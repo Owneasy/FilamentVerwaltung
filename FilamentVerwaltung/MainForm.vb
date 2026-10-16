@@ -205,7 +205,8 @@ Public Class MainForm
         AddHandler btnGlocke.MouseLeave, Sub(s, e) btnGlocke.ForeColor = Theme.LeisteText
         AddHandler btnGlocke.Paint, AddressOf GlockeZeichnen
         btnGlocke.Width = Px(Me, 26)
-        btnGlocke.Visible = TypeOf _db Is ServerDatenquelle
+        ' Erst zeigen, wenn der Server den Verlauf kennt (siehe GlockePruefenAsync)
+        btnGlocke.Visible = False
         tipps.SetToolTip(btnGlocke, "Benachrichtigungen")
         ' Andocken von rechts: zuletzt hinzugefügt = ganz rechts (Punkt), davor das Design, dann die Glocke
         fuss.Controls.Add(btnGlocke)
@@ -412,10 +413,15 @@ Public Class MainForm
                                          Dim neueste = server.Benachrichtigungen(1).FirstOrDefault()
                                          Return neueste IsNot Nothing AndAlso neueste.Id > GelesenBis(server)
                                      End Function)
-            If IsDisposed OrElse neu = _glockeNeu Then Return
+            If IsDisposed Then Return
+            btnGlocke.Visible = True
+            If neu = _glockeNeu Then Return
             _glockeNeu = neu
             btnGlocke.Invalidate()
             tipps.SetToolTip(btnGlocke, If(neu, "Neue Benachrichtigungen", "Benachrichtigungen"))
+        Catch ex As Exception When ex.Message.Contains("404")
+            ' Älterer Server ohne Benachrichtigungs-Verlauf: Glocke ausblenden statt Fehler
+            If Not IsDisposed Then btnGlocke.Visible = False
         Catch ex As Exception
             ' Glocke bleibt, wie sie ist
         End Try
