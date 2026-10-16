@@ -179,10 +179,14 @@ Public Class MainForm
         tipps.SetToolTip(btnSicherungen, "Sicherungen der Datenbank ansehen, jetzt sichern oder wiederherstellen")
         Zeile(leiste, btnSicherungen)
 
-        Dim btnDesign As New WebButton("Design", If(Theme.Dunkel, Theme.SymMond, Theme.SymSonne), KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
+        ' Design: Mond bzw. Sonne unten neben dem Verbindungspunkt
+        Dim btnDesign As New Label With {.Text = If(Theme.Dunkel, Theme.SymMond, Theme.SymSonne), .Font = Theme.SymbolSchrift,
+                                         .ForeColor = Theme.LeisteText, .BackColor = Theme.Leiste, .Dock = DockStyle.Right,
+                                         .Width = Px(Me, 26), .TextAlign = ContentAlignment.MiddleCenter, .Cursor = Cursors.Hand}
         AddHandler btnDesign.Click, Sub(s, e) DesignMenueZeigen(btnDesign)
-        tipps.SetToolTip(btnDesign, "Helles oder dunkles Design, oder wie in Windows eingestellt")
-        Zeile(leiste, btnDesign)
+        AddHandler btnDesign.MouseEnter, Sub(s, e) btnDesign.ForeColor = Theme.LeisteTextAktiv
+        AddHandler btnDesign.MouseLeave, Sub(s, e) btnDesign.ForeColor = Theme.LeisteText
+        tipps.SetToolTip(btnDesign, "Design: hell, dunkel oder wie in Windows eingestellt")
 
         AddHandler btnUpdate.Click, Sub(s, e) UpdatePruefen(stumm:=False)
         tipps.SetToolTip(btnUpdate, $"Auf GitHub ({GitHubRepo}) nach einer neueren Version suchen")
@@ -192,7 +196,7 @@ Public Class MainForm
         Dim unten As New TableLayoutPanel With {.Dock = DockStyle.Bottom, .AutoSize = True, .ColumnCount = 1,
                                                 .BackColor = Theme.Leiste, .Padding = New Padding(12, 4, 12, 14)}
         unten.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
-        ' Version links, Verbindungspunkt rechtsbündig in derselben Zeile
+        ' Version links, Design und Verbindungspunkt rechtsbündig in derselben Zeile
         Dim fuss As New Panel With {.Dock = DockStyle.Fill, .Height = Px(Me, 22), .Margin = New Padding(16, 0, 4, 0), .BackColor = Theme.Leiste}
         fuss.Controls.Add(New Label With {
             .Text = $"Version {AktuelleVersion}",
@@ -201,6 +205,8 @@ Public Class MainForm
             .AutoSize = True,
             .Location = New Point(0, Px(Me, 4))
         })
+        ' Andocken von rechts: zuletzt hinzugefügt = ganz rechts (Punkt), davor das Design
+        fuss.Controls.Add(btnDesign)
         fuss.Controls.Add(btnVerbindung)
         Zeile(unten, fuss)
 
