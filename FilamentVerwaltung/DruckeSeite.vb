@@ -287,6 +287,10 @@ Public Class DruckeSeite
         If grid.Columns(e.ColumnIndex).Name <> "Art" Then Return
         Dim b = grid.Eintrag(Of Buchung)(e.RowIndex)
         If b Is Nothing Then Return
+        If b.IstDruck AndAlso b.Fehldruck Then
+            grid.BadgeZeichnen(e, "Fehldruck", Theme.Rot, Hell(Theme.Rot, 0.12))
+            Return
+        End If
         Dim farbe = If(b.IstDruck, Theme.Akzent, If(b.Art = Buchung.ArtWiegen, Theme.Tuerkis, Theme.Gelb))
         grid.BadgeZeichnen(e, b.Art, farbe, Hell(farbe, 0.12))
     End Sub

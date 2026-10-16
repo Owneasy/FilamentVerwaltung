@@ -432,7 +432,9 @@ Public Module DruckErkennung
             .DateiId = datei?.Id,
             .Druckzeit = If(ende.DauerSekunden.HasValue AndAlso ende.DauerSekunden.Value > 0, ende.DauerSekunden, CType(Nothing, Integer?)),
             .Notiz = notiz,
-            .Foto = If(ende.Foto, "")
+            .Foto = If(ende.Foto, ""),
+            .Drucker = If(ende.DruckerName, ""),
+            .Fehldruck = ende.Abgebrochen
         }
     End Function
 

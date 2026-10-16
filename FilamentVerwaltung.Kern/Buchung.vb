@@ -22,6 +22,10 @@ Public Class Buchung
     Public Property Notiz As String = ""
     ''' <summary>Dateiname des Kamerabilds vom Druckende (Ordner "Fotos"), leer = keins.</summary>
     Public Property Foto As String = ""
+    ''' <summary>Drucker, auf dem gedruckt wurde (Name; leer bei Wiegen/Korrektur oder unbekannt).</summary>
+    Public Property Drucker As String = ""
+    ''' <summary>Fehldruck: abgebrochen oder misslungen (für die Fehldruck-Statistik).</summary>
+    Public Property Fehldruck As Boolean
 
     ' --- Anzeige (aus den verknüpften Tabellen geladen)
     Public Property FilamentCode As String = ""

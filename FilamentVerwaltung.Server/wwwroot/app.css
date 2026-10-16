@@ -289,3 +289,9 @@ label .suche { margin-top: 4px; }
 /* Automatisch buchen */
 .automatik .schalter { margin: 2px 0; }
 .automatik small { display: block; margin: 0 0 4px 30px; }
+
+/* Verlauf: Fehldrucke dieses Monats, antippen filtert die Liste */
+.fehl-hinweis { display: block; width: 100%; text-align: left; font-size: 14px; color: var(--text-normal); }
+.fehl-hinweis b { color: var(--rot); }
+.fehl-hinweis small { display: block; color: var(--akzent); margin-top: 2px; }
+.fehl-hinweis.aktiv { border-color: var(--rot); }

@@ -403,6 +403,7 @@ async function buchenFormular(id) {
     </select></label>
     <label>Verbrauch in Gramm<input id="bGramm" type="number" inputmode="numeric" min="0" value="${vorschlag.gramm}"></label>
     ${vorschlag.druckzeit ? `<p class="leise">Druckzeit: ${dauer(vorschlag.druckzeit)}</p>` : ''}
+    <label class="schalter"><input type="checkbox" id="bFehl" ${vorschlag.fehldruck ? 'checked' : ''}> Fehldruck (abgebrochen oder misslungen)</label>
     <p class="leise">${esc(vorschlag.notiz)}</p>
     <div class="knoepfe"><button class="knopf" data-schliessen>Abbrechen</button><button class="primaer" id="bOk">Buchen</button></div>`);
   if (vorschlag.foto) fotoLaden(vorschlag.foto, $('#bFoto'));
@@ -413,7 +414,7 @@ async function buchenFormular(id) {
     if (!(gramm >= 0)) return toast('Bitte den Verbrauch in Gramm eingeben.', true);
     $('#bOk').disabled = true;
     try {
-      await schicken(`druckenden/${id}/buchen`, 'POST', { ...vorschlag, filamentId, gramm, bezeichnung: $('#bBezeichnung').value.trim() });
+      await schicken(`druckenden/${id}/buchen`, 'POST', { ...vorschlag, filamentId, gramm, fehldruck: $('#bFehl').checked, bezeichnung: $('#bBezeichnung').value.trim() });
       blattSchliessen();
       toast(`Gebucht: ${gramm} g`);
       druckendenZaehlen();
@@ -1475,6 +1476,7 @@ function reiter(gruppe) {
 // ------------------------------------------------------------------ Verlauf: alle Buchungen (Drucke, Wiegen, Korrekturen)
 
 let verlaufSuche = '';
+let verlaufNurFehl = false;
 const istVerbrauch = b => b.art !== 'Korrektur' && b.gramm > 0;
 const euro = x => (x || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 
@@ -1488,29 +1490,35 @@ async function verlaufSeite() {
   const drucke = monat.filter(b => b.art === 'Druck').length;
   const gramm = monat.filter(istVerbrauch).reduce((s, b) => s + b.gramm, 0);
   const kosten = monat.filter(istVerbrauch).reduce((s, b) => s + b.kosten, 0);
+  const fehl = monat.filter(b => b.art === 'Druck' && b.fehldruck);
   inhalt(reiter('buchen') + `
     <div class="kennzahlen">
       <div><b>${drucke}</b><small>Drucke im ${heute.toLocaleString('de-DE', { month: 'long' })}</small></div>
       <div><b>${zahl(gramm)} g</b><small>verbraucht</small></div>
       <div><b>${euro(kosten)}</b><small>Kosten</small></div>
     </div>
+    <button class="karte fehl-hinweis${verlaufNurFehl ? ' aktiv' : ''}" id="vFehl">
+      <b>${fehl.length} ${fehl.length === 1 ? 'Fehldruck' : 'Fehldrucke'}</b> diesen Monat${drucke ? ` (${Math.round(fehl.length / drucke * 100)} %)` : ''}
+      · ${zahl(fehl.reduce((s, b) => s + b.gramm, 0))} g · ${euro(fehl.reduce((s, b) => s + b.kosten, 0))}
+      <small>${verlaufNurFehl ? 'Alle Einträge zeigen' : 'Nur Fehldrucke zeigen'}</small></button>
     <div class="suche"><input id="vSuche" type="search" placeholder="Bezeichnung, Spule, Datei …" value="${esc(verlaufSuche)}"></div>
     <div id="vListe"></div>`);
   const zeigen = () => {
     const q = verlaufSuche.toLowerCase();
-    const treffer = buchungen.filter(b => !q || [b.bezeichnung, b.filamentCode, b.filamentText, b.dateiName, b.notiz, b.art]
+    const treffer = buchungen.filter(b => !verlaufNurFehl || b.fehldruck).filter(b => !q || [b.bezeichnung, b.filamentCode, b.filamentText, b.dateiName, b.notiz, b.art]
       .some(x => (x || '').toLowerCase().includes(q))).slice(0, 200);
     $('#vListe').innerHTML = treffer.length ? treffer.map(b => wischen(`<button class="karte buchung-eintrag" data-buchung="${b.id}">
         <div class="zeile">
-          <div style="min-width:0"><b>${esc(b.bezeichnung || b.art)}${b.foto ? ' 📷' : ''}</b>
+          <div style="min-width:0"><b>${esc(b.bezeichnung || b.art)}${b.foto ? ' 📷' : ''}</b>${b.fehldruck ? ' <span class="badge rot">Fehldruck</span>' : ''}
             <small class="leise">${datumZeit(b.datum)} · ${esc(b.filamentCode)} ${esc(b.filamentText)}</small></div>
           <div class="rest"><b>${b.gramm < 0 ? '+' + zahl(-b.gramm) : zahl(b.gramm)} g</b><br><small class="leise">${b.art === 'Druck' ? euro(b.kosten) : esc(b.art)}</small></div>
         </div>
       </button>`, 'buchung', b.id, b.bezeichnung || b.art)).join('') +
-      (buchungen.length > 200 && !q ? '<p class="leer"><small>Die ältesten Einträge findest du über die Suche.</small></p>' : '')
+      (buchungen.length > 200 && !q && !verlaufNurFehl ? '<p class="leer"><small>Die ältesten Einträge findest du über die Suche.</small></p>' : '')
       : '<p class="leer">Keine Einträge.</p>';
   };
   $('#vSuche').oninput = e => { verlaufSuche = e.target.value; zeigen(); };
+  $('#vFehl').onclick = () => { verlaufNurFehl = !verlaufNurFehl; verlaufSeite(); };
   zeigen();
 }
 
@@ -1520,12 +1528,21 @@ async function buchungZeigen(id) {
   if (!b) return toast('Diesen Eintrag gibt es nicht mehr.', true);
   const zeilen = [['Datum', datumZeit(b.datum)], ['Art', b.art], ['Spule', `${b.filamentCode} ${b.filamentText}`.trim()],
     ['Verbrauch', `${zahl(b.gramm)} g`], ['Kosten', b.art === 'Druck' ? euro(b.kosten) : ''], ['Druckzeit', dauer(b.druckzeit)],
-    ['Datei', b.dateiName], ['Notiz', b.notiz]].filter(z => z[1]);
+    ['Drucker', b.drucker], ['Datei', b.dateiName], ['Notiz', b.notiz]].filter(z => z[1]);
   blattOeffnen(`<div class="zeile"><h2>${esc(b.bezeichnung || b.art)}</h2><button class="knopf" data-schliessen>Schließen</button></div>
     ${b.foto ? '<img class="druckfoto" id="vFoto" alt="Foto vom Druckende">' : ''}
     <dl>${zeilen.map(z => `<dt>${z[0]}</dt><dd>${esc(z[1])}</dd>`).join('')}</dl>
+    ${b.art === 'Druck' ? `<label class="schalter"><input type="checkbox" id="vFehldruck" ${b.fehldruck ? 'checked' : ''}> Fehldruck (abgebrochen oder misslungen)</label>` : ''}
     <div class="knoepfe"><button class="knopf gefahr" id="vLoeschen">Löschen …</button></div>`);
   if (b.foto) fotoLaden(b.foto, $('#vFoto'));
+  if ($('#vFehldruck')) $('#vFehldruck').onchange = async e => {
+    try {
+      await schicken('buchungen/druck', 'POST', { ...b, fehldruck: e.target.checked });
+      b.fehldruck = e.target.checked;
+      toast(b.fehldruck ? 'Als Fehldruck markiert' : 'Kein Fehldruck mehr');
+      if (location.hash === '#verlauf') verlaufSeite();
+    } catch (x) { e.target.checked = !e.target.checked; fehler(x); }
+  };
   $('#vLoeschen').onclick = () => buchungLoeschen(id);
 }
 

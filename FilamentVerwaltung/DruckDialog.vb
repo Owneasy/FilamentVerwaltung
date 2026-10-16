@@ -24,6 +24,7 @@ Public Class DruckDialog
     Private ReadOnly numMinuten As New NumericUpDown With {.Maximum = 59, .Width = 60}
     Private ReadOnly dtpDatum As New DateTimePicker With {.Format = DateTimePickerFormat.Custom, .CustomFormat = "dd.MM.yyyy  HH:mm", .Width = 160}
     Private ReadOnly txtNotiz As New TextBox With {.Width = 360, .Height = 50, .Multiline = True, .ScrollBars = ScrollBars.Vertical}
+    Private ReadOnly chkFehldruck As New CheckBox With {.Text = "Fehldruck (abgebrochen oder misslungen)", .AutoSize = True}
     Private ReadOnly lblVorschau As New Label With {.AutoSize = True, .Font = Theme.SchriftFett, .ForeColor = Theme.Akzent,
                                                     .Margin = New Padding(3, 10, 3, 3)}
     Private ReadOnly lblDateiInfo As New Label With {.AutoSize = True, .ForeColor = Theme.TextLeise, .Font = Theme.SchriftKlein,
@@ -58,6 +59,7 @@ Public Class DruckDialog
         numMinuten.Value = (zeit Mod 3600) \ 60
         dtpDatum.Value = b.Datum
         txtNotiz.Text = b.Notiz
+        chkFehldruck.Checked = b.Fehldruck
         ' Datei zuletzt setzen: übernimmt nur Werte, die noch leer sind
         cboDatei.SelectedIndex = Math.Max(0, dateiIndex)
 
@@ -124,6 +126,7 @@ Public Class DruckDialog
         Zeile(t, "Druckzeit:", zeit)
         Zeile(t, "Datum:", dtpDatum)
         Zeile(t, "Notiz:", txtNotiz)
+        Zeile(t, "", chkFehldruck)
         t.Controls.Add(lblVorschau, 1, t.RowCount)
         t.RowCount += 1
 
@@ -236,6 +239,7 @@ Public Class DruckDialog
         _b.Druckzeit = If(sekunden > 0, sekunden, CType(Nothing, Integer?))
         _b.Datum = dtpDatum.Value
         _b.Notiz = txtNotiz.Text
+        _b.Fehldruck = chkFehldruck.Checked
         DialogResult = DialogResult.OK
     End Sub
 
