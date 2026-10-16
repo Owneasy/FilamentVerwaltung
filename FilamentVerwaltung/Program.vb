@@ -29,6 +29,8 @@ Public Module Program
         Dim dunkel = design = DesignEinstellung.Dunkel OrElse (design = DesignEinstellung.WieWindows AndAlso Theme.WindowsIstDunkel())
         Theme.Anwenden(dunkel)
         Application.SetColorMode(If(dunkel, SystemColorMode.Dark, SystemColorMode.Classic))
+        ' Alle aufklappenden Menüs im Stil der App
+        ToolStripManager.Renderer = New MenueRenderer()
 
         ' Lokal: einmal pro Tag eine Sicherung anlegen (der Server sichert selbst).
         ' Schlägt das fehl, trotzdem starten und darauf hinweisen.
