@@ -522,6 +522,16 @@ Public Class ServerDatenquelle
         Return CInt(Schicken(Of WertAnfrage)(HttpMethod.Post, "push/test", New Object()).Wert)
     End Function
 
+    ''' <summary>Verbindung des Servers zu Home Assistant (MQTT).</summary>
+    Public Function HomeAssistantStatus() As HaStatus
+        Return Abrufen(Of HaStatus)("homeassistant/status")
+    End Function
+
+    ''' <summary>Verbindung zum MQTT-Broker vom Server aus testen (der Server muss ihn erreichen, nicht dieser PC).</summary>
+    Public Function HomeAssistantTesten(v As HaVerbindung) As HaStatus
+        Return Schicken(Of HaStatus)(HttpMethod.Post, "homeassistant/testen", v)
+    End Function
+
     Public Sub Dispose() Implements IDisposable.Dispose
         _client.Dispose()
     End Sub

@@ -55,6 +55,8 @@ Public Module ServerProgramm
         builder.Services.AddHostedService(Of DruckerStart)()
         builder.Services.AddSingleton(Of PushDienst)()
         builder.Services.AddSingleton(Of PushRegeln)()
+        builder.Services.AddSingleton(Of HomeAssistantDienst)()
+        builder.Services.AddHostedService(Function(sp) sp.GetRequiredService(Of HomeAssistantDienst)())
         builder.Services.AddControllers()
 
         ' Abgebrochene Uploads vom letzten Lauf entfernen

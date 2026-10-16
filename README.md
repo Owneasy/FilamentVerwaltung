@@ -167,6 +167,14 @@ Antippen öffnet „Buchen“. Auf dem iPhone (ab iOS 16.4) nur, wenn die Seite 
 dort geöffnet wird, und nur über https. Der Server braucht dafür Internetzugang (Push-Dienst von Apple/Google); sein
 VAPID-Schlüssel liegt in `/data/vapid.json`.
 
+**Home Assistant (MQTT):** In der App „Home Assistant“ in der Seitenleiste: MQTT-Broker (meist das Add-on „Mosquitto
+broker“, also die IP von Home Assistant, Port 1883), Benutzer und Passwort eintragen, „Verbindung testen“, einschalten.
+Der Server meldet sich per MQTT-Discovery an – unter Einstellungen → Geräte & Dienste → MQTT erscheinen ein Gerät
+„Filament-Verwaltung“ (Spulen und Filament auf Lager, Spulen fast leer, Drucke zum Buchen, Drucke/Verbrauch/Kosten/
+Fehldrucke diesen Monat) und je Drucker ein Gerät (Status, Fortschritt, Restzeit, Fertig um, Datei, Schicht, Meldung,
+Temperaturen, Druckt, Ereignis „Druckende“ mit `fertig`/`abgebrochen` für Automationen). Zustände liegen unter
+`filamentverwaltung/…`; läuft der Server nicht, zeigt Home Assistant die Sensoren als nicht verfügbar.
+
 ## Projektaufbau
 
 Drei Projekte: `FilamentVerwaltung` (Windows-App), `FilamentVerwaltung.Kern` (Modelle, Datenbank, Drucker-Anbindung, Dateianalyse –

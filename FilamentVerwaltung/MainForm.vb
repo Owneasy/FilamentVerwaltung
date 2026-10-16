@@ -163,6 +163,14 @@ Public Class MainForm
                                                 End Sub
         tipps.SetToolTip(btnBenachrichtigungen, "Wofür der Server Nachrichten aufs Handy schickt (Druck fertig, Spule fast leer …)")
         Zeile(leiste, btnBenachrichtigungen)
+        Dim btnHomeAssistant As New WebButton("Home Assistant", Theme.SymHaus, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
+        AddHandler btnHomeAssistant.Click, Sub(s, e)
+                                               Using dlg As New HomeAssistantDialog(_db)
+                                                   dlg.ShowDialog(Me)
+                                               End Using
+                                           End Sub
+        tipps.SetToolTip(btnHomeAssistant, "Drucker und Lager per MQTT an Home Assistant melden")
+        Zeile(leiste, btnHomeAssistant)
 
         Dim btnSicherungen As New WebButton("Sicherungen", Theme.SymSicherung, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
         AddHandler btnSicherungen.Click, Sub(s, e) SicherungenZeigen()
