@@ -26,7 +26,13 @@ Public Class MenueRenderer
         dd.DropShadowEnabled = True
         ' Abgerundete Ecken über die Fensterform (Windows rundet Menüfenster nicht selbst); Größe kann sich je Öffnen ändern
         AddHandler dd.SizeChanged, Sub(s, e) FormRunden(dd)
-        AddHandler dd.Opening, Sub(s, e) FormRunden(dd)
+        AddHandler dd.Opening, Sub(s, e)
+                                   ' Ohne Häkchen und Symbole keinen leeren Rand links – der Text sitzt mittig im Feld
+                                   dd.ShowImageMargin = dd.Items.OfType(Of ToolStripMenuItem)().Any(Function(i) i.Checked OrElse i.Image IsNot Nothing)
+                                   dd.ShowCheckMargin = False
+                                   dd.PerformLayout()
+                                   FormRunden(dd)
+                               End Sub
     End Sub
 
     Private Shared Sub FormRunden(dd As ToolStripDropDown)
@@ -39,7 +45,7 @@ Public Class MenueRenderer
     Protected Overrides Sub InitializeItem(item As ToolStripItem)
         MyBase.InitializeItem(item)
         If TypeOf item Is ToolStripMenuItem AndAlso TypeOf item.Owner Is ToolStripDropDownMenu Then
-            item.Padding = New Padding(4, 7, 8, 7)
+            item.Padding = New Padding(8, 7, 8, 7)
         End If
     End Sub
 
@@ -96,9 +102,20 @@ Public Class MenueRenderer
             ElseIf e.Item.ForeColor <> Theme.Rot Then
                 e.TextColor = If(e.Item.Selected, Theme.TextStark, Theme.TextNormal)
             End If
+            ' Menüs ohne Häkchen (z. B. Einstellungen): Text waagerecht mittig im Menü
+            Dim dd = TryCast(e.ToolStrip, ToolStripDropDownMenu)
+            If dd IsNot Nothing AndAlso TypeOf e.Item Is ToolStripMenuItem AndAlso OhneHaekchen(dd) Then
+                Dim abstand = Px(e.ToolStrip, 6)
+                e.TextRectangle = New Rectangle(abstand - e.Item.Bounds.X, e.TextRectangle.Y, e.ToolStrip.Width - 2 * abstand, e.TextRectangle.Height)
+                e.TextFormat = (e.TextFormat And Not TextFormatFlags.Left And Not TextFormatFlags.Right) Or TextFormatFlags.HorizontalCenter
+            End If
         End If
         MyBase.OnRenderItemText(e)
     End Sub
+
+    Private Shared Function OhneHaekchen(dd As ToolStripDropDownMenu) As Boolean
+        Return Not dd.Items.OfType(Of ToolStripMenuItem)().Any(Function(i) i.Checked OrElse i.Image IsNot Nothing)
+    End Function
 
     Protected Overrides Sub OnRenderItemCheck(e As ToolStripItemImageRenderEventArgs)
         ' Häkchen als Symbol in der Akzentfarbe statt des Windows-Kästchens
