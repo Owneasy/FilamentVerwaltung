@@ -285,3 +285,7 @@ a.knopf { text-decoration: none; }
 .scan-ebene { z-index: 25; }
 .scan-ebene video { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #000; border-radius: 10px; margin-top: 12px; }
 label .suche { margin-top: 4px; }
+
+/* Automatisch buchen */
+.automatik .schalter { margin: 2px 0; }
+.automatik small { display: block; margin: 0 0 4px 30px; }

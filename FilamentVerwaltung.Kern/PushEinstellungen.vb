@@ -18,3 +18,10 @@ Public Class PushGeraet
     Public Property Geraet As String = ""
     Public Property Erstellt As String = ""
 End Class
+''' <summary>Automatisch buchen (Server): fertige Drucke ohne Nachfrage buchen, wenn Spule und Gewicht feststehen.</summary>
+Public Module BuchenEinstellungen
+    ''' <summary>"1" = fertige Drucke automatisch buchen (Standard: aus).</summary>
+    Public Const Automatisch As String = "Buchen.Automatisch"
+    ''' <summary>"1" = auch abgebrochene Drucke (Gewicht anteilig geschätzt; Standard: aus).</summary>
+    Public Const AuchAbgebrochene As String = "Buchen.AutomatischAbgebrochen"
+End Module

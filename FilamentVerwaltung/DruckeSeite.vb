@@ -69,6 +69,10 @@ Public Class DruckeSeite
         Dim btnNeu As New WebButton("Druck erfassen", Theme.SymNeu, KnopfStil.Primaer) With {.Margin = New Padding(0)}
         AddHandler btnNeu.Click, Sub(s, e) NeuErfassen()
         tipps.SetToolTip(btnNeu, "Druck erfassen und den Verbrauch von der Spule abziehen (Strg+N)")
+        Dim btnAuto As New WebButton("Automatisch buchen", Theme.SymUhr) With {.Margin = New Padding(0, 0, 8, 0)}
+        AddHandler btnAuto.Click, Sub(s, e) AutomatikMenue(btnAuto)
+        tipps.SetToolTip(btnAuto, "Fertige Drucke ohne Nachfrage buchen, wenn Spule und Gewicht feststehen (Server)")
+        kopf.Knoepfe.Controls.Add(btnAuto)
         kopf.Knoepfe.Controls.Add(btnNeu)
         seite.Controls.Add(kopf, 0, 0)
 
@@ -323,6 +327,43 @@ Public Class DruckeSeite
     End Sub
 
     ''' <summary>Zeigt den Druck-Dialog und speichert bei OK (auch von der Dateien-Seite aus genutzt).</summary>
+    ''' <summary>
+    ''' Einstellung "automatisch buchen" (wirkt auf dem Server, der die Drucker überwacht): fertige Drucke werden
+    ''' gebucht, wenn Spule und Gewicht feststehen – sonst bleiben sie zum Buchen offen.
+    ''' </summary>
+    Private Sub AutomatikMenue(knopf As Control)
+        Dim an, abgebrochen As Boolean
+        Try
+            an = _db.EinstellungLesen(BuchenEinstellungen.Automatisch) = "1"
+            abgebrochen = _db.EinstellungLesen(BuchenEinstellungen.AuchAbgebrochene) = "1"
+        Catch ex As Exception
+            MessageBox.Show(Me, ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End Try
+        Dim menue As New ContextMenuStrip With {.Font = Theme.Schrift}
+        Dim punktAn As New ToolStripMenuItem("Fertige Drucke automatisch buchen") With {.Checked = an}
+        Dim punktAbgebrochen As New ToolStripMenuItem("Auch abgebrochene Drucke (Gewicht anteilig)") With {.Checked = abgebrochen, .Enabled = an}
+        AddHandler punktAn.Click, Sub(s, e) AutomatikSpeichern(BuchenEinstellungen.Automatisch, Not an)
+        AddHandler punktAbgebrochen.Click, Sub(s, e) AutomatikSpeichern(BuchenEinstellungen.AuchAbgebrochene, Not abgebrochen)
+        menue.Items.Add(punktAn)
+        menue.Items.Add(punktAbgebrochen)
+        menue.Items.Add(New ToolStripSeparator())
+        Dim hinweis = If(TypeOf _db Is ServerDatenquelle,
+                         "Nur wenn Spule (Zuordnung am Drucker) und Gewicht feststehen – sonst wie bisher zum Buchen.",
+                         "Wirkt nur im Server-Betrieb (der Server überwacht die Drucker).")
+        menue.Items.Add(New ToolStripMenuItem(hinweis) With {.Enabled = False})
+        AddHandler menue.Closed, Sub(s, e) BeginInvoke(Sub() menue.Dispose())
+        menue.Show(knopf, New Point(0, knopf.Height))
+    End Sub
+
+    Private Sub AutomatikSpeichern(schluessel As String, wert As Boolean)
+        Try
+            _db.EinstellungSpeichern(schluessel, If(wert, "1", "0"))
+        Catch ex As Exception
+            MessageBox.Show(Me, ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Sub
+
     Friend Shared Function DruckDialogZeigen(besitzer As IWin32Window, db As IDatenquelle, b As Buchung,
                                              filamente As List(Of Filament), dateien As List(Of Datei), titel As String) As Boolean
         If Not filamente.Any(Function(f) f.Restgewicht > 0 OrElse f.Id = b.FilamentId) Then

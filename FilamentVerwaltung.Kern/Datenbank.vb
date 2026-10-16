@@ -652,6 +652,13 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         Return If(File.Exists(datei), File.ReadAllBytes(datei), Nothing)
     End Function
 
+    ''' <summary>Foto nachträglich an eine Buchung hängen (automatisch gebuchter Druck).</summary>
+    Public Sub BuchungFotoSetzen(buchungId As Long, name As String)
+        Using c = Oeffnen()
+            Befehl(c, Nothing, "UPDATE Buchung SET Foto = $f WHERE Id = $id", "$f", If(name, ""), "$id", buchungId).ExecuteNonQuery()
+        End Using
+    End Sub
+
     ''' <summary>Löscht das Foto, wenn keine Buchung es mehr verwendet.</summary>
     Public Sub FotoLoeschenWennUnbenutzt(name As String)
         If String.IsNullOrWhiteSpace(name) OrElse name <> Path.GetFileName(name) Then Return

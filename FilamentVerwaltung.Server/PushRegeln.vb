@@ -68,6 +68,18 @@ Public Class PushRegeln
             .Kennung = $"druckende-{ende.Id}"})
     End Sub
 
+    ''' <summary>Druck wurde automatisch gebucht – statt "zum Buchen" kommt eine Bestätigung (Antippen öffnet den Verlauf).</summary>
+    Public Sub AutomatischGebucht(ende As DruckEnde, b As Buchung)
+        If Not Ein(Druckende) Then Return
+        Dim f = _db.AlleLaden().FirstOrDefault(Function(x) x.Id = b.FilamentId)
+        Dim spule = If(f Is Nothing, "", $" von {f.Code} ({String.Join(" ", {f.Hersteller, f.Material, f.Farbe}.Where(Function(x) Not String.IsNullOrWhiteSpace(x)))})")
+        Senden(New PushNachricht With {
+            .Titel = If(ende.Abgebrochen, $"Abgebrochen und gebucht – {ende.DruckerName}", $"Gebucht – {ende.DruckerName}"),
+            .Text = $"{b.Bezeichnung}: {b.Gramm:N0} g{spule}" & vbLf & "Antippen zum Prüfen oder Korrigieren",
+            .Ziel = "/#verlauf",
+            .Kennung = $"druckende-{ende.Id}"})
+    End Sub
+
     ''' <summary>Restgewicht einer Spule merken, bevor es sich ändert (für <see cref="SpuleGeaendert"/>).</summary>
     Public Function RestVorher(filamentId As Long) As Integer?
         Return _db.AlleLaden().FirstOrDefault(Function(f) f.Id = filamentId)?.Restgewicht

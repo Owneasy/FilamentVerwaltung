@@ -33,22 +33,51 @@ Public Class DruckerStart
     End Function
 
     Private Sub DruckBeendet(ende As DruckEnde)
+        Dim gebucht As Buchung = Nothing
         Try
             _db.DruckEndeSpeichern(ende)
             _log.LogInformation("Druck beendet auf {Drucker}: {Datei} ({Ergebnis})", ende.DruckerName, ende.Datei,
                                 If(ende.Abgebrochen, "abgebrochen", "fertig"))
+            gebucht = AutomatischBuchen(ende)
         Catch ex As Exception
-            _log.LogWarning(ex, "Druckende konnte nicht gespeichert werden")
+            _log.LogWarning(ex, "Druckende konnte nicht gespeichert bzw. gebucht werden")
         End Try
-        _regeln.DruckBeendet(ende)
-        If ende.Id > 0 Then FotoAufnehmen(ende)
+        If gebucht IsNot Nothing Then _regeln.AutomatischGebucht(ende, gebucht) Else _regeln.DruckBeendet(ende)
+        If ende.Id > 0 Then FotoAufnehmen(ende, gebucht?.Id)
     End Sub
 
     ''' <summary>
-    ''' Kamerabild vom Druckende (Bambu) im Hintergrund holen, unter Fotos ablegen und am offenen Druck vermerken –
-    ''' beim Buchen wandert es in die Buchung. Ohne Kamera oder Bild bleibt es einfach weg.
+    ''' Einstellung "automatisch buchen": bucht den Druck sofort, wenn die Spule (Zuordnung zum Drucker bzw. AMS-Fach)
+    ''' und das Gewicht feststehen. Sonst bleibt er offen zum Buchen. Gibt die Buchung zurück oder Nothing.
     ''' </summary>
-    Private Sub FotoAufnehmen(ende As DruckEnde)
+    Private Function AutomatischBuchen(ende As DruckEnde) As Buchung
+        If ende.Id <= 0 OrElse _db.EinstellungLesen(BuchenEinstellungen.Automatisch) <> "1" Then Return Nothing
+        If ende.Abgebrochen AndAlso _db.EinstellungLesen(BuchenEinstellungen.AuchAbgebrochene) <> "1" Then Return Nothing
+        Dim vorschlag = BuchungVorschlagen(ende, _db.AlleLaden(), _db.DateienLaden(), _db.SpulenZuordnung(ende.DruckerId))
+        If vorschlag.FilamentId <= 0 OrElse vorschlag.Gramm <= 0 Then
+            _log.LogInformation("Nicht automatisch gebucht ({Datei}): Spule oder Gewicht unbekannt", ende.Datei)
+            Return Nothing
+        End If
+        ' Beanspruchen wie ein PC – wurde es inzwischen anders erledigt, nicht buchen
+        If Not _db.DruckEndeErledigt(ende.Id) Then Return Nothing
+        Dim vorher = _regeln.RestVorher(vorschlag.FilamentId)
+        vorschlag.Notiz = (vorschlag.Notiz & " Automatisch gebucht.").Trim()
+        Try
+            _db.DruckSpeichern(vorschlag)
+        Catch
+            _db.DruckEndeSpeichern(ende)   ' Buchen fehlgeschlagen: wieder offen legen
+            Throw
+        End Try
+        _regeln.SpuleGeaendert(vorschlag.FilamentId, vorher)
+        _log.LogInformation("Automatisch gebucht: {Gramm} g ({Datei})", vorschlag.Gramm, ende.Datei)
+        Return vorschlag
+    End Function
+
+    ''' <summary>
+    ''' Kamerabild vom Druckende (Bambu) im Hintergrund holen und unter Fotos ablegen: an der automatischen Buchung
+    ''' bzw. am offenen Druck (beim Buchen wandert es in die Buchung). Ohne Kamera oder Bild bleibt es einfach weg.
+    ''' </summary>
+    Private Sub FotoAufnehmen(ende As DruckEnde, buchungId As Long?)
         Dim d = _db.DruckerLaden().FirstOrDefault(Function(x) x.Id = ende.DruckerId)
         If d Is Nothing OrElse d.Typ <> Drucker.TypBambu Then Return
         Task.Run(Async Function()
@@ -61,14 +90,18 @@ Public Class DruckerStart
                          IO.Directory.CreateDirectory(_db.FotosOrdner)
                          Dim name = $"druck-{Date.Now:yyyyMMdd-HHmmss}-{d.Id}.jpg"
                          Await IO.File.WriteAllBytesAsync(IO.Path.Combine(_db.FotosOrdner, name), bild)
-                         ' Nur wenn der Druck noch offen ist – sonst wurde er inzwischen gebucht oder verworfen
-                         Dim offen = _db.OffeneDruckEnden().FirstOrDefault(Function(x) x.Id = ende.Id)
-                         If offen Is Nothing Then
-                             _db.FotoLoeschenWennUnbenutzt(name)
-                             Return
+                         If buchungId.HasValue Then
+                             _db.BuchungFotoSetzen(buchungId.Value, name)
+                         Else
+                             ' Nur wenn der Druck noch offen ist – sonst wurde er inzwischen gebucht oder verworfen
+                             Dim offen = _db.OffeneDruckEnden().FirstOrDefault(Function(x) x.Id = ende.Id)
+                             If offen Is Nothing Then
+                                 _db.FotoLoeschenWennUnbenutzt(name)
+                                 Return
+                             End If
+                             offen.Foto = name
+                             _db.DruckEndeAktualisieren(offen)
                          End If
-                         offen.Foto = name
-                         _db.DruckEndeAktualisieren(offen)
                          _log.LogInformation("Foto vom Druckende gespeichert: {Name}", name)
                      Catch ex As Exception
                          _log.LogWarning(ex, "Foto vom Druckende fehlgeschlagen")

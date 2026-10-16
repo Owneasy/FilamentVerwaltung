@@ -63,7 +63,7 @@ function fehler(e) {
 // ------------------------------------------------------------------ Anzeige-Helfer
 
 function titel(t) { $('#titel').textContent = t; document.title = t + ' – Filament'; }
-function inhalt(html) { $('#inhalt').innerHTML = html; }
+function inhalt(html) { $('#inhalt').innerHTML = html; if ($('#autoBuchen')) automatikVerdrahten(); }
 
 let toastTimer;
 function toast(text, istFehler = false) {
@@ -356,13 +356,15 @@ function kameraStopp() {
 async function buchenSeite() {
   titel('Buchen');
   $('#inhalt').innerHTML = reiter('buchen');
+  let auto = '';
+  try { auto = await automatikHtml(); } catch { /* ohne Schalter */ }
   const laden = async () => {
     try {
       const enden = await holen('druckenden');
       zahlBuchen(enden.length);
-      if (!enden.length) return inhalt(reiter('buchen') + '<p class="leer">Keine Drucke zum Buchen.<br><small>Fertige oder abgebrochene Drucke erscheinen hier automatisch.</small></p>');
+      if (!enden.length) return inhalt(reiter('buchen') + auto + '<p class="leer">Keine Drucke zum Buchen.<br><small>Fertige oder abgebrochene Drucke erscheinen hier automatisch.</small></p>');
       if (document.querySelector('.wisch.offen')) return;   // nicht unter dem Finger neu aufbauen
-      inhalt(reiter('buchen') + enden.map(e => wischen(`<section class="karte">
+      inhalt(reiter('buchen') + auto + enden.map(e => wischen(`<section class="karte">
           <div class="zeile">
             <div><h2>${esc(e.datei || 'Druck')}</h2><small class="leise">${esc(e.druckerName)} · ${datumZeit(e.zeitpunkt)}</small></div>
             <span class="badge ${e.abgebrochen ? 'rot' : 'gruen'}">${e.abgebrochen ? 'Abgebrochen bei ' + prozent(e.fortschritt) : 'Fertig'}</span>
@@ -1626,6 +1628,28 @@ async function dateienHochladen(dateien) {
   blattSchliessen();
   if (fertig) toast(`${fertig} Datei${fertig === 1 ? '' : 'en'} hochgeladen.`);
   navigieren();
+}
+
+
+// ------------------------------------------------------------------ Automatisch buchen (Einstellung auf dem Server)
+
+async function automatikHtml() {
+  const [an, abgebrochen] = await Promise.all([holen('einstellungen/Buchen.Automatisch'), holen('einstellungen/Buchen.AutomatischAbgebrochen')]);
+  return `<section class="karte automatik">
+      <label class="schalter"><input type="checkbox" id="autoBuchen" ${an.wert === '1' ? 'checked' : ''}> <b>Fertige Drucke automatisch buchen</b></label>
+      <small class="leise">Wenn Spule (Zuordnung am Drucker) und Gewicht feststehen. Sonst erscheint der Druck hier zum Buchen.</small>
+      <label class="schalter" id="autoAbgebrochenZeile" ${an.wert === '1' ? '' : 'hidden'}><input type="checkbox" id="autoAbgebrochen" ${abgebrochen.wert === '1' ? 'checked' : ''}> auch abgebrochene Drucke (Gewicht anteilig)</label>
+    </section>`;
+}
+
+function automatikVerdrahten() {
+  $('#autoBuchen').onchange = e => {
+    $('#autoAbgebrochenZeile').hidden = !e.target.checked;
+    schicken('einstellungen/Buchen.Automatisch', 'PUT', { wert: e.target.checked ? '1' : '0' })
+      .then(() => toast(e.target.checked ? 'Fertige Drucke werden automatisch gebucht.' : 'Automatisches Buchen aus.')).catch(fehler);
+  };
+  $('#autoAbgebrochen').onchange = e =>
+    schicken('einstellungen/Buchen.AutomatischAbgebrochen', 'PUT', { wert: e.target.checked ? '1' : '0' }).catch(fehler);
 }
 
 starten();
