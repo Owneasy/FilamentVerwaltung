@@ -152,7 +152,7 @@ Public Class MainForm
 
         ' Platzhalter schiebt den Datenbank-Bereich nach unten
         leiste.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
-        leiste.Controls.Add(New Panel With {.Margin = New Padding(0)}, 0, leiste.RowCount)
+        leiste.Controls.Add(New Panel With {.Margin = New Padding(0), .Height = 16}, 0, leiste.RowCount)
         leiste.RowCount += 1
 
         AddHandler btnVerbindung.Click, Sub(s, e) VerbindungZeigen()
@@ -220,28 +220,36 @@ Public Class MainForm
 
     ''' <summary>
     ''' Rahmen um die Seitenleiste: Die Leiste ist mindestens so hoch wie der Rahmen (der Platzhalter schiebt den unteren
-    ''' Block nach unten) und höchstens so hoch, wie ihr Inhalt braucht – dann erscheint eine Bildlaufleiste.
+    ''' Block nach unten) und höchstens so hoch, wie ihr Inhalt braucht – dann erscheint rechts eine schmale Bildlaufleiste.
     ''' </summary>
     Private Shared Function LeisteMitScrollen(leiste As TableLayoutPanel, unten As Control) As Panel
         Dim aussen As New Panel With {.Dock = DockStyle.Left, .Width = leiste.Width, .BackColor = Theme.Leiste}
-        Dim rahmen As New Panel With {.Dock = DockStyle.Fill, .BackColor = Theme.Leiste, .AutoScroll = True}
+        Dim rahmen As New Panel With {.Dock = DockStyle.Fill, .BackColor = Theme.Leiste}
+        Dim balken As New SchmaleBildlaufleiste With {.Dock = DockStyle.Right, .BackColor = Theme.Leiste, .Visible = False}
+        balken.Width = Px(rahmen, 10)
         rahmen.Controls.Add(leiste)
+        rahmen.Controls.Add(balken)
         ' Reihenfolge fürs Andocken: zuerst die füllende Fläche, dann der feste Fuß
         aussen.Controls.Add(rahmen)
         aussen.Controls.Add(unten)
+
         Dim anpassen = Sub()
                            Dim noetig = leiste.GetPreferredSize(New Size(rahmen.Width, 0)).Height
-                           Dim scrollen = noetig > rahmen.ClientSize.Height
-                           Dim breite = rahmen.Width - If(scrollen, SystemInformation.VerticalScrollBarWidth, 0)
-                           Dim hoehe = Math.Max(noetig, rahmen.ClientSize.Height)
+                           Dim sichtbar = rahmen.ClientSize.Height
+                           Dim scrollen = noetig > sichtbar
+                           balken.Visible = scrollen
+                           balken.Seite = sichtbar
+                           balken.Maximum = If(scrollen, noetig - sichtbar, 0)
+                           Dim breite = rahmen.ClientSize.Width - If(scrollen, balken.Width, 0)
+                           Dim hoehe = Math.Max(noetig, sichtbar)
                            If leiste.Width <> breite OrElse leiste.Height <> hoehe Then leiste.Size = New Size(breite, hoehe)
+                           leiste.Top = -balken.Wert
                        End Sub
         AddHandler rahmen.Resize, Sub(s, e) anpassen()
+        AddHandler balken.WertGeaendert, Sub(s, e) leiste.Top = -balken.Wert
         ' Mausrad über den Knöpfen scrollt die Leiste (das Rad geht sonst an den Knopf unter der Maus)
         Dim rad As MouseEventHandler = Sub(s, e)
-                                           If Not rahmen.VerticalScroll.Visible Then Return
-                                           Dim y = -rahmen.AutoScrollPosition.Y - Math.Sign(e.Delta) * 60
-                                           rahmen.AutoScrollPosition = New Point(0, Math.Max(0, y))
+                                           If balken.Visible Then balken.Wert -= Math.Sign(e.Delta) * Px(rahmen, 60)
                                        End Sub
         For Each c As Control In leiste.Controls
             AddHandler c.MouseWheel, rad
@@ -249,6 +257,7 @@ Public Class MainForm
             AddHandler c.VisibleChanged, Sub(s, e) anpassen()
         Next
         AddHandler leiste.MouseWheel, rad
+        AddHandler balken.MouseWheel, rad
         Return aussen
     End Function
 

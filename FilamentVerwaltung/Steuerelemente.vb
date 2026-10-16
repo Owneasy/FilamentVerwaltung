@@ -840,3 +840,136 @@ Public Class StatusPunkt
         End Using
     End Sub
 End Class
+
+''' <summary>
+''' Schmale Bildlaufleiste im Stil der Seitenleiste (statt der Windows-Leiste): abgerundeter Balken ohne Pfeile,
+''' beim Überfahren breiter und heller. Ziehen am Balken oder Klick daneben (eine Seite weiter).
+''' </summary>
+Public Class SchmaleBildlaufleiste
+    Inherits Control
+
+    Private _wert As Integer
+    Private _maximum As Integer
+    Private _seite As Integer = 1
+    Private _hover As Boolean
+    Private _ziehen As Boolean
+    Private _ziehStartY As Integer
+    Private _ziehStartWert As Integer
+
+    ''' <summary>Neue Position (0 … Maximum).</summary>
+    Public Event WertGeaendert As EventHandler
+
+    Public Sub New()
+        SetStyle(ControlStyles.UserPaint Or ControlStyles.AllPaintingInWmPaint Or ControlStyles.OptimizedDoubleBuffer Or
+                 ControlStyles.ResizeRedraw, True)
+        Width = 10
+    End Sub
+
+    ''' <summary>Größte Position (Inhaltshöhe minus sichtbare Höhe).</summary>
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property Maximum As Integer
+        Get
+            Return _maximum
+        End Get
+        Set(value As Integer)
+            _maximum = Math.Max(0, value)
+            If _wert > _maximum Then Wert = _maximum Else Invalidate()
+        End Set
+    End Property
+
+    ''' <summary>Sichtbare Höhe – bestimmt die Länge des Balkens.</summary>
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property Seite As Integer
+        Get
+            Return _seite
+        End Get
+        Set(value As Integer)
+            _seite = Math.Max(1, value)
+            Invalidate()
+        End Set
+    End Property
+
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property Wert As Integer
+        Get
+            Return _wert
+        End Get
+        Set(value As Integer)
+            Dim neu = Math.Max(0, Math.Min(_maximum, value))
+            If neu = _wert Then Return
+            _wert = neu
+            Invalidate()
+            RaiseEvent WertGeaendert(Me, EventArgs.Empty)
+        End Set
+    End Property
+
+    Private Function Balken() As Rectangle
+        Dim rand = Px(Me, 2)
+        Dim spur = Height - 2 * rand
+        Dim laenge = Math.Max(Px(Me, 30), CInt(spur * _seite / CDbl(_seite + _maximum)))
+        Dim y = rand + If(_maximum > 0, CInt((spur - laenge) * _wert / CDbl(_maximum)), 0)
+        Return New Rectangle(0, y, Width, laenge)
+    End Function
+
+    Protected Overrides Sub OnPaint(e As PaintEventArgs)
+        e.Graphics.Clear(BackColor)
+        If _maximum <= 0 Then Return
+        Dim r = Balken()
+        Dim breite = Px(Me, If(_hover OrElse _ziehen, 6, 4))
+        Dim griff As New RectangleF(Width - breite - Px(Me, 2), r.Y, breite, r.Height)
+        Dim farbe = If(_ziehen, Color.FromArgb(148, 163, 184), If(_hover, Color.FromArgb(100, 116, 139), Color.FromArgb(51, 65, 85)))
+        e.Graphics.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
+        Using pfad As New GraphicsPath(), b As New SolidBrush(farbe)
+            Dim d = griff.Width
+            pfad.AddArc(griff.X, griff.Y, d, d, 180, 180)
+            pfad.AddArc(griff.X, griff.Bottom - d, d, d, 0, 180)
+            pfad.CloseFigure()
+            e.Graphics.FillPath(b, pfad)
+        End Using
+    End Sub
+
+    Protected Overrides Sub OnMouseEnter(e As EventArgs)
+        MyBase.OnMouseEnter(e)
+        _hover = True
+        Invalidate()
+    End Sub
+
+    Protected Overrides Sub OnMouseLeave(e As EventArgs)
+        MyBase.OnMouseLeave(e)
+        _hover = False
+        Invalidate()
+    End Sub
+
+    Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
+        MyBase.OnMouseDown(e)
+        If e.Button <> MouseButtons.Left OrElse _maximum <= 0 Then Return
+        Dim r = Balken()
+        If e.Y < r.Top Then
+            Wert -= _seite
+        ElseIf e.Y > r.Bottom Then
+            Wert += _seite
+        Else
+            _ziehen = True
+            _ziehStartY = e.Y
+            _ziehStartWert = _wert
+            Capture = True
+            Invalidate()
+        End If
+    End Sub
+
+    Protected Overrides Sub OnMouseMove(e As MouseEventArgs)
+        MyBase.OnMouseMove(e)
+        If Not _ziehen Then Return
+        Dim r = Balken()
+        Dim spielraum = Height - 2 * Px(Me, 2) - r.Height
+        If spielraum > 0 Then Wert = _ziehStartWert + CInt((e.Y - _ziehStartY) * _maximum / CDbl(spielraum))
+    End Sub
+
+    Protected Overrides Sub OnMouseUp(e As MouseEventArgs)
+        MyBase.OnMouseUp(e)
+        If Not _ziehen Then Return
+        _ziehen = False
+        Capture = False
+        Invalidate()
+    End Sub
+End Class
