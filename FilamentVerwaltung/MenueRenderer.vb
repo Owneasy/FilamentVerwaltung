@@ -102,12 +102,20 @@ Public Class MenueRenderer
             ElseIf e.Item.ForeColor <> Theme.Rot Then
                 e.TextColor = If(e.Item.Selected, Theme.TextStark, Theme.TextNormal)
             End If
-            ' Menüs ohne Häkchen (z. B. Einstellungen): Text waagerecht mittig im Menü
-            Dim dd = TryCast(e.ToolStrip, ToolStripDropDownMenu)
-            If dd IsNot Nothing AndAlso TypeOf e.Item Is ToolStripMenuItem AndAlso OhneHaekchen(dd) Then
-                Dim abstand = Px(e.ToolStrip, 6)
-                e.TextRectangle = New Rectangle(abstand - e.Item.Bounds.X, e.TextRectangle.Y, e.ToolStrip.Width - 2 * abstand, e.TextRectangle.Height)
-                e.TextFormat = (e.TextFormat And Not TextFormatFlags.Left And Not TextFormatFlags.Right) Or TextFormatFlags.HorizontalCenter
+            If TypeOf e.Item Is ToolStripMenuItem Then
+                ' Senkrecht mittig über die ganze Zeilenhöhe (wie die Hervorhebung), nicht nur im Inhaltsbereich
+                Dim r = e.TextRectangle
+                r = New Rectangle(r.X, 0, r.Width, e.Item.Height)
+                Dim format = (e.TextFormat And Not TextFormatFlags.Top And Not TextFormatFlags.Bottom) Or TextFormatFlags.VerticalCenter Or TextFormatFlags.SingleLine
+                ' Menüs ohne Häkchen (z. B. Einstellungen): zusätzlich waagerecht mittig im Menü
+                Dim dd = TryCast(e.ToolStrip, ToolStripDropDownMenu)
+                If dd IsNot Nothing AndAlso OhneHaekchen(dd) Then
+                    Dim abstand = Px(e.ToolStrip, 6)
+                    r = New Rectangle(abstand - e.Item.Bounds.X, 0, e.ToolStrip.Width - 2 * abstand, e.Item.Height)
+                    format = (format And Not TextFormatFlags.Left And Not TextFormatFlags.Right) Or TextFormatFlags.HorizontalCenter
+                End If
+                e.TextRectangle = r
+                e.TextFormat = format
             End If
         End If
         MyBase.OnRenderItemText(e)
