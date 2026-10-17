@@ -398,6 +398,10 @@ Public Class MainForm
     ''' <summary>Zahl fälliger Wartungen am Menüpunkt "Drucker" (im Hintergrund; älterer Server ohne Wartung: keine Zahl).</summary>
     Private Async Sub WartungZahlAktualisieren()
         If navDrucker Is Nothing Then Return
+        If Not ServerFunktionen.Verfuegbar(_db, ServerFunktionen.Wartung) Then
+            navDrucker.Zahl = ""
+            Return
+        End If
         Try
             Dim anzahl = Await Task.Run(Function() _db.WartungLaden().Where(Function(w) w.Faellig).Count())
             If IsDisposed Then Return
@@ -442,6 +446,11 @@ Public Class MainForm
     Private Async Function GlockePruefenAsync() As Task
         Dim server = TryCast(_db, ServerDatenquelle)
         If server Is Nothing Then Return
+        ' Älterer Server ohne Benachrichtigungs-Verlauf: Glocke ausblenden, gar nicht erst fragen
+        If Not server.Kann(ServerFunktionen.Benachrichtigungen) Then
+            btnGlocke.Visible = False
+            Return
+        End If
         Try
             Dim neu = Await Task.Run(Function()
                                          Dim neueste = server.Benachrichtigungen(1).FirstOrDefault()

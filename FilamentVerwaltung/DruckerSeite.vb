@@ -503,6 +503,10 @@ Public Class DruckerSeite
 
     ''' <summary>"Wartung (2 fällig)"; bei einem älteren Server ohne Wartung ausgeblendet.</summary>
     Private Sub WartungKnopfAktualisieren()
+        If Not ServerFunktionen.Verfuegbar(_db, ServerFunktionen.Wartung) Then
+            btnWartung.Visible = False
+            Return
+        End If
         Try
             Dim faellig = _db.WartungLaden().Where(Function(w) w.Faellig).Count()
             btnWartung.Text = If(faellig > 0, $"Wartung ({faellig} fällig)", "Wartung")

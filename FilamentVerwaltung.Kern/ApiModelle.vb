@@ -31,6 +31,11 @@ End Class
 Public Class ServerInfo
     Public Property App As String = "Filament-Verwaltung"
     Public Property Version As String = ""
+    ''' <summary>
+    ''' Funktionen, die der Server kann (seit 0.2.6; ältere Server liefern keine Liste). Die App fragt neue Funktionen nur ab,
+    ''' wenn sie hier stehen – so gibt es mit einem älteren Server keine Fehler.
+    ''' </summary>
+    Public Property Funktionen As New List(Of String)
 End Class
 
 Public Class WertAnfrage
@@ -76,3 +81,19 @@ Public Class PushAbo
     Public Property Auth As String = ""
     Public Property Geraet As String = ""
 End Class
+
+''' <summary>Namen in <see cref="ServerInfo.Funktionen"/>.</summary>
+Public Module ServerFunktionen
+    Public Const Wartung As String = "wartung"
+    Public Const Benachrichtigungen As String = "benachrichtigungen"
+    Public Const HomeAssistant As String = "homeassistant"
+
+    ''' <summary>Alles, was dieser Server kann (nur beim Server selbst verwendet).</summary>
+    Public ReadOnly Alle As String() = {Wartung, Benachrichtigungen, HomeAssistant}
+
+    ''' <summary>Gibt es die Funktion bei dieser Datenquelle? Lokale Datenbank: immer; Server: siehe ServerDatenquelle.Kann.</summary>
+    Public Function Verfuegbar(db As IDatenquelle, funktion As String) As Boolean
+        Dim server = TryCast(db, ServerDatenquelle)
+        Return server Is Nothing OrElse server.Kann(funktion)
+    End Function
+End Module

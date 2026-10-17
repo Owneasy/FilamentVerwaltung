@@ -66,6 +66,24 @@ Public Class ServerDatenquelle
     ''' <summary>Version des Servers (aus /api/info, bei jeder Verbindungsprüfung aktualisiert); leer = noch unbekannt.</summary>
     Public ReadOnly Property ServerVersion As String = ""
 
+    Private _funktionen As New List(Of String)
+
+    ''' <summary>
+    ''' Kann der Server diese Funktion (<see cref="ServerFunktionen"/>)? Neuere Server nennen ihre Funktionen in /api/info;
+    ''' bei älteren entscheidet die Version, ab der es die Funktion gab. Unbekannte Version: ja (lieber versuchen).
+    ''' </summary>
+    Public Function Kann(funktion As String) As Boolean
+        If _funktionen.Contains(funktion, StringComparer.OrdinalIgnoreCase) Then Return True
+        If _funktionen.Count > 0 Then Return False
+        Dim v As Version = Nothing
+        If Not Version.TryParse(ServerVersion, v) Then Return True
+        Select Case funktion
+            Case ServerFunktionen.Benachrichtigungen : Return v >= New Version(0, 2, 5)
+            Case ServerFunktionen.HomeAssistant : Return v >= New Version(0, 2, 4)
+            Case Else : Return False
+        End Select
+    End Function
+
     ''' <summary>Meldung, wenn der Server eine Funktion der App noch nicht kennt (älteres Server-Image).</summary>
     Public Const ServerZuAlt As String = "Diese Funktion kennt der Server noch nicht. Bitte den Server aktualisieren " &
                                          "(in Unraid beim Container ""filament-server"" auf ""Update"" bzw. ""Force update"")."
@@ -138,6 +156,7 @@ Public Class ServerDatenquelle
                     Throw New HttpRequestException("Unter dieser Adresse antwortet kein Filament-Verwaltung-Server.")
                 End If
                 _ServerVersion = If(info.Version, "")
+                _funktionen = If(info.Funktionen, New List(Of String))
                 Return info
             End Using
         End Using

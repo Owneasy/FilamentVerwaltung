@@ -24,7 +24,7 @@ Public Class DatenController
 
     <HttpGet("info")>
     Public Function Info() As ServerInfo
-        Return New ServerInfo With {.Version = ServerVersion()}
+        Return New ServerInfo With {.Version = ServerVersion(), .Funktionen = ServerFunktionen.Alle.ToList()}
     End Function
 
     ' ---------- Einstellungen
