@@ -171,7 +171,7 @@ function navigieren() {
 
 window.addEventListener('hashchange', navigieren);
 document.addEventListener('click', e => {
-  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden],[data-wisch],[data-fach-waehlen],[data-fach-uebernehmen],[data-buchung],[data-gekauft]');
+  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden],[data-wisch],[data-fach-waehlen],[data-fach-uebernehmen],[data-buchung],[data-gekauft],[data-wartung]');
   if (!z) return;
   if (z.dataset.seite) { if (location.hash === '#' + z.dataset.seite) navigieren(); else location.hash = z.dataset.seite; }
   else if (z.hasAttribute('data-schliessen')) blattSchliessen();
@@ -183,6 +183,7 @@ document.addEventListener('click', e => {
   else if (z.dataset.fachWaehlen) fachWaehlen(...z.dataset.fachWaehlen.split(':').map(Number));
   else if (z.dataset.buchung) buchungZeigen(+z.dataset.buchung);
   else if (z.dataset.gekauft) gekauft(z.dataset.gekauft);
+  else if (z.dataset.wartung) wartungErledigt(+z.dataset.wartung);
   else if (z.dataset.fachUebernehmen) fachZuordnen(...z.dataset.fachUebernehmen.split(':').map(Number));
 });
 // Im Hintergrund nichts abfragen (spart Akku und Datenvolumen); beim Zurückkehren neu laden –
@@ -208,7 +209,7 @@ function phaseText(s) {
   return heizt.length ? heizt[0] + ' heizt auf' : '';
 }
 
-function druckerKarte(d, s, spulen = []) {
+function druckerKarte(d, s, spulen = [], wartung = []) {
   if (!d.aktiv) {
     return `<section class="karte"><div class="zeile"><h2>${esc(d.name)}</h2><span class="badge grau">Nicht überwacht</span></div></section>`;
   }
@@ -238,8 +239,29 @@ function druckerKarte(d, s, spulen = []) {
       ${werte.length ? `<div class="werte">${werte.join('')}</div>` : ''}
       ${z === OFFLINE && s.meldung ? `<div class="fehler">${esc(s.meldung)}</div>` : ''}
       ${z !== OFFLINE && z !== 0 ? faecherHtml(d, s, spulen) : ''}
+      ${wartungHtml(wartung.filter(w => w.druckerId === d.id))}
       ${d.typ === 'Bambu' ? `<button class="knopf" data-kamera="${d.id}">${ICON.kamera} Kamera</button>` : ''}
     </section>`;
+}
+
+// ------------------------------------------------------------------ Wartung: fällige und bald fällige Aufgaben je Drucker
+
+function wartungHtml(liste) {
+  const zeigen = liste.filter(w => w.faellig || w.bald).sort((a, b) => b.anteil - a.anteil);
+  if (!zeigen.length) return '';
+  return `<div class="wartung">${zeigen.map(w => `<div class="wartung-zeile">
+      <div><b>${esc(w.name)}</b><small class="${w.faellig ? 'fehler-text' : 'gelb-text'}">${esc(w.restText)} · ${esc(w.intervallText)}</small></div>
+      <button class="knopf klein" data-wartung="${w.id}">Erledigt</button>
+    </div>`).join('')}</div>`;
+}
+
+async function wartungErledigt(id) {
+  if (!confirm('Diese Wartung als erledigt abhaken? Der Zähler beginnt dann neu.')) return;
+  try {
+    await schicken(`wartung/${id}/erledigt`, 'POST', { wert: '' });
+    toast('Wartung abgehakt.');
+  } catch (e) { return fehler(e); }
+  navigieren();
 }
 
 // ------------------------------------------------------------------ AMS-Fächer: Zuordnung Fach → Spule
@@ -302,12 +324,13 @@ async function druckerSeite() {
   titel('Drucker');
   const aktualisieren = async () => {
     try {
-      const [drucker, live, spulen] = await Promise.all([holen('drucker'), holen('drucker/live'), holen('filament')]);
+      const [drucker, live, spulen, wartung] = await Promise.all([holen('drucker'), holen('drucker/live'), holen('filament'),
+        holen('wartung').catch(() => [])]);   // ältere Server kennen die Wartung noch nicht
       spulenCache = spulen;
       druckerListe = drucker;
       if (!drucker.length) return inhalt('<p class="leer">Noch kein Drucker angelegt.<br><small>Drucker legst du in der Windows-App unter „Drucker“ an.</small></p>');
       const status = Object.fromEntries(live.map(l => [l.druckerId, l.status]));
-      inhalt(drucker.map(d => druckerKarte(d, status[d.id], spulen)).join(''));
+      inhalt(drucker.map(d => druckerKarte(d, status[d.id], spulen, wartung)).join(''));
     } catch (e) { fehler(e); }
   };
   await aktualisieren();
@@ -1442,6 +1465,7 @@ const PUSH_REGELN = [
   ['Push.Druckende', 'Druck fertig oder abgebrochen', true],
   ['Push.SpuleKnapp', 'Spule fast leer bzw. leer (nach einer Buchung)', true],
   ['Push.DruckerFehler', 'Fehler am Drucker', true],
+  ['Push.Wartung', 'Wartung fällig', true],
   ['Push.DruckerOffline', 'Drucker länger als 3 Minuten nicht erreichbar', false]
 ];
 

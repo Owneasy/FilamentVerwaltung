@@ -440,6 +440,10 @@ Public Class DruckerSeite
         .Text = "Noch kein Drucker angebunden. Mit ""Drucker hinzufügen"" verbindest du Bambu Lab, Prusa (PrusaLink), Klipper (Moonraker) " &
                 "oder OctoPrint. Ist ein Druck fertig, schlägt die App vor, den Verbrauch zu buchen."}
     Private _filamente As New List(Of Filament)
+    Private ReadOnly btnWartung As New WebButton("Wartung", Theme.SymWartung) With {.Margin = New Padding(0, 0, 8, 0)}
+
+    ''' <summary>Im Wartungsfenster wurde etwas geändert (Zahl am Menüpunkt neu berechnen).</summary>
+    Public Event WartungGeaendert()
 
     Public Sub New(db As IDatenquelle, ueberwachung As IDruckerDienst)
         _db = db
@@ -456,6 +460,8 @@ Public Class DruckerSeite
         Dim kopf As New SeitenKopf("Drucker", "Live-Status deiner Drucker – fertige Drucke werden zum Buchen vorgeschlagen")
         Dim btnNeu As New WebButton("Drucker hinzufügen", Theme.SymNeu, KnopfStil.Primaer) With {.Margin = New Padding(0)}
         AddHandler btnNeu.Click, Sub(s, e) Bearbeiten(New Drucker(), "Drucker hinzufügen")
+        AddHandler btnWartung.Click, Sub(s, e) WartungZeigen()
+        kopf.Knoepfe.Controls.Add(btnWartung)
         kopf.Knoepfe.Controls.Add(btnNeu)
         seite.Controls.Add(kopf, 0, 0)
         karten.Controls.Add(lblLeer)
@@ -492,8 +498,33 @@ Public Class DruckerSeite
         Next
         lblLeer.Visible = drucker.Count = 0
         karten.ResumeLayout()
+        WartungKnopfAktualisieren()
     End Sub
 
+    ''' <summary>"Wartung (2 fällig)"; bei einem älteren Server ohne Wartung ausgeblendet.</summary>
+    Private Sub WartungKnopfAktualisieren()
+        Try
+            Dim faellig = _db.WartungLaden().Where(Function(w) w.Faellig).Count()
+            btnWartung.Text = If(faellig > 0, $"Wartung ({faellig} fällig)", "Wartung")
+            btnWartung.Stil = If(faellig > 0, KnopfStil.Gefahr, KnopfStil.Sekundaer)
+            btnWartung.Visible = True
+        Catch ex As Exception When ex.Message = ServerDatenquelle.ServerZuAlt
+            btnWartung.Visible = False
+        Catch ex As Exception
+            btnWartung.Text = "Wartung"
+        End Try
+        btnWartung.Parent?.PerformLayout()
+    End Sub
+
+    Private Sub WartungZeigen()
+        Using dlg As New WartungDialog(_db)
+            dlg.ShowDialog(Me)
+            If dlg.Geaendert Then
+                Neuladen()
+                RaiseEvent WartungGeaendert()
+            End If
+        End Using
+    End Sub
     Private Sub StatusGeaendert(druckerId As Long)
         If Not Visible Then Return
         Dim karte = karten.Controls.OfType(Of DruckerKarte)().FirstOrDefault(Function(k) k.Drucker.Id = druckerId)

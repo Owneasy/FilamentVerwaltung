@@ -6,6 +6,7 @@ Public Module PushEinstellungen
     Public Const SpuleKnappGrenze As String = "Push.SpuleKnappGrenze"
     Public Const DruckerOffline As String = "Push.DruckerOffline"
     Public Const DruckerFehler As String = "Push.DruckerFehler"
+    Public Const Wartung As String = "Push.Wartung"
 
     ''' <summary>Ohne Eintrag: alles an außer "Drucker nicht erreichbar".</summary>
     Public Function Standard(schluessel As String) As Boolean

@@ -340,6 +340,35 @@ Public Class ServerDatenquelle
         Schicken(HttpMethod.Put, $"drucker/{druckerId}/spulen/{slot}", New SpuleAnfrage With {.FilamentId = filamentId})
     End Sub
 
+    ' ------------------------------------------------------------------ Wartung
+
+    Public Sub DrucksekundenSetzen(druckerId As Long, sekunden As Long) Implements IDatenquelle.DrucksekundenSetzen
+        Schicken(HttpMethod.Put, $"drucker/{druckerId}/druckstunden", New WertAnfrage With {.Wert = sekunden.ToString(Globalization.CultureInfo.InvariantCulture)})
+    End Sub
+
+    Public Function WartungLaden() As List(Of Wartung) Implements IDatenquelle.WartungLaden
+        Return Abrufen(Of List(Of Wartung))("wartung")
+    End Function
+
+    Public Sub WartungSpeichern(w As Wartung) Implements IDatenquelle.WartungSpeichern
+        Dim gespeichert = Schicken(Of Wartung)(HttpMethod.Post, "wartung", w)
+        w.Id = gespeichert.Id
+        w.ErledigtAm = gespeichert.ErledigtAm
+        w.ErledigtBeiSekunden = gespeichert.ErledigtBeiSekunden
+    End Sub
+
+    Public Sub WartungLoeschen(id As Long) Implements IDatenquelle.WartungLoeschen
+        Schicken(HttpMethod.Delete, $"wartung/{id}")
+    End Sub
+
+    Public Sub WartungErledigt(id As Long, notiz As String) Implements IDatenquelle.WartungErledigt
+        Schicken(HttpMethod.Post, $"wartung/{id}/erledigt", New WertAnfrage With {.Wert = If(notiz, "")})
+    End Sub
+
+    Public Function WartungProtokollLaden() As List(Of WartungEintrag) Implements IDatenquelle.WartungProtokollLaden
+        Return Abrufen(Of List(Of WartungEintrag))("wartung/protokoll")
+    End Function
+
     ' ------------------------------------------------------------------ Dateien
 
     Public Function DateienLaden() As List(Of Datei) Implements IDatenquelle.DateienLaden

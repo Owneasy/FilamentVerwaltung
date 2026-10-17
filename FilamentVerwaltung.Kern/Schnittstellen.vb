@@ -38,6 +38,14 @@ Public Interface IDatenquelle
     Function SpulenZuordnung(druckerId As Long) As Dictionary(Of Integer, Long)
     Sub SpuleZuordnen(druckerId As Long, slot As Integer, filamentId As Long?)
 
+    ' Wartung
+    Sub DrucksekundenSetzen(druckerId As Long, sekunden As Long)
+    Function WartungLaden() As List(Of Wartung)
+    Sub WartungSpeichern(w As Wartung)
+    Sub WartungLoeschen(id As Long)
+    Sub WartungErledigt(id As Long, notiz As String)
+    Function WartungProtokollLaden() As List(Of WartungEintrag)
+
     ' Dateien
     Function DateienLaden() As List(Of Datei)
     Function DateiImportieren(quelle As String) As Datei

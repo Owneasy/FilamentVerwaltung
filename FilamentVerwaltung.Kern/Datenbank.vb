@@ -106,6 +106,26 @@ CREATE TABLE IF NOT EXISTS PushAbo (
     Geraet    TEXT NOT NULL DEFAULT '',
     Erstellt  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS Wartung (
+    Id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    DruckerId           INTEGER NOT NULL,
+    Name                TEXT    NOT NULL,
+    IntervallStunden    REAL,
+    IntervallTage       INTEGER,
+    ErledigtAm          TEXT    NOT NULL,
+    ErledigtBeiSekunden INTEGER NOT NULL DEFAULT 0,
+    Notiz               TEXT    NOT NULL DEFAULT '',
+    Gemeldet            INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS WartungProtokoll (
+    Id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    WartungId    INTEGER NOT NULL,
+    DruckerId    INTEGER NOT NULL,
+    Name         TEXT    NOT NULL,
+    Datum        TEXT    NOT NULL,
+    Druckstunden REAL    NOT NULL DEFAULT 0,
+    Notiz        TEXT    NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS Benachrichtigung (
     Id        INTEGER PRIMARY KEY AUTOINCREMENT,
     Zeitpunkt TEXT    NOT NULL,
@@ -135,6 +155,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             SpalteErgaenzen(c, "Filament", "RfidKennung", "TEXT NOT NULL DEFAULT ''")
             SpalteErgaenzen(c, "Buchung", "Foto", "TEXT NOT NULL DEFAULT ''")
             SpalteErgaenzen(c, "Filament", "Barcode", "TEXT NOT NULL DEFAULT ''")
+            SpalteErgaenzen(c, "Drucker", "Drucksekunden", "INTEGER NOT NULL DEFAULT 0")
             Dim druckerNeu = SpalteErgaenzen(c, "Buchung", "Drucker", "TEXT NOT NULL DEFAULT ''")
             Dim fehldruckNeu = SpalteErgaenzen(c, "Buchung", "Fehldruck", "INTEGER NOT NULL DEFAULT 0")
             If druckerNeu OrElse fehldruckNeu Then BuchungenNachruesten(c)
@@ -528,12 +549,12 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     Public Function DruckerLaden() As List(Of Drucker) Implements IDatenquelle.DruckerLaden
         Dim liste As New List(Of Drucker)
         Using c = Oeffnen(), cmd = c.CreateCommand()
-            cmd.CommandText = "SELECT Id, Name, Typ, Adresse, Zugang, Benutzer, Seriennummer, Aktiv FROM Drucker ORDER BY Name"
+            cmd.CommandText = "SELECT Id, Name, Typ, Adresse, Zugang, Benutzer, Seriennummer, Aktiv, Drucksekunden FROM Drucker ORDER BY Name"
             Using r = cmd.ExecuteReader()
                 While r.Read()
                     liste.Add(New Drucker With {
                         .Id = r.GetInt64(0), .Name = Text(r, 1), .Typ = Text(r, 2), .Adresse = Text(r, 3),
-                        .Zugang = Text(r, 4), .Benutzer = Text(r, 5), .Seriennummer = Text(r, 6), .Aktiv = r.GetInt64(7) <> 0})
+                        .Zugang = Text(r, 4), .Benutzer = Text(r, 5), .Seriennummer = Text(r, 6), .Aktiv = r.GetInt64(7) <> 0, .Drucksekunden = r.GetInt64(8)})
                 End While
             End Using
         End Using
@@ -560,6 +581,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     Public Sub DruckerLoeschen(id As Long) Implements IDatenquelle.DruckerLoeschen
         Using c = Oeffnen(), t = c.BeginTransaction()
             Befehl(c, t, "DELETE FROM DruckerSpule WHERE DruckerId = $id", "$id", id).ExecuteNonQuery()
+            Befehl(c, t, "DELETE FROM Wartung WHERE DruckerId = $id", "$id", id).ExecuteNonQuery()
             Befehl(c, t, "DELETE FROM Drucker WHERE Id = $id", "$id", id).ExecuteNonQuery()
             t.Commit()
         End Using
@@ -634,6 +656,117 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             Befehl(c, Nothing, "DELETE FROM PushAbo WHERE Endpunkt = $e", "$e", endpunkt).ExecuteNonQuery()
         End Using
     End Sub
+
+    ' ------------------------------------------------------------------ Wartung
+
+    ''' <summary>Gezählte Druckzeit erhöhen (Drucker-Überwachung, während gedruckt wird).</summary>
+    Public Sub DrucksekundenAddieren(druckerId As Long, sekunden As Long)
+        If sekunden <= 0 Then Return
+        Using c = Oeffnen()
+            Befehl(c, Nothing, "UPDATE Drucker SET Drucksekunden = Drucksekunden + $s WHERE Id = $id", "$s", sekunden, "$id", druckerId).ExecuteNonQuery()
+        End Using
+    End Sub
+
+    ''' <summary>Druckstunden von Hand setzen (z. B. den Zählerstand aus den Druckereinstellungen übernehmen).</summary>
+    Public Sub DrucksekundenSetzen(druckerId As Long, sekunden As Long) Implements IDatenquelle.DrucksekundenSetzen
+        Using c = Oeffnen()
+            Befehl(c, Nothing, "UPDATE Drucker SET Drucksekunden = $s WHERE Id = $id", "$s", Math.Max(0, sekunden), "$id", druckerId).ExecuteNonQuery()
+        End Using
+    End Sub
+
+    ''' <summary>Alle Wartungsaufgaben mit Druckername und aktuellen Druckstunden.</summary>
+    Public Function WartungLaden() As List(Of Wartung) Implements IDatenquelle.WartungLaden
+        Dim liste As New List(Of Wartung)
+        Using c = Oeffnen(), cmd = c.CreateCommand()
+            cmd.CommandText = "SELECT w.Id, w.DruckerId, w.Name, w.IntervallStunden, w.IntervallTage, w.ErledigtAm, w.ErledigtBeiSekunden, " &
+                              "w.Notiz, w.Gemeldet, d.Name, d.Drucksekunden FROM Wartung w JOIN Drucker d ON d.Id = w.DruckerId ORDER BY d.Name, w.Name"
+            Using r = cmd.ExecuteReader()
+                While r.Read()
+                    liste.Add(New Wartung With {
+                        .Id = r.GetInt64(0), .DruckerId = r.GetInt64(1), .Name = Text(r, 2),
+                        .IntervallStunden = If(r.IsDBNull(3), CType(Nothing, Double?), r.GetDouble(3)),
+                        .IntervallTage = If(r.IsDBNull(4), CType(Nothing, Integer?), r.GetInt32(4)),
+                        .ErledigtAm = Date.Parse(Text(r, 5), Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.RoundtripKind),
+                        .ErledigtBeiSekunden = r.GetInt64(6), .Notiz = Text(r, 7), .Gemeldet = r.GetInt64(8) <> 0,
+                        .DruckerName = Text(r, 9), .DruckerSekunden = r.GetInt64(10)})
+                End While
+            End Using
+        End Using
+        Return liste
+    End Function
+
+    ''' <summary>Neu (Id = 0: zählt ab jetzt) oder bearbeiten (Stand "zuletzt erledigt" bleibt).</summary>
+    Public Sub WartungSpeichern(w As Wartung) Implements IDatenquelle.WartungSpeichern
+        Using c = Oeffnen()
+            Dim stunden As Object = If(w.IntervallStunden.GetValueOrDefault() > 0, CObj(w.IntervallStunden.Value), DBNull.Value)
+            Dim tage As Object = If(w.IntervallTage.GetValueOrDefault() > 0, CObj(w.IntervallTage.Value), DBNull.Value)
+            If w.Id = 0 Then
+                Dim jetzt = Convert.ToInt64(Befehl(c, Nothing, "SELECT Drucksekunden FROM Drucker WHERE Id = $id", "$id", w.DruckerId).ExecuteScalar())
+                w.ErledigtAm = Date.Now
+                w.ErledigtBeiSekunden = jetzt
+                w.Id = Convert.ToInt64(Befehl(c, Nothing,
+                    "INSERT INTO Wartung (DruckerId, Name, IntervallStunden, IntervallTage, ErledigtAm, ErledigtBeiSekunden, Notiz) " &
+                    "VALUES ($d, $n, $h, $t, $am, $bei, $notiz); SELECT last_insert_rowid();",
+                    "$d", w.DruckerId, "$n", w.Name.Trim(), "$h", stunden, "$t", tage, "$am", w.ErledigtAm.ToString("o"),
+                    "$bei", jetzt, "$notiz", If(w.Notiz, "")).ExecuteScalar())
+            Else
+                ' Intervall geändert: erneut melden, falls jetzt (wieder) fällig
+                Befehl(c, Nothing, "UPDATE Wartung SET DruckerId = $d, Name = $n, IntervallStunden = $h, IntervallTage = $t, Notiz = $notiz, " &
+                                   "Gemeldet = 0 WHERE Id = $id",
+                       "$d", w.DruckerId, "$n", w.Name.Trim(), "$h", stunden, "$t", tage, "$notiz", If(w.Notiz, ""), "$id", w.Id).ExecuteNonQuery()
+            End If
+        End Using
+    End Sub
+
+    Public Sub WartungLoeschen(id As Long) Implements IDatenquelle.WartungLoeschen
+        Using c = Oeffnen()
+            Befehl(c, Nothing, "DELETE FROM Wartung WHERE Id = $id", "$id", id).ExecuteNonQuery()
+        End Using
+    End Sub
+
+    ''' <summary>Als erledigt markieren: Zähler auf jetzt setzen und ins Protokoll schreiben.</summary>
+    Public Sub WartungErledigt(id As Long, notiz As String) Implements IDatenquelle.WartungErledigt
+        Using c = Oeffnen(), t = c.BeginTransaction()
+            Dim druckerId As Long, name As String = "", sekunden As Long
+            Using r = Befehl(c, t, "SELECT w.DruckerId, w.Name, d.Drucksekunden FROM Wartung w JOIN Drucker d ON d.Id = w.DruckerId WHERE w.Id = $id",
+                             "$id", id).ExecuteReader()
+                If Not r.Read() Then Throw New InvalidOperationException("Diese Wartungsaufgabe gibt es nicht mehr.")
+                druckerId = r.GetInt64(0) : name = Text(r, 1) : sekunden = r.GetInt64(2)
+            End Using
+            Dim jetzt = Date.Now.ToString("o")
+            Befehl(c, t, "UPDATE Wartung SET ErledigtAm = $am, ErledigtBeiSekunden = $s, Gemeldet = 0 WHERE Id = $id",
+                   "$am", jetzt, "$s", sekunden, "$id", id).ExecuteNonQuery()
+            Befehl(c, t, "INSERT INTO WartungProtokoll (WartungId, DruckerId, Name, Datum, Druckstunden, Notiz) VALUES ($w, $d, $n, $am, $h, $notiz)",
+                   "$w", id, "$d", druckerId, "$n", name, "$am", jetzt, "$h", sekunden / 3600.0, "$notiz", If(notiz, "")).ExecuteNonQuery()
+            t.Commit()
+        End Using
+    End Sub
+
+    ''' <summary>Fälligkeit wurde per Push gemeldet (Server).</summary>
+    Public Sub WartungGemeldet(id As Long)
+        Using c = Oeffnen()
+            Befehl(c, Nothing, "UPDATE Wartung SET Gemeldet = 1 WHERE Id = $id", "$id", id).ExecuteNonQuery()
+        End Using
+    End Sub
+
+    ''' <summary>Erledigte Wartungen, neueste zuerst.</summary>
+    Public Function WartungProtokollLaden() As List(Of WartungEintrag) Implements IDatenquelle.WartungProtokollLaden
+        Dim liste As New List(Of WartungEintrag)
+        Using c = Oeffnen(), cmd = c.CreateCommand()
+            cmd.CommandText = "SELECT p.Id, p.WartungId, p.DruckerId, COALESCE(d.Name, ''), p.Name, p.Datum, p.Druckstunden, p.Notiz " &
+                              "FROM WartungProtokoll p LEFT JOIN Drucker d ON d.Id = p.DruckerId ORDER BY p.Id DESC LIMIT 500"
+            Using r = cmd.ExecuteReader()
+                While r.Read()
+                    liste.Add(New WartungEintrag With {
+                        .Id = r.GetInt64(0), .WartungId = r.GetInt64(1), .DruckerId = r.GetInt64(2), .DruckerName = Text(r, 3),
+                        .Name = Text(r, 4),
+                        .Datum = Date.Parse(Text(r, 5), Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.RoundtripKind),
+                        .Druckstunden = r.GetDouble(6), .Notiz = Text(r, 7)})
+                End While
+            End Using
+        End Using
+        Return liste
+    End Function
 
     ' ------------------------------------------------------------------ Verschickte Benachrichtigungen (Server)
 

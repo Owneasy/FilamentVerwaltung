@@ -29,6 +29,8 @@ Public Class Drucker
     ''' <summary>Seriennummer (Bambu Lab).</summary>
     Public Property Seriennummer As String = ""
     Public Property Aktiv As Boolean = True
+    ''' <summary>Gezählte Druckzeit in Sekunden (für Wartungsintervalle); wird nur über DrucksekundenSetzen/-Addieren geändert.</summary>
+    Public Property Drucksekunden As Long
 
     Public ReadOnly Property TypName As String
         Get

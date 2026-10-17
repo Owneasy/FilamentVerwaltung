@@ -111,6 +111,17 @@ Public Class PushRegeln
         End Try
     End Sub
 
+    ''' <summary>Wartung fällig (einmal je Fälligkeit). True = gemeldet; ist die Meldung abgeschaltet, False (dann bleibt sie offen).</summary>
+    Public Function WartungFaellig(w As Wartung) As Boolean
+        If Not Ein(PushEinstellungen.Wartung) Then Return False
+        Senden(New PushNachricht With {
+            .Titel = $"Wartung fällig – {w.DruckerName}",
+            .Text = $"{w.Name} ({w.IntervallText}) · {w.RestText}" & vbLf & "Nach dem Erledigen in der App abhaken",
+            .Ziel = "/#drucker",
+            .Kennung = $"wartung-{w.Id}"})
+        Return True
+    End Function
+
     ''' <summary>Bei jeder Abfrage eines Druckers: Fehler sofort melden, "nicht erreichbar" erst nach einigen Minuten.</summary>
     Public Sub StatusGeaendert(d As Drucker, s As DruckerStatus)
         If d Is Nothing OrElse s Is Nothing Then Return

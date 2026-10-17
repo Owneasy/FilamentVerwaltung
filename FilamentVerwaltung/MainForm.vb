@@ -45,6 +45,10 @@ Public Class MainForm
     ''' <summary>Neueste Benachrichtigung ist noch nicht angesehen (roter Punkt an der Glocke).</summary>
     Private _glockeNeu As Boolean
     Private _verbindungPruefenLaeuft As Boolean
+    ''' <summary>Menüpunkt "Drucker": zeigt die Zahl fälliger Wartungen.</summary>
+    Private navDrucker As WebButton
+    ''' <summary>Fällige Wartungen alle 5 Minuten neu zählen (die Druckstunden laufen weiter).</summary>
+    Private ReadOnly wartungTimer As New Timer With {.Interval = 300000}
 
     ' --- Updates
     Private Const EinstellungUebersprungen As String = "Update.UebersprungeneVersion"
@@ -145,7 +149,9 @@ Public Class MainForm
         tipps.SetToolTip(filamentUntermenue(1).Knopf, "Nur Spulen mit Restbestand")
         tipps.SetToolTip(filamentUntermenue(2).Knopf, "Nur leere Spulen")
         Zeile(leiste, NavEintrag("Drucke", Theme.SymDrucker, druckeSeite))
-        Zeile(leiste, NavEintrag("Drucker", Theme.SymNetzDrucker, druckerSeite))
+        navDrucker = NavEintrag("Drucker", Theme.SymNetzDrucker, druckerSeite)
+        Zeile(leiste, navDrucker)
+        AddHandler druckerSeite.WartungGeaendert, Sub() WartungZahlAktualisieren()
         Zeile(leiste, NavEintrag("Nachkauf", Theme.SymGeld, nachkaufSeite))
         Zeile(leiste, NavEintrag("Statistik", Theme.SymDiagramm, statistikSeite))
         Zeile(leiste, NavEintrag("Dateien (CAD / STL)", Theme.SymOrdner, dateienSeite))
@@ -387,6 +393,21 @@ Public Class MainForm
         End Try
     End Sub
 
+    ' ------------------------------------------------------------------ Wartung
+
+    ''' <summary>Zahl fälliger Wartungen am Menüpunkt "Drucker" (im Hintergrund; älterer Server ohne Wartung: keine Zahl).</summary>
+    Private Async Sub WartungZahlAktualisieren()
+        If navDrucker Is Nothing Then Return
+        Try
+            Dim anzahl = Await Task.Run(Function() _db.WartungLaden().Where(Function(w) w.Faellig).Count())
+            If IsDisposed Then Return
+            navDrucker.Zahl = If(anzahl > 0, anzahl.ToString(), "")
+            tipps.SetToolTip(navDrucker, If(anzahl > 0, $"{anzahl} Wartung{If(anzahl = 1, "", "en")} fällig – auf der Drucker-Seite unter ""Wartung""", ""))
+        Catch ex As Exception
+            ' Zahl bleibt, wie sie ist
+        End Try
+    End Sub
+
     ' ------------------------------------------------------------------ Einstellungen und Glocke
 
     Private Sub EinstellungenMenueZeigen(knopf As Control)
@@ -584,6 +605,9 @@ Public Class MainForm
         TryCast(_aktuelleSeite, ISeite)?.Aktivieren()
         UpdatePruefen(stumm:=True)
         _ueberwachung.Starten()
+        AddHandler wartungTimer.Tick, Sub(s, x) WartungZahlAktualisieren()
+        wartungTimer.Start()
+        WartungZahlAktualisieren()
         If TypeOf _db Is ServerDatenquelle Then
             AddHandler verbindungsTimer.Tick, Sub(s, x) VerbindungPruefen()
             verbindungsTimer.Start()
@@ -593,6 +617,7 @@ Public Class MainForm
 
     Protected Overrides Sub OnFormClosed(e As FormClosedEventArgs)
         verbindungsTimer.Dispose()
+        wartungTimer.Dispose()
         _ueberwachung.Dispose()
         MyBase.OnFormClosed(e)
     End Sub

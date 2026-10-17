@@ -27,6 +27,9 @@ Public Class DruckerUeberwachung
         Public GesendetDateiId As Long?
         Public GesendetUm As Date
         Public JobDateiId As Long?
+        ' Druckstunden-Zähler (Wartung)
+        Public LetzteAbfrage As Date = Date.MinValue
+        Public OffeneSekunden As Double
     End Class
 
     Private ReadOnly _db As IDatenquelle
@@ -222,13 +225,43 @@ Public Class DruckerUeberwachung
             End SyncLock
         End Try
         Dim ende As DruckEnde
+        Dim zuSpeichern As Long
         SyncLock _sperre
             If Not _eintraege.ContainsValue(e) Then Return  ' inzwischen entfernt
             ende = Auswerten(e, neu)
+            zuSpeichern = DruckzeitZaehlen(e, neu)
         End SyncLock
+        If zuSpeichern > 0 Then DrucksekundenSpeichern(e.Drucker.Id, zuSpeichern)
         SpulenAbgleichen(e, neu)
         RaiseEvent StatusGeaendert(e.Drucker.Id)
         If ende IsNot Nothing Then RaiseEvent DruckBeendet(ende)
+    End Sub
+
+    ''' <summary>
+    ''' Druckzeit für die Wartungsintervalle mitzählen: nur während wirklich gedruckt wird (nicht pausiert),
+    ''' höchstens eine Minute pro Abfrage (falls der Server zwischendurch stand). Gibt die zu speichernden Sekunden
+    ''' zurück – alle 5 Minuten bzw. sobald der Druck nicht mehr läuft.
+    ''' </summary>
+    Private Shared Function DruckzeitZaehlen(e As Eintrag, s As DruckerStatus) As Long
+        Dim jetzt = Date.UtcNow
+        Dim druckt = s.Zustand = DruckerZustand.Druckt
+        If druckt AndAlso e.LetzteAbfrage <> Date.MinValue Then e.OffeneSekunden += Math.Min(60, Math.Max(0, (jetzt - e.LetzteAbfrage).TotalSeconds))
+        e.LetzteAbfrage = jetzt
+        If e.OffeneSekunden >= 300 OrElse (Not druckt AndAlso e.OffeneSekunden >= 1) Then
+            Dim ganze = CLng(Math.Floor(e.OffeneSekunden))
+            e.OffeneSekunden -= ganze
+            Return ganze
+        End If
+        Return 0
+    End Function
+
+    ''' <summary>Nur wo die Datenbank direkt da ist (Server bzw. lokaler Betrieb).</summary>
+    Private Sub DrucksekundenSpeichern(druckerId As Long, sekunden As Long)
+        Try
+            TryCast(_db, Datenbank)?.DrucksekundenAddieren(druckerId, sekunden)
+        Catch ex As Exception
+            ' Nicht kritisch – höchstens ein paar Minuten fehlen
+        End Try
     End Sub
 
     ''' <summary>

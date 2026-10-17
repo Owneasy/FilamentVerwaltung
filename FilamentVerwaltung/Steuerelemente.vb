@@ -784,6 +784,30 @@ Public Module Eingabe
         Return n.Value
     End Function
 
+    ''' <summary>Fragt einen kurzen Text ab (z. B. eine Notiz). Nothing = abgebrochen.</summary>
+    Public Function Abfragen(besitzer As IWin32Window, titel As String, frage As String, vorgabe As String) As String
+        Using f As New Form With {.Text = titel, .FormBorderStyle = FormBorderStyle.FixedDialog, .MaximizeBox = False, .MinimizeBox = False,
+                                  .ShowInTaskbar = False, .StartPosition = FormStartPosition.CenterParent, .AutoSize = True,
+                                  .AutoSizeMode = AutoSizeMode.GrowAndShrink, .AutoScaleDimensions = New SizeF(96.0F, 96.0F),
+                                  .AutoScaleMode = AutoScaleMode.Dpi}
+            DialogGestalten(f)
+            Dim feld As New TextBox With {.Width = 380, .Text = If(vorgabe, ""), .Margin = New Padding(3, 8, 3, 0)}
+            Dim p As New FlowLayoutPanel With {.FlowDirection = FlowDirection.TopDown, .WrapContents = False, .AutoSize = True, .Padding = New Padding(20, 16, 20, 16)}
+            p.Controls.Add(New Label With {.Text = frage, .AutoSize = True, .MaximumSize = New Size(380, 0)})
+            p.Controls.Add(feld)
+            Dim knoepfe As New FlowLayoutPanel With {.FlowDirection = FlowDirection.RightToLeft, .AutoSize = True, .Margin = New Padding(0, 16, 0, 0)}
+            Dim btnOk As New WebButton("OK", "", KnopfStil.Primaer) With {.MinimumSize = New Size(100, 0), .Margin = New Padding(8, 0, 0, 0), .DialogResult = DialogResult.OK}
+            Dim btnAbbrechen As New WebButton("Abbrechen") With {.MinimumSize = New Size(100, 0), .Margin = New Padding(8, 0, 0, 0), .DialogResult = DialogResult.Cancel}
+            knoepfe.Controls.Add(btnAbbrechen)
+            knoepfe.Controls.Add(btnOk)
+            p.Controls.Add(knoepfe)
+            f.Controls.Add(p)
+            f.AcceptButton = btnOk
+            f.CancelButton = btnAbbrechen
+            Return If(f.ShowDialog(besitzer) = DialogResult.OK, feld.Text.Trim(), Nothing)
+        End Using
+    End Function
+
 End Module
 
 ''' <summary>Anklickbarer Statuspunkt (z. B. Verbindung zum Server): farbiger Kreis, beim Überfahren mit Ring.</summary>
