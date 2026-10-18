@@ -536,6 +536,7 @@ Public Class DruckerSeite
     End Sub
 
     Private Sub Bearbeiten(d As Drucker, titel As String)
+        Dim neu = d.Id = 0
         Using dlg As New DruckerDialog(d, titel, _ueberwachung)
             If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
             Try
@@ -544,9 +545,26 @@ Public Class DruckerSeite
                 MessageBox.Show(Me, ex.Message, "Fehler", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 Return
             End Try
+            If neu AndAlso Not dlg.Loeschen Then HerstellerplanAnbieten(d)
         End Using
         _ueberwachung.Neuladen()
         Neuladen()
+    End Sub
+
+    ''' <summary>Neuer Drucker: gleich den Wartungsplan des Herstellers anbieten (nur wenn der Server die Wartung kennt).</summary>
+    Private Sub HerstellerplanAnbieten(d As Drucker)
+        If Not ServerFunktionen.Verfuegbar(_db, ServerFunktionen.Wartung) Then Return
+        Using dlg As New HerstellerPlanDialog(New List(Of Drucker) From {d}, d.Id, neuAngelegt:=True)
+            If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
+            Try
+                Dim anzahl = WartungsPlaene.Anlegen(_db, d.Id, dlg.Plan)
+                RaiseEvent WartungGeaendert()
+                MessageBox.Show(Me, $"{anzahl} Wartungsaufgaben für {d.Name} angelegt ({dlg.Plan.Modell}). Ansehen und anpassen unter ""Wartung"".",
+                                "Wartung", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Catch ex As Exception
+                MessageBox.Show(Me, ex.Message, "Wartung", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            End Try
+        End Using
     End Sub
 
     Private Sub ProtokollZeigen(d As Drucker)

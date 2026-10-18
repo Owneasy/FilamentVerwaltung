@@ -38,7 +38,7 @@ Public Class WartungDialog
         AutoScaleMode = AutoScaleMode.Dpi
         DialogGestalten(Me)
         Text = "Wartung"
-        Size = New Size(980, 580)
+        Size = New Size(1120, 580)
         MinimumSize = New Size(700, 420)
         MinimizeBox = False
         ShowInTaskbar = False
@@ -99,10 +99,12 @@ Public Class WartungDialog
         Dim links As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False, .Margin = New Padding(0)}
         Dim btnNeu As New WebButton("Neue Aufgabe", Theme.SymNeu)
         Dim btnStunden As New WebButton("Druckstunden", Theme.SymUhr)
+        Dim btnPlan As New WebButton("Herstellerplan", Theme.SymHinzufuegen)
         links.Controls.Add(btnErledigt)
         links.Controls.Add(btnNeu)
         links.Controls.Add(btnBearbeiten)
         links.Controls.Add(btnLoeschen)
+        links.Controls.Add(btnPlan)
         links.Controls.Add(btnStunden)
         links.Controls.Add(btnAnsicht)
         Dim btnSchliessen As New WebButton("Schließen") With {.Margin = New Padding(0), .DialogResult = DialogResult.Cancel}
@@ -115,6 +117,7 @@ Public Class WartungDialog
         AddHandler btnBearbeiten.Click, Sub(s, e) Bearbeiten()
         AddHandler btnLoeschen.Click, Sub(s, e) Loeschen()
         AddHandler btnStunden.Click, Sub(s, e) DruckstundenSetzen()
+        AddHandler btnPlan.Click, Sub(s, e) HerstellerplanAnlegen()
         AddHandler btnAnsicht.Click, Sub(s, e) AnsichtWechseln()
 
         Controls.Add(t)
@@ -237,6 +240,23 @@ Public Class WartungDialog
     End Sub
 
     ''' <summary>Zählerstand eines Druckers übernehmen, z. B. die Gesamtdruckzeit aus den Einstellungen des Druckers.</summary>
+    ''' <summary>Wartungsplan des Herstellers für einen Drucker übernehmen.</summary>
+    Private Sub HerstellerplanAnlegen()
+        If _drucker.Count = 0 Then Return
+        Dim vorher = grid.Ausgewaehlt(Of Wartung)()
+        Using dlg As New HerstellerPlanDialog(_drucker, If(vorher?.DruckerId, _drucker(0).Id))
+            If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
+            Try
+                Dim anzahl = WartungsPlaene.Anlegen(_db, dlg.DruckerId, dlg.Plan)
+                _Geaendert = True
+                Laden()
+                If anzahl = 0 Then MessageBox.Show(Me, "Alle Aufgaben dieses Plans gibt es für den Drucker schon.", "Wartung", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Catch ex As Exception
+                MessageBox.Show(Me, ex.Message, "Wartung", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            End Try
+        End Using
+    End Sub
+
     Private Sub DruckstundenSetzen()
         If _drucker.Count = 0 Then Return
         Dim vorher = grid.Ausgewaehlt(Of Wartung)()
@@ -423,5 +443,105 @@ Public Class DruckstundenDialog
         Controls.Add(p)
         AcceptButton = btnOk
         CancelButton = btnAbbrechen
+    End Sub
+End Class
+
+''' <summary>
+''' Wartungsplan des Herstellers für einen Drucker übernehmen: Modell wählen, Aufgaben ansehen, anlegen.
+''' Aufgaben, die es für den Drucker schon gibt (gleicher Name), werden übersprungen.
+''' </summary>
+Public Class HerstellerPlanDialog
+    Inherits Form
+
+    Private ReadOnly _drucker As List(Of Drucker)
+    Private ReadOnly cboDrucker As New ComboBox With {.Width = 380, .DropDownStyle = ComboBoxStyle.DropDownList}
+    Private ReadOnly cboPlan As New ComboBox With {.Width = 380, .DropDownStyle = ComboBoxStyle.DropDownList}
+    Private ReadOnly lblAufgaben As New Label With {.AutoSize = True, .MaximumSize = New Size(440, 0), .ForeColor = Theme.TextNormal, .Margin = New Padding(3, 10, 3, 0)}
+    Private ReadOnly lnkQuelle As New LinkLabel With {.AutoSize = True, .Margin = New Padding(3, 8, 3, 0), .LinkColor = Theme.Akzent,
+                                                      .ActiveLinkColor = Theme.AkzentHover, .LinkBehavior = LinkBehavior.HoverUnderline}
+
+    Public ReadOnly Property DruckerId As Long
+    Public ReadOnly Property Plan As WartungsPlan
+
+    ''' <param name="neuAngelegt">Gerade angelegter Drucker: Text und Knopf "Nicht jetzt" passen dazu.</param>
+    Public Sub New(drucker As List(Of Drucker), auswahl As Long, Optional neuAngelegt As Boolean = False)
+        _drucker = drucker
+        AutoScaleDimensions = New SizeF(96.0F, 96.0F)
+        AutoScaleMode = AutoScaleMode.Dpi
+        DialogGestalten(Me)
+        Text = "Wartungsplan des Herstellers"
+        FormBorderStyle = FormBorderStyle.FixedDialog
+        MaximizeBox = False
+        MinimizeBox = False
+        ShowInTaskbar = False
+        StartPosition = FormStartPosition.CenterParent
+        AutoSize = True
+        AutoSizeMode = AutoSizeMode.GrowAndShrink
+
+        For Each d In drucker
+            cboDrucker.Items.Add(d.Name)
+        Next
+        AddHandler cboDrucker.SelectedIndexChanged, Sub(s, e) PlaeneFuellen()
+        AddHandler cboPlan.SelectedIndexChanged, Sub(s, e) PlanZeigen()
+        AddHandler lnkQuelle.LinkClicked, Sub(s, e)
+                                              Try
+                                                  Process.Start(New ProcessStartInfo(lnkQuelle.Tag.ToString()) With {.UseShellExecute = True})
+                                              Catch ex As Exception
+                                              End Try
+                                          End Sub
+
+        Dim p As New FlowLayoutPanel With {.FlowDirection = FlowDirection.TopDown, .WrapContents = False, .AutoSize = True, .Padding = New Padding(20, 16, 20, 16)}
+        p.Controls.Add(New Label With {
+            .Text = If(neuAngelegt,
+                       "Soll der Wartungsplan des Herstellers für den neuen Drucker angelegt werden? Bitte das Modell wählen.",
+                       "Legt die Wartungsaufgaben nach Angaben des Herstellers an. Aufgaben, die es schon gibt, werden übersprungen."),
+            .AutoSize = True, .MaximumSize = New Size(440, 0), .Margin = New Padding(3, 0, 3, 12)})
+        p.Controls.Add(New Label With {.Text = "Drucker", .AutoSize = True, .ForeColor = Theme.TextLeise, .Margin = New Padding(3, 0, 3, 2)})
+        p.Controls.Add(cboDrucker)
+        p.Controls.Add(New Label With {.Text = "Modell", .AutoSize = True, .ForeColor = Theme.TextLeise, .Margin = New Padding(3, 10, 3, 2)})
+        p.Controls.Add(cboPlan)
+        p.Controls.Add(lblAufgaben)
+        p.Controls.Add(lnkQuelle)
+
+        Dim knoepfe As New FlowLayoutPanel With {.FlowDirection = FlowDirection.RightToLeft, .AutoSize = True, .Margin = New Padding(0, 16, 0, 0)}
+        Dim btnOk As New WebButton("Anlegen", "", KnopfStil.Primaer) With {.MinimumSize = New Size(100, 0), .Margin = New Padding(8, 0, 0, 0)}
+        Dim btnAbbrechen As New WebButton(If(neuAngelegt, "Nicht jetzt", "Abbrechen")) With {.MinimumSize = New Size(100, 0), .Margin = New Padding(8, 0, 0, 0),
+                                                                                         .DialogResult = DialogResult.Cancel}
+        AddHandler btnOk.Click, Sub(s, e)
+                                    _DruckerId = _drucker(cboDrucker.SelectedIndex).Id
+                                    _Plan = TryCast(cboPlan.SelectedItem, WartungsPlan)
+                                    If _Plan IsNot Nothing Then DialogResult = DialogResult.OK
+                                End Sub
+        knoepfe.Controls.Add(btnAbbrechen)
+        knoepfe.Controls.Add(btnOk)
+        p.Controls.Add(knoepfe)
+        Controls.Add(p)
+        AcceptButton = btnOk
+        CancelButton = btnAbbrechen
+
+        cboDrucker.SelectedIndex = Math.Max(0, drucker.FindIndex(Function(d) d.Id = auswahl))
+        ' Nur ein Drucker zur Auswahl (z. B. gerade angelegt): Feld nicht änderbar
+        cboDrucker.Enabled = Not neuAngelegt
+    End Sub
+
+    ''' <summary>Pläne zum Druckertyp zuerst (Bambu Lab, Prusa …), der erste passende ist vorausgewählt.</summary>
+    Private Sub PlaeneFuellen()
+        Dim d = _drucker(cboDrucker.SelectedIndex)
+        cboPlan.Items.Clear()
+        For Each vorlage In WartungsPlaene.Fuer(d.Typ)
+            cboPlan.Items.Add(vorlage)
+        Next
+        cboPlan.SelectedIndex = 0
+    End Sub
+
+    Private Sub PlanZeigen()
+        Dim gewaehlt = TryCast(cboPlan.SelectedItem, WartungsPlan)
+        If gewaehlt Is Nothing Then Return
+        lblAufgaben.Text = String.Join(Environment.NewLine, gewaehlt.Aufgaben.Select(Function(a)
+                                                                                   Dim w As New Wartung With {.IntervallStunden = a.Stunden, .IntervallTage = a.Tage}
+                                                                                   Return $"• {a.Name} – {w.IntervallText}"
+                                                                               End Function))
+        lnkQuelle.Text = "Quelle: " & New Uri(gewaehlt.Quelle).Host
+        lnkQuelle.Tag = gewaehlt.Quelle
     End Sub
 End Class
