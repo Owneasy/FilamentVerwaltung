@@ -41,6 +41,8 @@ Public Class StatistikSeite
     Private ReadOnly fehlDrucker As New BalkenDiagramm With {.LeerText = "Keine Fehldrucke in den letzten 12 Monaten."}
     Private ReadOnly karteFehlMonate As DiagrammKarte
     Private ReadOnly karteFehlDrucker As DiagrammKarte
+    Private ReadOnly fehlGruende As New BalkenDiagramm With {.LeerText = "Keine Fehldrucke mit Grund in den letzten 12 Monaten."}
+    Private ReadOnly karteFehlGruende As DiagrammKarte
     Private ReadOnly prognose As New WebTabelle()
     Private ReadOnly prognoseQuelle As New BindingSource()
     Private kartePrognose As TabellenKarte
@@ -50,6 +52,7 @@ Public Class StatistikSeite
         karteMonate = New DiagrammKarte("Verbrauch pro Monat", "Letzte 12 Monate · Drucke und Nachwiegen", monate, "Verbrauch")
         karteMaterial = New DiagrammKarte("Verbrauch nach Material", "Letzte 12 Monate · Anteil am Gesamtverbrauch", materialien, "Verbrauch")
         karteFehlMonate = New DiagrammKarte("Fehldrucke pro Monat", "Letzte 12 Monate · verlorenes Filament (abgebrochene und markierte Drucke)", fehlMonate, "Verlust")
+        karteFehlGruende = New DiagrammKarte("Fehldrucke nach Grund", "Letzte 12 Monate · was am häufigsten schiefgeht", fehlGruende, "Fehldrucke")
         karteFehlDrucker = New DiagrammKarte("Fehldrucke je Drucker", "Letzte 12 Monate · Anzahl und Anteil an allen Drucken", fehlDrucker, "Fehldrucke")
         OberflaecheAufbauen()
     End Sub
@@ -88,13 +91,16 @@ Public Class StatistikSeite
         diagramme.Controls.Add(karteMaterial, 1, 0)
         seite.Controls.Add(diagramme, 0, 2)
 
-        Dim fehl As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 2, .RowCount = 1, .Margin = New Padding(0, 0, 0, 16)}
-        fehl.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 58))
-        fehl.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 42))
+        Dim fehl As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 3, .RowCount = 1, .Margin = New Padding(0, 0, 0, 16)}
+        fehl.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 40))
+        fehl.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 30))
+        fehl.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 30))
         karteFehlMonate.Margin = New Padding(0, 0, 8, 0)
-        karteFehlDrucker.Margin = New Padding(8, 0, 0, 0)
+        karteFehlDrucker.Margin = New Padding(8, 0, 8, 0)
+        karteFehlGruende.Margin = New Padding(8, 0, 0, 0)
         fehl.Controls.Add(karteFehlMonate, 0, 0)
         fehl.Controls.Add(karteFehlDrucker, 1, 0)
+        fehl.Controls.Add(karteFehlGruende, 2, 0)
         seite.Controls.Add(fehl, 0, 3)
 
         prognose.DataSource = prognoseQuelle
@@ -269,6 +275,23 @@ Public Class StatistikSeite
             .Wert = x.Fehl.Count,
             .WertText = $"{x.Fehl.Count} · {x.Fehl.Count / CDbl(x.Alle):P0}",
             .Zusatz = $"{x.Fehl.Count} von {x.Alle} Drucken · {DiagrammBasis.GrammKompakt(x.Fehl.Sum(Function(b) CDbl(b.Gramm)))} · Kosten {x.Fehl.Sum(Function(b) b.Kosten):C2}"
+        }).ToList())
+
+        ' Nach Grund: höchstens 6 Balken + "Andere"; ohne Grund als eigene Gruppe
+        Dim fehlZeitraum = zeitraum.Where(Function(b) b.Fehldruck).ToList()
+        Dim gruende = fehlZeitraum.GroupBy(Function(b) If(String.IsNullOrWhiteSpace(b.FehldruckGrund), "Ohne Angabe", b.FehldruckGrund.Trim()), StringComparer.OrdinalIgnoreCase).
+                                 Select(Function(gr) (Name:=gr.Key, Liste:=gr.ToList())).OrderByDescending(Function(x) x.Liste.Count).ToList()
+        If gruende.Count > 7 Then
+            Dim rest = gruende.Skip(6).SelectMany(Function(x) x.Liste).ToList()
+            gruende = gruende.Take(6).ToList()
+            gruende.Add((Name:="Andere", Liste:=rest))
+        End If
+        karteFehlGruende.Setzen(gruende.Select(Function(x) New DiagrammWert With {
+            .Beschriftung = x.Name,
+            .Titel = x.Name,
+            .Wert = x.Liste.Count,
+            .WertText = $"{x.Liste.Count} · {x.Liste.Count / CDbl(Math.Max(1, fehlZeitraum.Count)):P0}",
+            .Zusatz = $"{DiagrammBasis.GrammKompakt(x.Liste.Sum(Function(b) CDbl(b.Gramm)))} · Kosten {x.Liste.Sum(Function(b) b.Kosten):C2}"
         }).ToList())
     End Sub
 

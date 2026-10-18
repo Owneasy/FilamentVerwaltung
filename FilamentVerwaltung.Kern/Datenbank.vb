@@ -158,6 +158,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             SpalteErgaenzen(c, "Drucker", "Drucksekunden", "INTEGER NOT NULL DEFAULT 0")
             Dim druckerNeu = SpalteErgaenzen(c, "Buchung", "Drucker", "TEXT NOT NULL DEFAULT ''")
             Dim fehldruckNeu = SpalteErgaenzen(c, "Buchung", "Fehldruck", "INTEGER NOT NULL DEFAULT 0")
+            SpalteErgaenzen(c, "Buchung", "FehldruckGrund", "TEXT NOT NULL DEFAULT ''")
             If druckerNeu OrElse fehldruckNeu Then BuchungenNachruesten(c)
         End Using
     End Sub
@@ -439,12 +440,12 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
                 BuchungEinfuegen(c, t, b)
             Else
                 Befehl(c, t, "UPDATE Buchung SET FilamentId = $filament, Datum = $datum, Art = $art, Gramm = $gramm, " &
-                             "Bezeichnung = $bezeichnung, DateiId = $datei, Druckzeit = $zeit, Kosten = $kosten, Notiz = $notiz, Foto = $foto, Drucker = $drucker, Fehldruck = $fehl " &
+                             "Bezeichnung = $bezeichnung, DateiId = $datei, Druckzeit = $zeit, Kosten = $kosten, Notiz = $notiz, Foto = $foto, Drucker = $drucker, Fehldruck = $fehl, FehldruckGrund = $grund " &
                              "WHERE Id = $id",
                        "$filament", b.FilamentId, "$datum", b.Datum.ToString(DatumZeitFormat, CultureInfo.InvariantCulture),
                        "$art", b.Art, "$gramm", b.Gramm, "$bezeichnung", If(b.Bezeichnung, "").Trim(),
                        "$datei", b.DateiId, "$zeit", b.Druckzeit, "$kosten", CDbl(b.Kosten), "$notiz", If(b.Notiz, ""),
-                       "$foto", If(b.Foto, ""), "$drucker", If(b.Drucker, ""), "$fehl", If(b.Fehldruck, 1, 0), "$id", b.Id).ExecuteNonQuery()
+                       "$foto", If(b.Foto, ""), "$drucker", If(b.Drucker, ""), "$fehl", If(b.Fehldruck, 1, 0), "$grund", If(b.Fehldruck, If(b.FehldruckGrund, ""), ""), "$id", b.Id).ExecuteNonQuery()
             End If
             t.Commit()
         End Using
@@ -472,7 +473,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText =
                 "SELECT b.Id, b.FilamentId, b.Datum, b.Art, b.Gramm, b.Bezeichnung, b.DateiId, b.Druckzeit, b.Kosten, b.Notiz, " &
-                "f.Code, f.Hersteller, f.Material, f.Farbe, d.Name, b.Foto, b.Drucker, b.Fehldruck " &
+                "f.Code, f.Hersteller, f.Material, f.Farbe, d.Name, b.Foto, b.Drucker, b.Fehldruck, b.FehldruckGrund " &
                 "FROM Buchung b LEFT JOIN Filament f ON f.Id = b.FilamentId LEFT JOIN Datei d ON d.Id = b.DateiId " &
                 "ORDER BY b.Datum DESC, b.Id DESC"
             Using r = cmd.ExecuteReader()
@@ -498,7 +499,8 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
                         .DateiName = Text(r, 14),
                         .Foto = Text(r, 15),
                         .Drucker = Text(r, 16),
-                        .Fehldruck = r.GetInt64(17) <> 0
+                        .Fehldruck = r.GetInt64(17) <> 0,
+                        .FehldruckGrund = Text(r, 18)
                     })
                 End While
             End Using
@@ -520,11 +522,11 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
 
     Private Sub BuchungEinfuegen(c As SqliteConnection, t As SqliteTransaction, b As Buchung)
         b.Id = Convert.ToInt64(Befehl(c, t,
-            "INSERT INTO Buchung (FilamentId, Datum, Art, Gramm, Bezeichnung, DateiId, Druckzeit, Kosten, Notiz, Foto, Drucker, Fehldruck) " &
-            "VALUES ($filament, $datum, $art, $gramm, $bezeichnung, $datei, $zeit, $kosten, $notiz, $foto, $drucker, $fehl); SELECT last_insert_rowid();",
+            "INSERT INTO Buchung (FilamentId, Datum, Art, Gramm, Bezeichnung, DateiId, Druckzeit, Kosten, Notiz, Foto, Drucker, Fehldruck, FehldruckGrund) " &
+            "VALUES ($filament, $datum, $art, $gramm, $bezeichnung, $datei, $zeit, $kosten, $notiz, $foto, $drucker, $fehl, $grund); SELECT last_insert_rowid();",
             "$filament", b.FilamentId, "$datum", b.Datum.ToString(DatumZeitFormat, CultureInfo.InvariantCulture),
             "$art", b.Art, "$gramm", b.Gramm, "$bezeichnung", If(b.Bezeichnung, "").Trim(), "$datei", b.DateiId,
-            "$zeit", b.Druckzeit, "$kosten", CDbl(b.Kosten), "$notiz", If(b.Notiz, ""), "$foto", If(b.Foto, ""), "$drucker", If(b.Drucker, ""), "$fehl", If(b.Fehldruck, 1, 0)).ExecuteScalar())
+            "$zeit", b.Druckzeit, "$kosten", CDbl(b.Kosten), "$notiz", If(b.Notiz, ""), "$foto", If(b.Foto, ""), "$drucker", If(b.Drucker, ""), "$fehl", If(b.Fehldruck, 1, 0), "$grund", If(b.Fehldruck, If(b.FehldruckGrund, ""), "")).ExecuteScalar())
     End Sub
 
     Private Shared Function Kosten(gramm As Integer, preis As Decimal, gewicht As Integer) As Decimal

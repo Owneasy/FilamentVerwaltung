@@ -26,6 +26,8 @@ Public Class Buchung
     Public Property Drucker As String = ""
     ''' <summary>Fehldruck: abgebrochen oder misslungen (für die Fehldruck-Statistik).</summary>
     Public Property Fehldruck As Boolean
+    ''' <summary>Warum der Druck misslungen ist (siehe <see cref="FehldruckGruende"/>); leer = ohne Angabe.</summary>
+    Public Property FehldruckGrund As String = ""
 
     ' --- Anzeige (aus den verknüpften Tabellen geladen)
     Public Property FilamentCode As String = ""
@@ -50,3 +52,20 @@ Public Class Buchung
     End Function
 
 End Class
+
+''' <summary>Auswahl für den Grund eines Fehldrucks (eigener Text ist auch möglich).</summary>
+Public Module FehldruckGruende
+    Public Const Abgebrochen As String = "Absichtlich abgebrochen"
+    Public ReadOnly Liste As String() = {
+        "Haftung / vom Bett gelöst",
+        "Spaghetti",
+        "Verstopfung / Unterextrusion",
+        "Layer-Shift",
+        "Warping / Ecken hochgebogen",
+        "Filament leer oder gerissen",
+        "Supports / Überhänge",
+        "Fehler im Modell oder Slicer",
+        "Drucker-Fehler",
+        Abgebrochen,
+        "Sonstiges"}
+End Module

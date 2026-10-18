@@ -24,7 +24,8 @@ Public Class DruckDialog
     Private ReadOnly numMinuten As New NumericUpDown With {.Maximum = 59, .Width = 60}
     Private ReadOnly dtpDatum As New DateTimePicker With {.Format = DateTimePickerFormat.Custom, .CustomFormat = "dd.MM.yyyy  HH:mm", .Width = 160}
     Private ReadOnly txtNotiz As New TextBox With {.Width = 360, .Height = 50, .Multiline = True, .ScrollBars = ScrollBars.Vertical}
-    Private ReadOnly chkFehldruck As New CheckBox With {.Text = "Fehldruck (abgebrochen oder misslungen)", .AutoSize = True}
+    Private ReadOnly chkFehldruck As New CheckBox With {.Text = "Fehldruck", .AutoSize = True, .Margin = New Padding(3, 6, 10, 3)}
+    Private ReadOnly cboGrund As New ComboBox With {.Width = 260, .DropDownStyle = ComboBoxStyle.DropDown}
     Private ReadOnly lblVorschau As New Label With {.AutoSize = True, .Font = Theme.SchriftFett, .ForeColor = Theme.Akzent,
                                                     .Margin = New Padding(3, 10, 3, 3)}
     Private ReadOnly lblDateiInfo As New Label With {.AutoSize = True, .ForeColor = Theme.TextLeise, .Font = Theme.SchriftKlein,
@@ -59,7 +60,11 @@ Public Class DruckDialog
         numMinuten.Value = (zeit Mod 3600) \ 60
         dtpDatum.Value = b.Datum
         txtNotiz.Text = b.Notiz
+        cboGrund.Items.AddRange(FehldruckGruende.Liste)
+        cboGrund.Text = b.FehldruckGrund
         chkFehldruck.Checked = b.Fehldruck
+        cboGrund.Enabled = b.Fehldruck
+        AddHandler chkFehldruck.CheckedChanged, Sub(s, e) cboGrund.Enabled = chkFehldruck.Checked
         ' Datei zuletzt setzen: übernimmt nur Werte, die noch leer sind
         cboDatei.SelectedIndex = Math.Max(0, dateiIndex)
 
@@ -126,7 +131,10 @@ Public Class DruckDialog
         Zeile(t, "Druckzeit:", zeit)
         Zeile(t, "Datum:", dtpDatum)
         Zeile(t, "Notiz:", txtNotiz)
-        Zeile(t, "", chkFehldruck)
+        Dim fehl As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False, .Margin = New Padding(0)}
+        fehl.Controls.Add(chkFehldruck)
+        fehl.Controls.Add(cboGrund)
+        Zeile(t, "", fehl)
         t.Controls.Add(lblVorschau, 1, t.RowCount)
         t.RowCount += 1
 
@@ -240,6 +248,7 @@ Public Class DruckDialog
         _b.Datum = dtpDatum.Value
         _b.Notiz = txtNotiz.Text
         _b.Fehldruck = chkFehldruck.Checked
+        _b.FehldruckGrund = If(chkFehldruck.Checked, cboGrund.Text.Trim(), "")
         DialogResult = DialogResult.OK
     End Sub
 

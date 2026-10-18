@@ -428,9 +428,11 @@ async function buchenFormular(id) {
     <label>Verbrauch in Gramm<input id="bGramm" type="number" inputmode="numeric" min="0" value="${vorschlag.gramm}"></label>
     ${vorschlag.druckzeit ? `<p class="leise">Druckzeit: ${dauer(vorschlag.druckzeit)}</p>` : ''}
     <label class="schalter"><input type="checkbox" id="bFehl" ${vorschlag.fehldruck ? 'checked' : ''}> Fehldruck (abgebrochen oder misslungen)</label>
+    ${grundAuswahl('bGrund', vorschlag.fehldruckGrund, !vorschlag.fehldruck)}
     <p class="leise">${esc(vorschlag.notiz)}</p>
     <div class="knoepfe"><button class="knopf" data-schliessen>Abbrechen</button><button class="primaer" id="bOk">Buchen</button></div>`);
   if (vorschlag.foto) fotoLaden(vorschlag.foto, $('#bFoto'));
+  $('#bFehl').onchange = e => { $('#bGrund').closest('label').hidden = !e.target.checked; };
   $('#bOk').onclick = async () => {
     const filamentId = +$('#bSpule').value;
     const gramm = parseInt($('#bGramm').value, 10);
@@ -438,7 +440,7 @@ async function buchenFormular(id) {
     if (!(gramm >= 0)) return toast('Bitte den Verbrauch in Gramm eingeben.', true);
     $('#bOk').disabled = true;
     try {
-      await schicken(`druckenden/${id}/buchen`, 'POST', { ...vorschlag, filamentId, gramm, fehldruck: $('#bFehl').checked, bezeichnung: $('#bBezeichnung').value.trim() });
+      await schicken(`druckenden/${id}/buchen`, 'POST', { ...vorschlag, filamentId, gramm, fehldruck: $('#bFehl').checked, fehldruckGrund: $('#bFehl').checked ? $('#bGrund').value : '', bezeichnung: $('#bBezeichnung').value.trim() });
       blattSchliessen();
       toast(`Gebucht: ${gramm} g`);
       druckendenZaehlen();
@@ -1503,6 +1505,18 @@ function reiter(gruppe) {
 let verlaufSuche = '';
 let verlaufNurFehl = false;
 const istVerbrauch = b => b.art !== 'Korrektur' && b.gramm > 0;
+const FEHLDRUCK_GRUENDE = ['Haftung / vom Bett gelöst', 'Spaghetti', 'Verstopfung / Unterextrusion', 'Layer-Shift',
+  'Warping / Ecken hochgebogen', 'Filament leer oder gerissen', 'Supports / Überhänge', 'Fehler im Modell oder Slicer',
+  'Drucker-Fehler', 'Absichtlich abgebrochen', 'Sonstiges'];
+
+// Auswahl "Grund" für einen Fehldruck (versteckt, solange kein Fehldruck angehakt ist)
+function grundAuswahl(id, wert, versteckt) {
+  const liste = wert && !FEHLDRUCK_GRUENDE.includes(wert) ? [wert, ...FEHLDRUCK_GRUENDE] : FEHLDRUCK_GRUENDE;
+  return `<label ${versteckt ? 'hidden' : ''}>Grund<select id="${id}">
+    <option value="">– ohne Angabe –</option>
+    ${liste.map(g => `<option ${g === wert ? 'selected' : ''}>${esc(g)}</option>`).join('')}
+  </select></label>`;
+}
 const euro = x => (x || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 
 async function verlaufSeite() {
@@ -1553,17 +1567,24 @@ async function buchungZeigen(id) {
   if (!b) return toast('Diesen Eintrag gibt es nicht mehr.', true);
   const zeilen = [['Datum', datumZeit(b.datum)], ['Art', b.art], ['Spule', `${b.filamentCode} ${b.filamentText}`.trim()],
     ['Verbrauch', `${zahl(b.gramm)} g`], ['Kosten', b.art === 'Druck' ? euro(b.kosten) : ''], ['Druckzeit', dauer(b.druckzeit)],
-    ['Drucker', b.drucker], ['Datei', b.dateiName], ['Notiz', b.notiz]].filter(z => z[1]);
+    ['Drucker', b.drucker], ['Fehldruck', b.fehldruck ? (b.fehldruckGrund || 'ohne Angabe') : ''], ['Datei', b.dateiName], ['Notiz', b.notiz]].filter(z => z[1]);
   blattOeffnen(`<div class="zeile"><h2>${esc(b.bezeichnung || b.art)}</h2><button class="knopf" data-schliessen>Schließen</button></div>
     ${b.foto ? '<img class="druckfoto" id="vFoto" alt="Foto vom Druckende">' : ''}
     <dl>${zeilen.map(z => `<dt>${z[0]}</dt><dd>${esc(z[1])}</dd>`).join('')}</dl>
-    ${b.art === 'Druck' ? `<label class="schalter"><input type="checkbox" id="vFehldruck" ${b.fehldruck ? 'checked' : ''}> Fehldruck (abgebrochen oder misslungen)</label>` : ''}
+    ${b.art === 'Druck' ? `<label class="schalter"><input type="checkbox" id="vFehldruck" ${b.fehldruck ? 'checked' : ''}> Fehldruck (abgebrochen oder misslungen)</label>
+      ${grundAuswahl('vGrund', b.fehldruckGrund, !b.fehldruck)}` : ''}
     <div class="knoepfe"><button class="knopf gefahr" id="vLoeschen">Löschen …</button></div>`);
   if (b.foto) fotoLaden(b.foto, $('#vFoto'));
+  const fehlSpeichern = async () => {
+    const fehldruck = $('#vFehldruck').checked, fehldruckGrund = fehldruck ? $('#vGrund').value : '';
+    await schicken('buchungen/druck', 'POST', { ...b, fehldruck, fehldruckGrund });
+    Object.assign(b, { fehldruck, fehldruckGrund });
+  };
+  if ($('#vGrund')) $('#vGrund').onchange = () => fehlSpeichern().then(() => toast('Grund gespeichert')).catch(fehler);
   if ($('#vFehldruck')) $('#vFehldruck').onchange = async e => {
+    $('#vGrund').closest('label').hidden = !e.target.checked;
     try {
-      await schicken('buchungen/druck', 'POST', { ...b, fehldruck: e.target.checked });
-      b.fehldruck = e.target.checked;
+      await fehlSpeichern();
       toast(b.fehldruck ? 'Als Fehldruck markiert' : 'Kein Fehldruck mehr');
       if (location.hash === '#verlauf') verlaufSeite();
     } catch (x) { e.target.checked = !e.target.checked; fehler(x); }
