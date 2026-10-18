@@ -313,3 +313,9 @@ label .suche { margin-top: 4px; }
 .wartung { margin-top: 12px; border-top: 1px solid var(--rand); padding-top: 8px; }
 .wartung-zeile { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; }
 .wartung-zeile small { display: block; }
+
+/* Senden: reicht das Filament? */
+.rest-pruefung { margin-top: 12px; font-size: 13.5px; }
+.rest-pruefung div + div { margin-top: 4px; }
+.rest-pruefung.gut { color: var(--gruen); }
+.rest-pruefung.warnung, .rest-pruefung.fehler { margin-top: 12px; }

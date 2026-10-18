@@ -529,18 +529,20 @@ async function sendenFormular(dateiId) {
       <label class="schalter"><input type="checkbox" id="sZeitraffer"> Zeitraffer aufnehmen</label>
       <label class="schalter"><input type="checkbox" id="sFluss"> Fluss-Kalibrierung</label>
     </div>
+    <div id="sRest" class="rest-pruefung"></div>
     <p id="sWarnung"></p>
     <div class="balken" id="sBalken" hidden><div style="width:0"></div></div>
     <p id="sFortschritt" class="leise"></p>
     <div class="knoepfe"><button class="primaer" id="sStart">${ICON.drucken} Druck starten</button></div>`);
 
-  let auftrag = null, faecherAuswahl = [];
+  let auftrag = null, faecherAuswahl = [], zuordnungAktuell = {}, reichtNicht = false;
   const gewaehlt = () => drucker[+$('#sDrucker').value];
   const platte = () => platten.find(p => p.nummer === +($('#sPlatte')?.value || 1));
 
   const faecherAufbauen = async (d, s) => {
     let zuordnung = {};
     try { zuordnung = await holen(`drucker/${d.id}/spulen`); } catch { /* ohne Vorschlag */ }
+    zuordnungAktuell = zuordnung;
     const verfuegbar = (s?.faecher || []).filter(f => !f.beschreibung.endsWith('(leer)'));
     if (!verfuegbar.some(f => f.slot === 254)) verfuegbar.push({ slot: 254, beschreibung: 'Externe Spule' });
     const p = platte();
@@ -571,6 +573,8 @@ async function sendenFormular(dateiId) {
     $('#sStatus').style.color = bereit(d) ? 'var(--gruen)' : 'var(--rot)';
     $('#sBambu').hidden = d.typ !== 'Bambu';
     if (d.typ === 'Bambu') await faecherAufbauen(d, s);
+    else { try { zuordnungAktuell = await holen(`drucker/${d.id}/spulen`); } catch { zuordnungAktuell = {}; } }
+    restPruefen();
     let problem = '';
     if (!passt(d)) {
       problem = d.typ === 'Bambu' ? 'Für Bambu Lab wird eine in Bambu Studio geslicte 3MF (mit G-Code) benötigt.'
@@ -586,6 +590,35 @@ async function sendenFormular(dateiId) {
     $('#sWarnung').textContent = problem || '⚠ Der Druck startet sofort nach dem Hochladen. Ist die Druckplatte frei, sauber und richtig eingelegt?';
     $('#sStart').disabled = !!problem;
   };
+  // Reicht das Filament? Wie in der App: Bedarf laut Slicer gegen Restgewicht der zugeordneten Spule (10 % bzw. 5 g Reserve)
+  const restPruefen = () => {
+    const d = gewaehlt();
+    let bedarf;
+    if (d.typ === 'Bambu') {
+      const p = platte();
+      bedarf = faecherAuswahl.map((a, i) => ({ name: `Filament ${a.pf.id}`, gramm: a.pf.gramm || (faecherAuswahl.length === 1 ? p?.gramm || 0 : 0),
+        slot: +document.querySelector(`[data-fach="${i}"]`).value }));
+    } else bedarf = [{ name: 'Filament', gramm: datei.gramm || 0, slot: 0 }];
+    const faecher = {};
+    bedarf.filter(b => b.gramm > 0).forEach(b => { (faecher[b.slot] ||= { namen: [], gramm: 0 }); faecher[b.slot].namen.push(b.name); faecher[b.slot].gramm += b.gramm; });
+    const zeilen = Object.entries(faecher).map(([slot, f]) => {
+      const name = f.namen.join(' + '), g = f.gramm, spule = spulen.find(x => x.id === zuordnungAktuell[slot]);
+      if (!spule) return { stufe: 0, text: `? ${name}: ${zahl(g)} g – keine Spule zugeordnet, Restmenge unbekannt` };
+      const reserve = Math.max(5, g * 0.1), sorte = `${spule.code} (${spulenText(spule)})`;
+      if (spule.restgewicht < g) {
+        const alt = spulen.filter(x => x.id !== spule.id && x.restgewicht >= g + reserve && x.material === spule.material && x.farbe === spule.farbe && x.hersteller === spule.hersteller)
+          .sort((a, b) => a.restgewicht - b.restgewicht)[0];
+        return { stufe: 3, text: `✕ ${name}: ${sorte} hat noch ${zahl(spule.restgewicht)} g, gebraucht werden ${zahl(g)} g` + (alt ? ` – gleiche Sorte mit genug Rest: ${alt.code} (${zahl(alt.restgewicht)} g)` : '') };
+      }
+      if (spule.restgewicht < g + reserve) return { stufe: 2, text: `⚠ ${name}: knapp – ${sorte} hat noch ${zahl(spule.restgewicht)} g für ${zahl(g)} g` };
+      return { stufe: 1, text: `✓ ${name}: reicht – ${sorte}, noch ${zahl(spule.restgewicht)} g für ${zahl(g)} g` };
+    });
+    reichtNicht = zeilen.some(z => z.stufe === 3);
+    const schlimmste = Math.max(0, ...zeilen.map(z => z.stufe));
+    $('#sRest').className = 'rest-pruefung ' + (reichtNicht ? 'fehler' : schlimmste === 2 ? 'warnung' : zeilen.length && zeilen.every(z => z.stufe === 1) ? 'gut' : 'leise');
+    $('#sRest').innerHTML = zeilen.map(z => `<div>${esc(z.text)}</div>`).join('');
+  };
+  $('#sFaecher').onchange = restPruefen;
   $('#sDrucker').onchange = pruefen;
   if ($('#sPlatte')) $('#sPlatte').onchange = pruefen;
   await pruefen();
@@ -597,6 +630,7 @@ async function sendenFormular(dateiId) {
 
   $('#sStart').onclick = async () => {
     const d = gewaehlt();
+    if (reichtNicht && !confirm('Mindestens eine Spule reicht laut Restgewicht nicht für diesen Druck. Trotzdem starten?')) return;
     const optionen = {
       platte: platte()?.nummer || 1,
       nivellieren: $('#sNivellieren').checked,

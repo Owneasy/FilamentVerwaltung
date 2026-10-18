@@ -30,6 +30,9 @@ Public Class SendenDialog
     Private ReadOnly chkZeitraffer As New CheckBox With {.Text = "Zeitraffer aufnehmen", .AutoSize = True}
     Private ReadOnly chkFluss As New CheckBox With {.Text = "Fluss-Kalibrierung", .AutoSize = True}
     Private ReadOnly bambuBereich As New TableLayoutPanel With {.AutoSize = True, .ColumnCount = 2, .Margin = New Padding(0)}
+    ''' <summary>Reicht das Filament? Je Fach eine Zeile (siehe Restmengen.Pruefen).</summary>
+    Private ReadOnly lblRest As New Label With {.AutoSize = True, .MaximumSize = New Size(560, 0), .Margin = New Padding(3, 10, 3, 0)}
+    Private _reichtNicht As Boolean
     Private ReadOnly lblWarnung As New Label With {.AutoSize = True, .MaximumSize = New Size(520, 0), .Margin = New Padding(3, 12, 3, 0)}
     Private ReadOnly balken As New ProgressBar With {.Width = 520, .Height = 8, .Visible = False, .Margin = New Padding(3, 10, 3, 0), .Maximum = 1000}
     Private ReadOnly lblStatus As New Label With {.AutoSize = True, .MaximumSize = New Size(520, 0), .ForeColor = Theme.TextLeise, .Margin = New Padding(3, 6, 3, 0)}
@@ -91,6 +94,7 @@ Public Class SendenDialog
         t.Controls.Add(bambuBereich, 0, t.RowCount) : t.SetColumnSpan(bambuBereich, 2) : t.RowCount += 1
 
         Dim unten As New FlowLayoutPanel With {.AutoSize = True, .FlowDirection = FlowDirection.TopDown, .WrapContents = False, .Margin = New Padding(0)}
+        unten.Controls.Add(lblRest)
         unten.Controls.Add(lblWarnung)
         unten.Controls.Add(balken)
         unten.Controls.Add(lblStatus)
@@ -191,6 +195,7 @@ Public Class SendenDialog
         ElseIf s.DruckLaeuft Then
             problem = "Der Drucker ist beschäftigt – warte, bis der aktuelle Druck fertig ist."
         End If
+        RestmengePruefen()
         If problem IsNot Nothing Then
             lblWarnung.ForeColor = Theme.Rot
             lblWarnung.Text = problem
@@ -252,6 +257,7 @@ Public Class SendenDialog
                 End If
             Next
             auswahl.SelectedIndex = Math.Max(0, bester)
+            AddHandler auswahl.SelectedIndexChanged, Sub(s2, e2) RestmengePruefen()
             faecher.Controls.Add(beschriftung, 0, faecher.RowCount)
             faecher.Controls.Add(auswahl, 1, faecher.RowCount)
             faecher.RowCount += 1
@@ -279,9 +285,57 @@ Public Class SendenDialog
         SpaltenAngleichen()   ' nach der DPI-Skalierung neu messen
     End Sub
 
+    ''' <summary>
+    ''' Bedarf laut Slicer (je Filament bzw. ganze Datei) mit dem Restgewicht der zugeordneten Spulen vergleichen.
+    ''' Reicht eine Spule nicht, wird vor dem Start nachgefragt.
+    ''' </summary>
+    Private Sub RestmengePruefen()
+        Dim d = GewaehlterDrucker()
+        _reichtNicht = False
+        lblRest.Text = ""
+        If d Is Nothing Then Return
+        Dim bedarf As New List(Of FilamentBedarf)
+        If d.Typ = Drucker.TypBambu Then
+            Dim platte = TryCast(cboPlatte.SelectedItem, PlattenInfo)
+            For Each f In _fachAuswahl
+                Dim gramm = If(f.Filament.Gramm > 0, f.Filament.Gramm, If(_fachAuswahl.Count = 1, If(platte?.Gramm, 0.0), 0.0))
+                bedarf.Add(New FilamentBedarf With {.Bezeichnung = $"Filament {f.Filament.Id}", .Gramm = gramm,
+                                                     .Slot = f.Slots(Math.Max(0, f.Auswahl.SelectedIndex))})
+            Next
+        Else
+            bedarf.Add(New FilamentBedarf With {.Bezeichnung = "Filament", .Gramm = If(_datei.Gramm, 0.0), .Slot = Drucker.SlotStandard})
+        End If
+        If Not bedarf.Any(Function(b) b.Gramm > 0) Then Return
+        Dim zuordnung As Dictionary(Of Integer, Long)
+        Try
+            zuordnung = _db.SpulenZuordnung(d.Id)
+        Catch
+            Return
+        End Try
+        Dim hinweise = Restmengen.Pruefen(bedarf, zuordnung, _filamente)
+        If hinweise.Count = 0 Then Return
+        Dim zeichen = Function(h As RestmengenHinweis) As String
+                          Select Case h.Ergebnis
+                              Case RestmengenHinweis.Stufe.Reicht : Return "✓ "
+                              Case RestmengenHinweis.Stufe.Knapp : Return "⚠ "
+                              Case RestmengenHinweis.Stufe.ReichtNicht : Return "✕ "
+                              Case Else : Return "? "
+                          End Select
+                      End Function
+        lblRest.Text = String.Join(Environment.NewLine, hinweise.Select(Function(h) zeichen(h) & h.Text))
+        _reichtNicht = hinweise.Any(Function(h) h.Ergebnis = RestmengenHinweis.Stufe.ReichtNicht)
+        lblRest.ForeColor = If(_reichtNicht, Theme.Rot,
+                               If(hinweise.Any(Function(h) h.Ergebnis = RestmengenHinweis.Stufe.Knapp), Theme.Gelb,
+                                  If(hinweise.All(Function(h) h.Ergebnis = RestmengenHinweis.Stufe.Reicht), Theme.Gruen, Theme.TextLeise)))
+    End Sub
+
     Private Async Sub Starten_Click(sender As Object, e As EventArgs)
         Dim d = GewaehlterDrucker()
         If d Is Nothing Then Return
+        If _reichtNicht AndAlso MessageBox.Show(Me, "Mindestens eine Spule reicht laut Restgewicht nicht für diesen Druck:" & Environment.NewLine &
+                                                    Environment.NewLine & lblRest.Text & Environment.NewLine & Environment.NewLine & "Trotzdem starten?",
+                                                    "Filament reicht nicht", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                                                    MessageBoxDefaultButton.Button2) <> DialogResult.Yes Then Return
         Dim optionen As New SendeOptionen With {
             .Platte = If(TryCast(cboPlatte.SelectedItem, PlattenInfo)?.Nummer, 1),
             .Nivellieren = chkNivellieren.Checked,
