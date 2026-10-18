@@ -111,6 +111,28 @@ Public Class PushRegeln
         End Try
     End Sub
 
+    ''' <summary>
+    ''' Druck beendet und in der Warteschlange wartet etwas für diesen Drucker (oder für "egal welcher"):
+    ''' Hinweis auf den nächsten Auftrag – antippen öffnet die Warteschlange zum Starten.
+    ''' </summary>
+    Public Sub WarteschlangeNaechster(ende As DruckEnde)
+        Try
+            If Not Ein(PushEinstellungen.Warteschlange) Then Return
+            Dim liste = _db.WarteschlangeLaden()
+            Dim naechster = liste.FirstOrDefault(Function(a) Not a.DruckerId.HasValue OrElse a.DruckerId.Value = ende.DruckerId)
+            If naechster Is Nothing Then Return
+            Dim weitere = liste.Count - 1
+            Senden(New PushNachricht With {
+                .Titel = $"{ende.DruckerName} ist frei – nächster Druck",
+                .Text = naechster.DateiName & If(weitere > 0, $" (danach noch {weitere})", "") & vbLf &
+                        "Druckplatte freimachen, dann antippen zum Starten",
+                .Ziel = "/#warteschlange",
+                .Kennung = $"warteschlange-{ende.DruckerId}"})
+        Catch ex As Exception
+            _log.LogWarning(ex, "Hinweis auf die Warteschlange fehlgeschlagen")
+        End Try
+    End Sub
+
     ''' <summary>Wartung fällig (einmal je Fälligkeit). True = gemeldet; ist die Meldung abgeschaltet, False (dann bleibt sie offen).</summary>
     Public Function WartungFaellig(w As Wartung) As Boolean
         If Not Ein(PushEinstellungen.Wartung) Then Return False

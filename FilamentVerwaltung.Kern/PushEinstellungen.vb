@@ -7,6 +7,8 @@ Public Module PushEinstellungen
     Public Const DruckerOffline As String = "Push.DruckerOffline"
     Public Const DruckerFehler As String = "Push.DruckerFehler"
     Public Const Wartung As String = "Push.Wartung"
+    ''' <summary>Drucker frei und etwas wartet in der Warteschlange.</summary>
+    Public Const Warteschlange As String = "Push.Warteschlange"
 
     ''' <summary>Ohne Eintrag: alles an außer "Drucker nicht erreichbar".</summary>
     Public Function Standard(schluessel As String) As Boolean

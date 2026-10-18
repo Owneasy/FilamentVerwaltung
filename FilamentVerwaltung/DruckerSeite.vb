@@ -441,6 +441,7 @@ Public Class DruckerSeite
                 "oder OctoPrint. Ist ein Druck fertig, schlägt die App vor, den Verbrauch zu buchen."}
     Private _filamente As New List(Of Filament)
     Private ReadOnly btnWartung As New WebButton("Wartung", Theme.SymWartung) With {.Margin = New Padding(0, 0, 8, 0)}
+    Private ReadOnly btnWarteschlange As New WebButton("Warteschlange", Theme.SymListe) With {.Margin = New Padding(0, 0, 8, 0)}
 
     ''' <summary>Im Wartungsfenster wurde etwas geändert (Zahl am Menüpunkt neu berechnen).</summary>
     Public Event WartungGeaendert()
@@ -461,6 +462,8 @@ Public Class DruckerSeite
         Dim btnNeu As New WebButton("Drucker hinzufügen", Theme.SymNeu, KnopfStil.Primaer) With {.Margin = New Padding(0)}
         AddHandler btnNeu.Click, Sub(s, e) Bearbeiten(New Drucker(), "Drucker hinzufügen")
         AddHandler btnWartung.Click, Sub(s, e) WartungZeigen()
+        AddHandler btnWarteschlange.Click, Sub(s, e) WarteschlangeZeigen()
+        kopf.Knoepfe.Controls.Add(btnWarteschlange)
         kopf.Knoepfe.Controls.Add(btnWartung)
         kopf.Knoepfe.Controls.Add(btnNeu)
         seite.Controls.Add(kopf, 0, 0)
@@ -499,8 +502,31 @@ Public Class DruckerSeite
         lblLeer.Visible = drucker.Count = 0
         karten.ResumeLayout()
         WartungKnopfAktualisieren()
+        WarteschlangeKnopfAktualisieren()
     End Sub
 
+    ''' <summary>"Warteschlange (3)"; bei einem älteren Server ohne Warteschlange ausgeblendet.</summary>
+    Private Sub WarteschlangeKnopfAktualisieren()
+        If Not ServerFunktionen.Verfuegbar(_db, ServerFunktionen.Warteschlange) Then
+            btnWarteschlange.Visible = False
+            Return
+        End If
+        Try
+            Dim anzahl = _db.WarteschlangeLaden().Count
+            btnWarteschlange.Text = If(anzahl > 0, $"Warteschlange ({anzahl})", "Warteschlange")
+        Catch ex As Exception
+            btnWarteschlange.Text = "Warteschlange"
+        End Try
+        btnWarteschlange.Visible = True
+        btnWarteschlange.Parent?.PerformLayout()
+    End Sub
+
+    Private Sub WarteschlangeZeigen()
+        Using dlg As New WarteschlangeDialog(_db, _ueberwachung)
+            dlg.ShowDialog(Me)
+            If dlg.Geaendert Then WarteschlangeKnopfAktualisieren()
+        End Using
+    End Sub
     ''' <summary>"Wartung (2 fällig)"; bei einem älteren Server ohne Wartung ausgeblendet.</summary>
     Private Sub WartungKnopfAktualisieren()
         If Not ServerFunktionen.Verfuegbar(_db, ServerFunktionen.Wartung) Then

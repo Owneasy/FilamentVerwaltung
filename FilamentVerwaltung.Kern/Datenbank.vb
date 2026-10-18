@@ -106,6 +106,15 @@ CREATE TABLE IF NOT EXISTS PushAbo (
     Geraet    TEXT NOT NULL DEFAULT '',
     Erstellt  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS Warteschlange (
+    Id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    DateiId   INTEGER NOT NULL,
+    DruckerId INTEGER,
+    Platte    INTEGER NOT NULL DEFAULT 1,
+    Notiz     TEXT    NOT NULL DEFAULT '',
+    Position  INTEGER NOT NULL,
+    Erstellt  TEXT    NOT NULL
+);
 CREATE TABLE IF NOT EXISTS Wartung (
     Id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     DruckerId           INTEGER NOT NULL,
@@ -659,6 +668,76 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         End Using
     End Sub
 
+    ' ------------------------------------------------------------------ Warteschlange
+
+    ''' <summary>Aufträge in Reihenfolge, mit Dateiname, Slicer-Werten und Druckername.</summary>
+    Public Function WarteschlangeLaden() As List(Of Auftrag) Implements IDatenquelle.WarteschlangeLaden
+        Dim liste As New List(Of Auftrag)
+        Using c = Oeffnen(), cmd = c.CreateCommand()
+            cmd.CommandText = "SELECT w.Id, w.DateiId, w.DruckerId, w.Platte, w.Notiz, w.Position, w.Erstellt, f.Name, f.Gramm, f.Druckzeit, COALESCE(d.Name, '') " &
+                              "FROM Warteschlange w JOIN Datei f ON f.Id = w.DateiId LEFT JOIN Drucker d ON d.Id = w.DruckerId ORDER BY w.Position, w.Id"
+            Using r = cmd.ExecuteReader()
+                While r.Read()
+                    liste.Add(New Auftrag With {
+                        .Id = r.GetInt64(0), .DateiId = r.GetInt64(1),
+                        .DruckerId = If(r.IsDBNull(2), CType(Nothing, Long?), r.GetInt64(2)),
+                        .Platte = r.GetInt32(3), .Notiz = Text(r, 4), .Position = r.GetInt32(5),
+                        .Erstellt = Date.Parse(Text(r, 6), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                        .DateiName = Text(r, 7),
+                        .Gramm = If(r.IsDBNull(8), CType(Nothing, Double?), r.GetDouble(8)),
+                        .Druckzeit = If(r.IsDBNull(9), CType(Nothing, Integer?), r.GetInt32(9)),
+                        .DruckerName = Text(r, 10)})
+                End While
+            End Using
+        End Using
+        Return liste
+    End Function
+
+    ''' <summary>Neu (Id = 0: ans Ende) oder Drucker/Platte/Notiz ändern.</summary>
+    Public Sub WarteschlangeSpeichern(a As Auftrag) Implements IDatenquelle.WarteschlangeSpeichern
+        Using c = Oeffnen()
+            Dim drucker As Object = If(a.DruckerId.HasValue AndAlso a.DruckerId.Value > 0, CObj(a.DruckerId.Value), DBNull.Value)
+            If a.Id = 0 Then
+                a.Position = Convert.ToInt32(Befehl(c, Nothing, "SELECT COALESCE(MAX(Position), 0) + 1 FROM Warteschlange").ExecuteScalar())
+                a.Erstellt = Date.Now
+                a.Id = Convert.ToInt64(Befehl(c, Nothing,
+                    "INSERT INTO Warteschlange (DateiId, DruckerId, Platte, Notiz, Position, Erstellt) VALUES ($f, $d, $p, $n, $pos, $e); SELECT last_insert_rowid();",
+                    "$f", a.DateiId, "$d", drucker, "$p", Math.Max(1, a.Platte), "$n", If(a.Notiz, ""), "$pos", a.Position,
+                    "$e", a.Erstellt.ToString("o")).ExecuteScalar())
+            Else
+                Befehl(c, Nothing, "UPDATE Warteschlange SET DruckerId = $d, Platte = $p, Notiz = $n WHERE Id = $id",
+                       "$d", drucker, "$p", Math.Max(1, a.Platte), "$n", If(a.Notiz, ""), "$id", a.Id).ExecuteNonQuery()
+            End If
+        End Using
+    End Sub
+
+    Public Sub WarteschlangeLoeschen(id As Long) Implements IDatenquelle.WarteschlangeLoeschen
+        Using c = Oeffnen()
+            Befehl(c, Nothing, "DELETE FROM Warteschlange WHERE Id = $id", "$id", id).ExecuteNonQuery()
+        End Using
+    End Sub
+
+    ''' <summary>Einen Platz nach vorn (nachVorn) bzw. hinten tauschen.</summary>
+    Public Sub WarteschlangeVerschieben(id As Long, nachVorn As Boolean) Implements IDatenquelle.WarteschlangeVerschieben
+        Using c = Oeffnen(), t = c.BeginTransaction()
+            Dim ids As New List(Of Long)
+            Using r = Befehl(c, t, "SELECT Id FROM Warteschlange ORDER BY Position, Id").ExecuteReader()
+                While r.Read()
+                    ids.Add(r.GetInt64(0))
+                End While
+            End Using
+            Dim i = ids.IndexOf(id)
+            Dim j = If(nachVorn, i - 1, i + 1)
+            If i < 0 OrElse j < 0 OrElse j >= ids.Count Then Return
+            ids(i) = ids(j) : ids(j) = id
+            ' Positionen lückenlos neu vergeben
+            For k = 0 To ids.Count - 1
+                Befehl(c, t, "UPDATE Warteschlange SET Position = $p WHERE Id = $id", "$p", k + 1, "$id", ids(k)).ExecuteNonQuery()
+            Next
+            t.Commit()
+        End Using
+    End Sub
+
     ' ------------------------------------------------------------------ Wartung
 
     ''' <summary>Gezählte Druckzeit erhöhen (Drucker-Überwachung, während gedruckt wird).</summary>
@@ -1041,6 +1120,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     Public Sub DateiLoeschen(d As Datei) Implements IDatenquelle.DateiLoeschen
         Using c = Oeffnen(), t = c.BeginTransaction()
             Befehl(c, t, "UPDATE Buchung SET DateiId = NULL WHERE DateiId = $id", "$id", d.Id).ExecuteNonQuery()
+            Befehl(c, t, "DELETE FROM Warteschlange WHERE DateiId = $id", "$id", d.Id).ExecuteNonQuery()
             Befehl(c, t, "DELETE FROM Datei WHERE Id = $id", "$id", d.Id).ExecuteNonQuery()
             t.Commit()
         End Using

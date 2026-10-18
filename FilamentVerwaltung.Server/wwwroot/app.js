@@ -157,7 +157,7 @@ function navigieren() {
   stoppen();
   const [name, arg] = (location.hash.slice(1) || 'drucker').split('/');
   document.querySelectorAll('.leiste button').forEach(b =>
-    b.classList.toggle('aktiv', b.dataset.seite === ({ spule: 'spulen', nachkauf: 'spulen', verlauf: 'buchen' }[name] || name)));
+    b.classList.toggle('aktiv', b.dataset.seite === ({ spule: 'spulen', nachkauf: 'spulen', verlauf: 'buchen', warteschlange: 'dateien' }[name] || name)));
   window.scrollTo(0, 0);
   if (name === 'buchen') buchenSeite();
   else if (name === 'spulen') spulenSeite();
@@ -166,12 +166,13 @@ function navigieren() {
   else if (name === 'nachkauf') nachkaufSeite();
   else if (name === 'spule') spuleSeite(decodeURIComponent(arg || ''));
   else if (name === 'status') statusSeite();
+  else if (name === 'warteschlange') warteschlangeSeite();
   else druckerSeite();
 }
 
 window.addEventListener('hashchange', navigieren);
 document.addEventListener('click', e => {
-  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden],[data-wisch],[data-fach-waehlen],[data-fach-uebernehmen],[data-buchung],[data-gekauft],[data-wartung]');
+  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden],[data-wisch],[data-fach-waehlen],[data-fach-uebernehmen],[data-buchung],[data-gekauft],[data-wartung],[data-auftrag]');
   if (!z) return;
   if (z.dataset.seite) { if (location.hash === '#' + z.dataset.seite) navigieren(); else location.hash = z.dataset.seite; }
   else if (z.hasAttribute('data-schliessen')) blattSchliessen();
@@ -184,6 +185,7 @@ document.addEventListener('click', e => {
   else if (z.dataset.buchung) buchungZeigen(+z.dataset.buchung);
   else if (z.dataset.gekauft) gekauft(z.dataset.gekauft);
   else if (z.dataset.wartung) wartungErledigt(+z.dataset.wartung);
+  else if (z.dataset.auftrag) auftragAktion(z.dataset.auftrag);
   else if (z.dataset.fachUebernehmen) fachZuordnen(...z.dataset.fachUebernehmen.split(':').map(Number));
 });
 // Im Hintergrund nichts abfragen (spart Akku und Datenvolumen); beim Zurückkehren neu laden –
@@ -474,7 +476,7 @@ const ZUSTAND_BEREIT = [2, 5, 6];   // Bereit, Fertig, Abgebrochen
 
 async function dateienSeite() {
   titel('Dateien');
-  inhalt(`<div class="suche"><input id="dSuche" type="search" placeholder="Dateiname, Material …" value="${esc(dateienSuche)}">
+  inhalt(reiter('dateien') + `<div class="suche"><input id="dSuche" type="search" placeholder="Dateiname, Material …" value="${esc(dateienSuche)}">
       <button class="primaer" id="dHochladen">+ Hochladen</button><input type="file" id="dDatei" hidden multiple></div>
     <p class="leise klein-text">Druckfertige Dateien (G-Code und geslicte 3MF). Antippen, um sie an einen Drucker zu senden.</p>
     <div id="dListe"><p class="leer">Lade …</p></div>`);
@@ -495,7 +497,8 @@ async function dateienSeite() {
   zeigen();
 }
 
-async function sendenFormular(dateiId) {
+// vorauswahl (aus der Warteschlange): { druckerId, platte, auftragId } – nach dem Start wird der Auftrag entfernt
+async function sendenFormular(dateiId, vorauswahl = {}) {
   let datei, drucker, live, spulen, platten;
   try {
     [datei, drucker, live, spulen, platten] = await Promise.all([
@@ -516,14 +519,15 @@ async function sendenFormular(dateiId) {
   const endung = '.' + datei.name.split('.').pop().toLowerCase();
   const passt = d => (liveVon(d.id).endungen || []).includes(endung) && (d.typ !== 'Bambu' || platten.length > 0);
   const bereit = d => ZUSTAND_BEREIT.includes(liveVon(d.id).status?.zustand);
-  let index = drucker.findIndex(d => passt(d) && bereit(d));
+  let index = vorauswahl.druckerId ? drucker.findIndex(d => d.id === vorauswahl.druckerId) : -1;
+  if (index < 0) index = drucker.findIndex(d => passt(d) && bereit(d));
   if (index < 0) index = Math.max(0, drucker.findIndex(passt));
 
   blattOeffnen(kopf + `
     <label>Drucker<select id="sDrucker">${drucker.map((d, i) => `<option value="${i}" ${i === index ? 'selected' : ''}>${esc(d.name)} (${esc(d.typ)})</option>`).join('')}</select></label>
     <div id="sStatus" class="leise" style="margin-top:4px"></div>
     <div id="sBambu">
-      ${platten.length ? `<label>Platte<select id="sPlatte">${platten.map(p => `<option value="${p.nummer}">Platte ${p.nummer}${p.gramm ? ' · ' + zahl(p.gramm) + ' g' : ''}${p.sekunden ? ' · ' + dauer(p.sekunden) : ''}</option>`).join('')}</select></label>` : ''}
+      ${platten.length ? `<label>Platte<select id="sPlatte">${platten.map(p => `<option value="${p.nummer}" ${p.nummer === (vorauswahl.platte || 1) ? 'selected' : ''}>Platte ${p.nummer}${p.gramm ? ' · ' + zahl(p.gramm) + ' g' : ''}${p.sekunden ? ' · ' + dauer(p.sekunden) : ''}</option>`).join('')}</select></label>` : ''}
       <div id="sFaecher"></div>
       <label class="schalter"><input type="checkbox" id="sNivellieren" checked> Bett nivellieren</label>
       <label class="schalter"><input type="checkbox" id="sZeitraffer"> Zeitraffer aufnehmen</label>
@@ -533,7 +537,7 @@ async function sendenFormular(dateiId) {
     <p id="sWarnung"></p>
     <div class="balken" id="sBalken" hidden><div style="width:0"></div></div>
     <p id="sFortschritt" class="leise"></p>
-    <div class="knoepfe"><button class="primaer" id="sStart">${ICON.drucken} Druck starten</button></div>`);
+    <div class="knoepfe">${vorauswahl.auftragId ? '' : '<button class="knopf" id="sSchlange">In Warteschlange</button>'}<button class="primaer" id="sStart">${ICON.drucken} Druck starten</button></div>`);
 
   let auftrag = null, faecherAuswahl = [], zuordnungAktuell = {}, reichtNicht = false;
   const gewaehlt = () => drucker[+$('#sDrucker').value];
@@ -619,6 +623,13 @@ async function sendenFormular(dateiId) {
     $('#sRest').innerHTML = zeilen.map(z => `<div>${esc(z.text)}</div>`).join('');
   };
   $('#sFaecher').onchange = restPruefen;
+  if ($('#sSchlange')) $('#sSchlange').onclick = async () => {
+    try {
+      const a = await (await schicken('warteschlange', 'POST', { dateiId: datei.id, druckerId: gewaehlt().id, platte: platte()?.nummer || 1 })).json();
+      blattSchliessen();
+      toast(`In der Warteschlange an Platz ${a.position}.`);
+    } catch (e) { fehler(e); }
+  };
   $('#sDrucker').onchange = pruefen;
   if ($('#sPlatte')) $('#sPlatte').onchange = pruefen;
   await pruefen();
@@ -654,6 +665,7 @@ async function sendenFormular(dateiId) {
         $('#sFortschritt').textContent = info.fortschritt >= 0.999 ? 'Sende Startbefehl …' : `Lade auf den Drucker hoch … ${prozent(info.fortschritt)}`;
         if (info.fertig) {
           if (info.fehler) throw new Error(info.fehler);
+          if (vorauswahl.auftragId) await schicken(`warteschlange/${vorauswahl.auftragId}`, 'DELETE').catch(() => {});
           blattSchliessen();
           toast(`Druck auf ${d.name} gestartet.`);
           location.hash = 'drucker';
@@ -1395,6 +1407,11 @@ async function wischAktion(w) {
   const art = w.dataset.art, id = +w.dataset.id, name = w.dataset.name;
   if (art === 'druckende') { wischSchliessen(w); return verwerfen(id); }
   if (art === 'buchung') { wischSchliessen(w); return buchungLoeschen(id); }
+  if (art === 'auftrag') {
+    try { await schicken(`warteschlange/${id}`, 'DELETE'); } catch (e) { wischSchliessen(w); return fehler(e); }
+    toast('Aus der Warteschlange entfernt.');
+    return navigieren();
+  }
   const frage = art === 'spule'
     ? `Spule ${name} löschen?\n\nBisherige Drucke bleiben im Verlauf erhalten.`
     : `Datei „${name}“ löschen?\n\nSie wird auch vom Server entfernt. Bereits gebuchte Drucke behalten ihre Daten.`;
@@ -1502,6 +1519,7 @@ const PUSH_REGELN = [
   ['Push.SpuleKnapp', 'Spule fast leer bzw. leer (nach einer Buchung)', true],
   ['Push.DruckerFehler', 'Fehler am Drucker', true],
   ['Push.Wartung', 'Wartung fällig', true],
+  ['Push.Warteschlange', 'Drucker frei – nächster Auftrag in der Warteschlange', true],
   ['Push.DruckerOffline', 'Drucker länger als 3 Minuten nicht erreichbar', false]
 ];
 
@@ -1530,7 +1548,9 @@ async function pushRegelnZeigen() {
 
 function reiter(gruppe) {
   const aktuell = location.hash.slice(1).split('/')[0] || 'drucker';
-  const eintraege = gruppe === 'buchen' ? [['buchen', 'Offen'], ['verlauf', 'Verlauf']] : [['spulen', 'Spulen'], ['nachkauf', 'Nachkauf']];
+  const eintraege = gruppe === 'buchen' ? [['buchen', 'Offen'], ['verlauf', 'Verlauf']]
+    : gruppe === 'dateien' ? [['dateien', 'Dateien'], ['warteschlange', 'Warteschlange']]
+    : [['spulen', 'Spulen'], ['nachkauf', 'Nachkauf']];
   return `<div class="reiter">${eintraege.map(([ziel, text]) => `<a href="#${ziel}" class="${aktuell === ziel ? 'aktiv' : ''}">${text}</a>`).join('')}</div>`;
 }
 
@@ -1824,4 +1844,45 @@ async function statusSeite() {
   };
   await laden();
   if (!$('#leiste').hidden && !document.hidden) seitenTimer = setInterval(laden, 10000);
+}
+
+// ------------------------------------------------------------------ Warteschlange: was als Nächstes gedruckt wird
+// Gestartet wird von Hand (Druckplatte frei?) – über das Senden-Formular mit Drucker und Platte aus dem Auftrag.
+
+async function warteschlangeSeite() {
+  titel('Warteschlange');
+  inhalt(reiter('dateien') + '<p class="leer">Lade …</p>');
+  let liste, live;
+  try { [liste, live] = await Promise.all([holen('warteschlange'), holen('drucker/live')]); } catch (e) { return fehler(e); }
+  const frei = live.filter(l => ZUSTAND_BEREIT.includes(l.status?.zustand)).map(l => l.druckerId);
+  inhalt(reiter('dateien') + (liste.length ? `
+    <p class="leise klein-text">Gestartet wird von Hand – vorher die Druckplatte freimachen. Nach links wischen zum Entfernen.</p>
+    ${liste.map((a, i) => wischen(`<section class="karte auftrag">
+        <div class="zeile">
+          <div style="min-width:0"><b>${i + 1}. ${esc(a.dateiName)}</b>
+            <small class="leise">${[a.gramm ? zahl(a.gramm) + ' g' : '', dauer(a.druckzeit), a.druckerName || 'egal welcher Drucker',
+              a.platte > 1 ? 'Platte ' + a.platte : ''].filter(Boolean).map(esc).join(' · ')}</small></div>
+          ${(a.druckerId ? frei.includes(a.druckerId) : frei.length) ? '<span class="badge gruen">Drucker frei</span>' : ''}
+        </div>
+        <div class="knoepfe">
+          <button class="knopf klein" data-auftrag="vor:${a.id}" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="knopf klein" data-auftrag="zurueck:${a.id}" ${i === liste.length - 1 ? 'disabled' : ''}>↓</button>
+          <button class="primaer" data-auftrag="drucken:${a.id}">Drucken …</button>
+        </div>
+      </section>`, 'auftrag', a.id, a.dateiName)).join('')}`
+    : '<p class="leer">Die Warteschlange ist leer.<br><small>Beim Senden einer Datei auf „In Warteschlange“ tippen.</small></p>'));
+  warteschlangeCache = liste;
+}
+
+let warteschlangeCache = [];
+
+async function auftragAktion(wert) {
+  const [aktion, idText] = wert.split(':'), id = +idText;
+  if (aktion === 'drucken') {
+    const a = warteschlangeCache.find(x => x.id === id);
+    if (a) sendenFormular(a.dateiId, { druckerId: a.druckerId, platte: a.platte, auftragId: a.id });
+    return;
+  }
+  try { await schicken(`warteschlange/${id}/${aktion}`, 'POST', {}); } catch (e) { return fehler(e); }
+  warteschlangeSeite();
 }

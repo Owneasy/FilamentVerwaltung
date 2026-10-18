@@ -42,7 +42,7 @@ Public Class BenachrichtigungenDialog
 
         For Each eintrag In {(PushEinstellungen.Druckende, "Druck fertig oder abgebrochen"),
                              (PushEinstellungen.SpuleKnapp, "Spule fast leer bzw. leer (nach einer Buchung)"),
-                             (PushEinstellungen.DruckerFehler, "Fehler am Drucker"), (PushEinstellungen.Wartung, "Wartung fällig"),
+                             (PushEinstellungen.DruckerFehler, "Fehler am Drucker"), (PushEinstellungen.Wartung, "Wartung fällig"), (PushEinstellungen.Warteschlange, "Drucker frei – nächster Auftrag in der Warteschlange"),
                              (PushEinstellungen.DruckerOffline, "Drucker länger als 3 Minuten nicht erreichbar")}
             Dim box As New CheckBox With {.Text = eintrag.Item2, .AutoSize = True, .Margin = New Padding(3, 3, 3, 3)}
             p.Controls.Add(box)

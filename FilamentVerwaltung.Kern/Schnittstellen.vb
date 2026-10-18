@@ -38,6 +38,12 @@ Public Interface IDatenquelle
     Function SpulenZuordnung(druckerId As Long) As Dictionary(Of Integer, Long)
     Sub SpuleZuordnen(druckerId As Long, slot As Integer, filamentId As Long?)
 
+    ' Warteschlange
+    Function WarteschlangeLaden() As List(Of Auftrag)
+    Sub WarteschlangeSpeichern(a As Auftrag)
+    Sub WarteschlangeLoeschen(id As Long)
+    Sub WarteschlangeVerschieben(id As Long, nachVorn As Boolean)
+
     ' Wartung
     Sub DrucksekundenSetzen(druckerId As Long, sekunden As Long)
     Function WartungLaden() As List(Of Wartung)

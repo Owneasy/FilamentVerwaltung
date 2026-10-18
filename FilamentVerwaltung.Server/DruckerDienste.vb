@@ -43,6 +43,7 @@ Public Class DruckerStart
             _log.LogWarning(ex, "Druckende konnte nicht gespeichert bzw. gebucht werden")
         End Try
         If gebucht IsNot Nothing Then _regeln.AutomatischGebucht(ende, gebucht) Else _regeln.DruckBeendet(ende)
+        _regeln.WarteschlangeNaechster(ende)
         If ende.Id > 0 Then FotoAufnehmen(ende, gebucht?.Id)
     End Sub
 

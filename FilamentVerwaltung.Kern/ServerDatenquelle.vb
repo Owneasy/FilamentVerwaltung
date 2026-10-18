@@ -359,6 +359,26 @@ Public Class ServerDatenquelle
         Schicken(HttpMethod.Put, $"drucker/{druckerId}/spulen/{slot}", New SpuleAnfrage With {.FilamentId = filamentId})
     End Sub
 
+    ' ------------------------------------------------------------------ Warteschlange
+
+    Public Function WarteschlangeLaden() As List(Of Auftrag) Implements IDatenquelle.WarteschlangeLaden
+        Return Abrufen(Of List(Of Auftrag))("warteschlange")
+    End Function
+
+    Public Sub WarteschlangeSpeichern(a As Auftrag) Implements IDatenquelle.WarteschlangeSpeichern
+        Dim gespeichert = Schicken(Of Auftrag)(HttpMethod.Post, "warteschlange", a)
+        a.Id = gespeichert.Id
+        a.Position = gespeichert.Position
+    End Sub
+
+    Public Sub WarteschlangeLoeschen(id As Long) Implements IDatenquelle.WarteschlangeLoeschen
+        Schicken(HttpMethod.Delete, $"warteschlange/{id}")
+    End Sub
+
+    Public Sub WarteschlangeVerschieben(id As Long, nachVorn As Boolean) Implements IDatenquelle.WarteschlangeVerschieben
+        Schicken(HttpMethod.Post, $"warteschlange/{id}/{If(nachVorn, "vor", "zurueck")}", New Object())
+    End Sub
+
     ' ------------------------------------------------------------------ Wartung
 
     Public Sub DrucksekundenSetzen(druckerId As Long, sekunden As Long) Implements IDatenquelle.DrucksekundenSetzen

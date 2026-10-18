@@ -38,9 +38,16 @@ Public Class SendenDialog
     Private ReadOnly lblStatus As New Label With {.AutoSize = True, .MaximumSize = New Size(520, 0), .ForeColor = Theme.TextLeise, .Margin = New Padding(3, 6, 3, 0)}
     Private ReadOnly btnStarten As New WebButton("Druck starten", Theme.SymDrucker, KnopfStil.Primaer) With {.MinimumSize = New Size(130, 0), .Margin = New Padding(8, 0, 0, 0)}
     Private ReadOnly btnAbbrechen As New WebButton("Abbrechen") With {.MinimumSize = New Size(100, 0), .Margin = New Padding(8, 0, 0, 0)}
+    Private ReadOnly btnWarteschlange As New WebButton("In Warteschlange", Theme.SymHinzufuegen) With {.Margin = New Padding(8, 0, 0, 0)}
+    Private ReadOnly _vorauswahlDrucker As Long?
+    Private ReadOnly _vorauswahlPlatte As Integer
 
-    Public Sub New(db As IDatenquelle, ueberwachung As IDruckerDienst, datei As Datei, pfad As String)
+    ''' <param name="druckerId">Vorauswahl (z. B. aus der Warteschlange), sonst der passende, bereite Drucker.</param>
+    Public Sub New(db As IDatenquelle, ueberwachung As IDruckerDienst, datei As Datei, pfad As String,
+                   Optional druckerId As Long? = Nothing, Optional platte As Integer = 1)
         _db = db
+        _vorauswahlDrucker = druckerId
+        _vorauswahlPlatte = platte
         _ueberwachung = ueberwachung
         _datei = datei
         _pfad = pfad
@@ -103,6 +110,9 @@ Public Class SendenDialog
         Dim knoepfe As New FlowLayoutPanel With {.FlowDirection = FlowDirection.RightToLeft, .AutoSize = True, .Anchor = AnchorStyles.Right, .Margin = New Padding(0, 16, 0, 0)}
         knoepfe.Controls.Add(btnAbbrechen)
         knoepfe.Controls.Add(btnStarten)
+        knoepfe.Controls.Add(btnWarteschlange)
+        btnWarteschlange.Visible = ServerFunktionen.Verfuegbar(_db, ServerFunktionen.Warteschlange)
+        AddHandler btnWarteschlange.Click, Sub(s, e) InWarteschlange()
         t.Controls.Add(knoepfe, 0, t.RowCount) : t.SetColumnSpan(knoepfe, 2) : t.RowCount += 1
 
         AddHandler cboDrucker.SelectedIndexChanged, Sub(s, e) DruckerGewechselt()
@@ -138,7 +148,7 @@ Public Class SendenDialog
         For Each p In _platten
             cboPlatte.Items.Add(p)
         Next
-        If _platten.Count > 0 Then cboPlatte.SelectedIndex = 0
+        If _platten.Count > 0 Then cboPlatte.SelectedIndex = Math.Max(0, _platten.FindIndex(Function(p) p.Nummer = _vorauswahlPlatte))
         For Each d In _drucker
             cboDrucker.Items.Add($"{d.Name}  ({d.TypName})")
         Next
@@ -150,7 +160,8 @@ Public Class SendenDialog
             Return
         End If
         ' Bevorzugt einen passenden, bereiten Drucker vorschlagen
-        Dim index = _drucker.FindIndex(Function(d) Passt(d) AndAlso IstBereit(d))
+        Dim index = If(_vorauswahlDrucker.HasValue, _drucker.FindIndex(Function(d) d.Id = _vorauswahlDrucker.Value), -1)
+        If index < 0 Then index = _drucker.FindIndex(Function(d) Passt(d) AndAlso IstBereit(d))
         If index < 0 Then index = _drucker.FindIndex(AddressOf Passt)
         cboDrucker.SelectedIndex = Math.Max(0, index)
     End Sub
@@ -372,6 +383,21 @@ Public Class SendenDialog
             btnStarten.Enabled = True
             cboDrucker.Enabled = True
             bambuBereich.Enabled = True
+        End Try
+    End Sub
+
+    ''' <summary>Nicht jetzt drucken, sondern hinten in die Warteschlange (mit gewähltem Drucker und Platte).</summary>
+    Private Sub InWarteschlange()
+        Try
+            Dim a As New Auftrag With {.DateiId = _datei.Id, .DruckerId = GewaehlterDrucker()?.Id,
+                                       .Platte = If(TryCast(cboPlatte.SelectedItem, PlattenInfo)?.Nummer, 1)}
+            _db.WarteschlangeSpeichern(a)
+            MessageBox.Show(Me, $"""{_datei.Name}"" steht jetzt an Platz {a.Position} der Warteschlange." & Environment.NewLine &
+                                "Ist der Drucker frei, kommt eine Benachrichtigung; gestartet wird unter Drucker → Warteschlange.",
+                            "Warteschlange", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            DialogResult = DialogResult.Cancel
+        Catch ex As Exception
+            MessageBox.Show(Me, ex.Message, "Warteschlange", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
     End Sub
 

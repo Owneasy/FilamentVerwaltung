@@ -137,6 +137,9 @@ Public Module Theme
     Public Const SymEinstellungen As String = ChrW(&HE713)
     Public Const SymHaken As String = ChrW(&HE73E)
     Public Const SymWartung As String = ChrW(&HE90F)
+    Public Const SymPfeilHoch As String = ChrW(&HE74A)
+    Public Const SymPfeilRunter As String = ChrW(&HE74B)
+    Public Const SymListe As String = ChrW(&HE8FD)
 
     ' --- Farben für Buchungsarten
     Public Tuerkis As Color = ColorTranslator.FromHtml("#0D9488")
