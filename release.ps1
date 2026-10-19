@@ -58,6 +58,12 @@ if (-not $OhneGit) {
     }
 }
 
+# --- Tests (Kern und Server) – schlägt einer fehl, wird nichts gesetzt, committet oder gebaut
+Write-Host "Tests laufen ..."
+dotnet test (Join-Path $wurzel 'FilamentVerwaltung.Tests\FilamentVerwaltung.Tests.vbproj') -c Release -nologo -v q
+if ($LASTEXITCODE -ne 0) { throw "Tests fehlgeschlagen – Release abgebrochen." }
+Write-Host "Alle Tests bestanden."
+
 # --- Version in App und Server setzen (der Server meldet sie unter /api/info; GitHub baut das Image nach dem Push)
 foreach ($datei in $projekt, $serverProjekt) {
     $inhalt = [System.IO.File]::ReadAllText($datei)

@@ -1,4 +1,4 @@
-# Baut das Docker-Image des Servers und legt es in der GitHub Container Registry ab:
+# Testet Kern und Server und baut danach das Docker-Image des Servers für die GitHub Container Registry:
 #   ghcr.io/<besitzer>/filament-server:latest
 # Läuft bei jedem Push auf master, der Kern, Server oder Dockerfile ändert – oder von Hand unter "Actions".
 name: Server-Image
@@ -9,6 +9,7 @@ on:
     paths:
       - 'FilamentVerwaltung.Kern/**'
       - 'FilamentVerwaltung.Server/**'
+      - 'FilamentVerwaltung.Tests/**'
       - 'Dockerfile'
       - '.github/workflows/server-image.yml'
   workflow_dispatch:
@@ -18,7 +19,22 @@ permissions:
   packages: write
 
 jobs:
+  # Erst die Tests (Buchen, Wartung, Warteschlange, Server über HTTP, Verhalten mit älteren Servern) –
+  # schlägt einer fehl, wird kein Image gebaut.
+  testen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Tests
+        run: dotnet test FilamentVerwaltung.Tests/FilamentVerwaltung.Tests.vbproj -c Release --logger "console;verbosity=normal"
+
   bauen:
+    needs: testen
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
