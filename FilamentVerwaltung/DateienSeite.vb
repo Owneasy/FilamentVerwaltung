@@ -31,6 +31,7 @@ Public Class DateienSeite
 
     ' --- Ordner (nur zum Sortieren; links als Baum)
     Private Const ZiehFormat As String = "FilamentVerwaltung.DateiIds"
+    Private Const OrdnerZiehFormat As String = "FilamentVerwaltung.Ordner"
     Private ReadOnly baum As New TreeView With {.Dock = DockStyle.Fill, .BorderStyle = BorderStyle.None, .FullRowSelect = True,
                                                 .HideSelection = False, .ShowLines = True, .ShowRootLines = True, .ShowPlusMinus = True, .AllowDrop = True,
                                                 .LabelEdit = False}
@@ -308,12 +309,12 @@ Public Class DateienSeite
     End Sub
 
     Private Sub Ziel_DragEnter(sender As Object, e As DragEventArgs)
-        If e.Data IsNot Nothing AndAlso e.Data.GetDataPresent(ZiehFormat) Then Return   ' Dateien in einen Ordner ziehen: regelt der Baum
+        If e.Data IsNot Nothing AndAlso (e.Data.GetDataPresent(ZiehFormat) OrElse e.Data.GetDataPresent(OrdnerZiehFormat)) Then Return   ' Ziehen in den Ordnerbaum: regelt der Baum
         e.Effect = If(e.Data IsNot Nothing AndAlso e.Data.GetDataPresent(DataFormats.FileDrop), DragDropEffects.Copy, DragDropEffects.None)
     End Sub
 
     Private Sub Ziel_DragDrop(sender As Object, e As DragEventArgs)
-        If e.Data IsNot Nothing AndAlso e.Data.GetDataPresent(ZiehFormat) Then Return
+        If e.Data IsNot Nothing AndAlso (e.Data.GetDataPresent(ZiehFormat) OrElse e.Data.GetDataPresent(OrdnerZiehFormat)) Then Return
         Dim pfade = TryCast(e.Data?.GetData(DataFormats.FileDrop), String())
         If pfade IsNot Nothing Then
             ' Erst nach dem Drop verarbeiten, damit der Explorer nicht blockiert wird
@@ -582,6 +583,7 @@ Public Class DateienSeite
                                             If e.Button = MouseButtons.Right Then baum.SelectedNode = e.Node
                                         End Sub
         ' Dateien aus der Liste auf einen Ordner ziehen
+        AddHandler baum.ItemDrag, AddressOf Baum_ItemDrag
         AddHandler baum.DragOver, AddressOf Baum_DragOver
         AddHandler baum.DragDrop, AddressOf Baum_DragDrop
         AddHandler grid.MouseDown, Sub(s, e) _ziehStart = If(e.Button = MouseButtons.Left AndAlso grid.HitTest(e.X, e.Y).RowIndex >= 0, e.Location, CType(Nothing, Point?))
@@ -797,21 +799,69 @@ Public Class DateienSeite
         baum.Invalidate()
     End Sub
 
+    ''' <summary>Einen Ordner im Baum anfassen und auf einen anderen ziehen (umhängen).</summary>
+    Private Sub Baum_ItemDrag(sender As Object, e As ItemDragEventArgs)
+        Dim n = TryCast(e.Item, TreeNode)
+        Dim pfad = TryCast(n?.Tag, String)
+        If String.IsNullOrEmpty(pfad) OrElse e.Button <> MouseButtons.Left Then Return   ' "Alle Dateien" / "Ohne Ordner" bleiben stehen
+        baum.SelectedNode = n
+        Dim daten As New DataObject()
+        daten.SetData(OrdnerZiehFormat, pfad)
+        baum.DoDragDrop(daten, DragDropEffects.Move)
+        AblegeZielSetzen(Nothing)
+    End Sub
+
+    ''' <summary>Darf der gezogene Ordner hier abgelegt werden? Nicht in sich selbst, einen eigenen Unterordner oder dorthin, wo er schon liegt.</summary>
+    Private Shared Function OrdnerAblegbar(quelle As String, ziel As TreeNode) As Boolean
+        If ziel Is Nothing Then Return False
+        Dim zielPfad = If(TryCast(ziel.Tag, String), "")
+        If DateiOrdner.IstInnerhalb(zielPfad, quelle) AndAlso zielPfad.Length > 0 Then Return False
+        Return Not String.Equals(DateiOrdner.Eltern(quelle), zielPfad, StringComparison.OrdinalIgnoreCase)
+    End Function
+
     Private Sub Baum_DragOver(sender As Object, e As DragEventArgs)
-        If e.Data Is Nothing OrElse Not e.Data.GetDataPresent(ZiehFormat) Then Return
+        If e.Data Is Nothing Then Return
         Dim n = baum.GetNodeAt(baum.PointToClient(New Point(e.X, e.Y)))
-        AblegeZielSetzen(n)
-        e.Effect = If(n IsNot Nothing, DragDropEffects.Move, DragDropEffects.None)
+        If e.Data.GetDataPresent(OrdnerZiehFormat) Then
+            Dim ok = OrdnerAblegbar(CStr(e.Data.GetData(OrdnerZiehFormat)), n)
+            AblegeZielSetzen(If(ok, n, Nothing))
+            e.Effect = If(ok, DragDropEffects.Move, DragDropEffects.None)
+        ElseIf e.Data.GetDataPresent(ZiehFormat) Then
+            AblegeZielSetzen(n)
+            e.Effect = If(n IsNot Nothing, DragDropEffects.Move, DragDropEffects.None)
+        End If
     End Sub
 
     Private Sub Baum_DragDrop(sender As Object, e As DragEventArgs)
-        If e.Data Is Nothing OrElse Not e.Data.GetDataPresent(ZiehFormat) Then Return
+        If e.Data Is Nothing Then Return
         Dim n = baum.GetNodeAt(baum.PointToClient(New Point(e.X, e.Y)))
         AblegeZielSetzen(Nothing)
         If n Is Nothing Then Return
+        If e.Data.GetDataPresent(OrdnerZiehFormat) Then
+            Dim quelle = CStr(e.Data.GetData(OrdnerZiehFormat))
+            If OrdnerAblegbar(quelle, n) Then BeginInvoke(Sub() OrdnerUmhaengen(quelle, If(TryCast(n.Tag, String), "")))
+            Return
+        End If
+        If Not e.Data.GetDataPresent(ZiehFormat) Then Return
         Dim ids = CStr(e.Data.GetData(ZiehFormat)).Split(","c).Select(Function(x) Long.Parse(x)).ToList()
         ' "Alle Dateien" und "Ohne Ordner": auf die oberste Ebene
         Verschieben(ids, If(TryCast(n.Tag, String), ""))
+    End Sub
+
+    ''' <summary>Ordner (mit Unterordnern und Dateien) unter einen anderen hängen; "" = oberste Ebene.</summary>
+    Private Sub OrdnerUmhaengen(quelle As String, zielEltern As String)
+        Dim neu = DateiOrdner.Normalisieren(zielEltern & "/" & DateiOrdner.Name(quelle))
+        If _ordner.Any(Function(o) String.Equals(o, neu, StringComparison.OrdinalIgnoreCase)) AndAlso
+           MessageBox.Show(Me, $"In ""{If(zielEltern.Length > 0, zielEltern.Replace("/", " › "), "oberste Ebene")}"" gibt es schon einen Ordner ""{DateiOrdner.Name(quelle)}""." &
+                               Environment.NewLine & "Beide zusammenführen?", "Ordner verschieben",
+                           MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Return
+        Try
+            _db.OrdnerUmbenennen(quelle, neu)
+            _aktuellerOrdner = neu
+            DatenLaden()
+        Catch ex As Exception
+            Fehler("Der Ordner konnte nicht verschoben werden.", ex)
+        End Try
     End Sub
 
     ' ------------------------------------------------------------------ Aktionen
