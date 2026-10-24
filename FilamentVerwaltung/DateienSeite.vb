@@ -32,7 +32,7 @@ Public Class DateienSeite
     ' --- Ordner (nur zum Sortieren; links als Baum)
     Private Const ZiehFormat As String = "FilamentVerwaltung.DateiIds"
     Private ReadOnly baum As New TreeView With {.Dock = DockStyle.Fill, .BorderStyle = BorderStyle.None, .FullRowSelect = True,
-                                                .HideSelection = False, .ShowLines = False, .ShowRootLines = True, .AllowDrop = True,
+                                                .HideSelection = False, .ShowLines = True, .ShowRootLines = True, .ShowPlusMinus = True, .AllowDrop = True,
                                                 .LabelEdit = False}
     Private ordnerKarte As Karte
     Private _ordner As New List(Of String)
@@ -40,6 +40,12 @@ Public Class DateienSeite
     Private _aktuellerOrdner As String
     Private _baumWirdAufgebaut As Boolean
     Private _ziehStart As Point?
+    Private inhaltTabelle As TableLayoutPanel
+    Private rechtsKarte As Karte
+    ''' <summary>Während die Liste neu gefüllt wird: Auswahlwechsel nicht als Klick werten.</summary>
+    Private _bindet As Boolean
+    ''' <summary>Klick auf die schon gewählte Datei: beim Loslassen abwählen (außer es wird gezogen).</summary>
+    Private _abwaehlen As Boolean
     ''' <summary>Dateitypen, die beim Hinzufügen eines ganzen Ordners übernommen werden.</summary>
     Private Shared ReadOnly OrdnerImportTypen As String() = {".stl", ".3mf", ".obj", ".step", ".stp", ".gcode", ".gco", ".bgcode", ".f3d", ".scad"}
 
@@ -104,9 +110,10 @@ Public Class DateienSeite
         seite.Controls.Add(kopf, 0, 0)
 
         Dim inhalt As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 3, .RowCount = 1, .Margin = New Padding(0)}
+        inhaltTabelle = inhalt
         inhalt.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 230))
         inhalt.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
-        inhalt.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 420))
+        inhalt.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 0))   ' Vorschau erst, wenn eine Datei angeklickt ist
 
         ' --- Ordner
         ordnerKarte = OrdnerKarteAufbauen()
@@ -126,7 +133,8 @@ Public Class DateienSeite
         inhalt.Controls.Add(karte, 1, 0)
 
         ' --- Vorschau und Details
-        Dim rechts As New Karte With {.Dock = DockStyle.Fill, .Padding = New Padding(12)}
+        Dim rechts As New Karte With {.Dock = DockStyle.Fill, .Padding = New Padding(12), .Visible = False}
+        rechtsKarte = rechts
         Dim spalte As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 1, .RowCount = 2, .Margin = New Padding(0)}
         spalte.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
         spalte.RowStyles.Add(New RowStyle(SizeType.AutoSize))
@@ -232,7 +240,25 @@ Public Class DateienSeite
         AddHandler grid.CellDoubleClick, Sub(s, e)
                                               If e.RowIndex >= 0 Then Oeffnen()
                                           End Sub
-        AddHandler grid.SelectionChanged, Sub(s, e) DetailsAnzeigen(Ausgewaehlt())
+        AddHandler grid.SelectionChanged, Sub(s, e)
+                                              If Not _bindet Then DetailsAnzeigen(Ausgewaehlt())
+                                          End Sub
+        ' Auch wenn die Tabelle die Zeile schon intern markiert hatte (dann kommt kein SelectionChanged)
+        AddHandler grid.CurrentCellChanged, Sub(s, e)
+                                                If Not _bindet AndAlso grid.CurrentRow IsNot Nothing Then DetailsAnzeigen(Ausgewaehlt())
+                                            End Sub
+        ' Nochmal auf die gewählte Datei klicken (oder ins Leere / Esc): Auswahl aufheben, Vorschau schließen
+        AddHandler grid.CellMouseDown, Sub(s, e)
+                                           _abwaehlen = e.Button = MouseButtons.Left AndAlso e.RowIndex >= 0 AndAlso ModifierKeys = Keys.None AndAlso
+                                                        _angezeigt IsNot Nothing AndAlso If(grid.Eintrag(Of Datei)(e.RowIndex)?.Id, -1) = _angezeigt.Id
+                                       End Sub
+        AddHandler grid.CellMouseUp, Sub(s, e)
+                                         If _abwaehlen Then AuswahlAufheben()
+                                         _abwaehlen = False
+                                     End Sub
+        AddHandler grid.MouseDown, Sub(s, e)
+                                       If e.Button = MouseButtons.Left AndAlso grid.HitTest(e.X, e.Y).Type = DataGridViewHitTestType.None Then AuswahlAufheben()
+                                   End Sub
         AddHandler grid.SortierungGeaendert, Sub(s, e) AnsichtAktualisieren()
         AddHandler grid.CellFormatting, AddressOf Grid_CellFormatting
         AddHandler grid.CellPainting, AddressOf Grid_CellPainting
@@ -251,6 +277,11 @@ Public Class DateienSeite
             Case Keys.F5
                 DatenLaden()
                 Return True
+            Case Keys.Escape
+                If _angezeigt IsNot Nothing Then
+                    AuswahlAufheben()
+                    Return True
+                End If
             Case Keys.Enter
                 If grid.Focused Then
                     Oeffnen()
@@ -339,10 +370,24 @@ Public Class DateienSeite
         End If
 
         Dim liste = grid.Sortieren(treffer)
+        ' Nichts automatisch auswählen: Die Vorschau erscheint erst, wenn eine Datei angeklickt wird
+        _bindet = True
         quelle.DataSource = liste
-        If merkeId <> 0 Then grid.Auswaehlen(Of Datei)(Function(d) d.Id = merkeId)
-        DetailsAnzeigen(Ausgewaehlt())
+        grid.ClearSelection()
+        grid.CurrentCell = Nothing
+        If merkeId <> 0 AndAlso liste.Any(Function(d) d.Id = merkeId) Then grid.Auswaehlen(Of Datei)(Function(d) d.Id = merkeId)
+        _bindet = False
+        DetailsAnzeigen(If(merkeId <> 0, Ausgewaehlt(), Nothing))
         karte.FussLinks.Text = $"{liste.Count:N0} von {_alle.Count:N0} Dateien · {GroesseText(liste.Sum(Function(d) d.Groesse))}"
+    End Sub
+
+    ''' <summary>Keine Datei gewählt: Vorschau-Spalte schließen, die Liste nutzt die ganze Breite.</summary>
+    Private Sub AuswahlAufheben()
+        _bindet = True
+        grid.ClearSelection()
+        grid.CurrentCell = Nothing
+        _bindet = False
+        DetailsAnzeigen(Nothing)
     End Sub
 
     Private Function Ausgewaehlt() As Datei
@@ -353,7 +398,13 @@ Public Class DateienSeite
         If d IsNot Nothing AndAlso _angezeigt IsNot Nothing AndAlso d.Id = _angezeigt.Id AndAlso infos.Controls.Count > 0 Then Return
         NotizSpeichern()
         _angezeigt = d
-
+        ' Vorschau-Spalte nur mit gewählter Datei
+        If rechtsKarte IsNot Nothing AndAlso rechtsKarte.Visible <> (d IsNot Nothing) Then
+            inhaltTabelle.SuspendLayout()
+            inhaltTabelle.ColumnStyles(2).Width = If(d IsNot Nothing, Px(Me, 420), 0)
+            rechtsKarte.Visible = d IsNot Nothing
+            inhaltTabelle.ResumeLayout()
+        End If
         infos.SuspendLayout()
         infos.Controls.Clear()
         infos.RowCount = 0
@@ -565,7 +616,8 @@ Public Class DateienSeite
     Private Sub BaumFarbenSetzen()
         Const TVM_SETBKCOLOR = &H1100 + 29, TVM_SETTEXTCOLOR = &H1100 + 30, TVM_SETLINECOLOR = &H1100 + 40
         Try
-            SetWindowTheme(baum.Handle, If(Theme.Dunkel, "DarkMode_Explorer", "Explorer"), Nothing)
+            ' Klassische Darstellung: nur so zeichnet Windows die Verbindungslinien (das Explorer-Design blendet sie aus)
+            SetWindowTheme(baum.Handle, "", "")
         Catch ex As Exception
             ' Ohne Design-Unterstützung bleiben die Standard-Pfeile
         End Try
@@ -730,6 +782,7 @@ Public Class DateienSeite
         Dim groesse = SystemInformation.DragSize
         If Math.Abs(e.X - _ziehStart.Value.X) < groesse.Width AndAlso Math.Abs(e.Y - _ziehStart.Value.Y) < groesse.Height Then Return
         _ziehStart = Nothing
+        _abwaehlen = False   ' gezogen, nicht geklickt
         Dim ids = AusgewaehlteIds()
         If ids.Count = 0 Then Return
         Dim daten As New DataObject()
