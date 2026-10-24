@@ -106,6 +106,9 @@ CREATE TABLE IF NOT EXISTS PushAbo (
     Geraet    TEXT NOT NULL DEFAULT '',
     Erstellt  TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS DateiOrdner (
+    Pfad TEXT PRIMARY KEY COLLATE NOCASE
+);
 CREATE TABLE IF NOT EXISTS Warteschlange (
     Id        INTEGER PRIMARY KEY AUTOINCREMENT,
     DateiId   INTEGER NOT NULL,
@@ -165,6 +168,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             SpalteErgaenzen(c, "Buchung", "Foto", "TEXT NOT NULL DEFAULT ''")
             SpalteErgaenzen(c, "Filament", "Barcode", "TEXT NOT NULL DEFAULT ''")
             SpalteErgaenzen(c, "Drucker", "Drucksekunden", "INTEGER NOT NULL DEFAULT 0")
+            SpalteErgaenzen(c, "Datei", "Ordner", "TEXT NOT NULL DEFAULT ''")
             Dim druckerNeu = SpalteErgaenzen(c, "Buchung", "Drucker", "TEXT NOT NULL DEFAULT ''")
             Dim fehldruckNeu = SpalteErgaenzen(c, "Buchung", "Fehldruck", "INTEGER NOT NULL DEFAULT 0")
             SpalteErgaenzen(c, "Buchung", "FehldruckGrund", "TEXT NOT NULL DEFAULT ''")
@@ -1043,7 +1047,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     Public Function DateienLaden() As List(Of Datei) Implements IDatenquelle.DateienLaden
         Dim liste As New List(Of Datei)
         Using c = Oeffnen(), cmd = c.CreateCommand()
-            cmd.CommandText = "SELECT Id, Name, Pfad, Typ, Groesse, Hinzugefuegt, Gramm, Druckzeit, Material, Notiz " &
+            cmd.CommandText = "SELECT Id, Name, Pfad, Typ, Groesse, Hinzugefuegt, Gramm, Druckzeit, Material, Notiz, Ordner " &
                               "FROM Datei ORDER BY Hinzugefuegt DESC"
             Using r = cmd.ExecuteReader()
                 While r.Read()
@@ -1061,7 +1065,8 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
                         .Gramm = If(r.IsDBNull(6), CType(Nothing, Double?), r.GetDouble(6)),
                         .Druckzeit = If(r.IsDBNull(7), CType(Nothing, Integer?), r.GetInt32(7)),
                         .Material = Text(r, 8),
-                        .Notiz = Text(r, 9)
+                        .Notiz = Text(r, 9),
+                        .Ordner = Text(r, 10)
                     })
                 End While
             End Using
@@ -1109,6 +1114,88 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         End Try
         Return d
     End Function
+
+    ' ------------------------------------------------------------------ Ordner für Dateien (nur zum Sortieren)
+
+    ''' <summary>Alle Ordner: angelegte (auch leere) und die der Dateien, jeweils mit übergeordneten.</summary>
+    Public Function OrdnerLaden() As List(Of String) Implements IDatenquelle.OrdnerLaden
+        Dim pfade As New List(Of String)
+        Using c = Oeffnen(), cmd = c.CreateCommand()
+            cmd.CommandText = "SELECT Pfad FROM DateiOrdner UNION SELECT Ordner FROM Datei WHERE Ordner <> ''"
+            Using r = cmd.ExecuteReader()
+                While r.Read()
+                    pfade.Add(Text(r, 0))
+                End While
+            End Using
+        End Using
+        Return DateiOrdner.MitEltern(pfade)
+    End Function
+
+    Public Sub OrdnerAnlegen(pfad As String) Implements IDatenquelle.OrdnerAnlegen
+        Dim p = DateiOrdner.Normalisieren(pfad)
+        If p.Length = 0 Then Throw New ArgumentException("Bitte einen Ordnernamen eingeben.")
+        Using c = Oeffnen()
+            Befehl(c, Nothing, "INSERT OR IGNORE INTO DateiOrdner (Pfad) VALUES ($p)", "$p", p).ExecuteNonQuery()
+        End Using
+    End Sub
+
+    ''' <summary>Ordner umbenennen oder verschieben (mit allen Unterordnern und Dateien).</summary>
+    Public Sub OrdnerUmbenennen(alt As String, neu As String) Implements IDatenquelle.OrdnerUmbenennen
+        Dim a = DateiOrdner.Normalisieren(alt), n = DateiOrdner.Normalisieren(neu)
+        If a.Length = 0 OrElse n.Length = 0 Then Throw New ArgumentException("Bitte einen Ordnernamen eingeben.")
+        If DateiOrdner.IstInnerhalb(n, a) AndAlso Not String.Equals(a, n, StringComparison.OrdinalIgnoreCase) Then
+            Throw New ArgumentException("Ein Ordner kann nicht in sich selbst verschoben werden.")
+        End If
+        OrdnerErsetzen(a, n)
+    End Sub
+
+    ''' <summary>Ordner entfernen: Dateien und Unterordner wandern eine Ebene nach oben – es wird nichts gelöscht.</summary>
+    Public Sub OrdnerLoeschen(pfad As String) Implements IDatenquelle.OrdnerLoeschen
+        Dim p = DateiOrdner.Normalisieren(pfad)
+        If p.Length = 0 Then Return
+        OrdnerErsetzen(p, DateiOrdner.Eltern(p))
+    End Sub
+
+    ''' <summary>Präfix alt durch neu ersetzen – in angelegten Ordnern und bei den Dateien.</summary>
+    Private Sub OrdnerErsetzen(alt As String, neu As String)
+        Using c = Oeffnen(), t = c.BeginTransaction()
+            Dim ersetzen = Function(wert As String) As String
+                               If String.Equals(wert, alt, StringComparison.OrdinalIgnoreCase) Then Return neu
+                               Return DateiOrdner.Normalisieren(neu & "/" & wert.Substring(alt.Length + 1))
+                           End Function
+            Dim betroffen = Function(wert As String) DateiOrdner.IstInnerhalb(wert, alt) AndAlso wert.Length > 0
+            ' Dateien
+            Dim dateien As New List(Of (Id As Long, Ordner As String))
+            Using r = Befehl(c, t, "SELECT Id, Ordner FROM Datei WHERE Ordner <> ''").ExecuteReader()
+                While r.Read()
+                    If betroffen(Text(r, 1)) Then dateien.Add((r.GetInt64(0), Text(r, 1)))
+                End While
+            End Using
+            For Each d In dateien
+                Befehl(c, t, "UPDATE Datei SET Ordner = $o WHERE Id = $id", "$o", ersetzen(d.Ordner), "$id", d.Id).ExecuteNonQuery()
+            Next
+            ' Angelegte Ordner
+            Dim ordner As New List(Of String)
+            Using r = Befehl(c, t, "SELECT Pfad FROM DateiOrdner").ExecuteReader()
+                While r.Read()
+                    If betroffen(Text(r, 0)) Then ordner.Add(Text(r, 0))
+                End While
+            End Using
+            For Each o In ordner
+                Befehl(c, t, "DELETE FROM DateiOrdner WHERE Pfad = $p", "$p", o).ExecuteNonQuery()
+                Dim ziel = ersetzen(o)
+                If ziel.Length > 0 Then Befehl(c, t, "INSERT OR IGNORE INTO DateiOrdner (Pfad) VALUES ($p)", "$p", ziel).ExecuteNonQuery()
+            Next
+            t.Commit()
+        End Using
+    End Sub
+
+    ''' <summary>Datei in einen Ordner verschieben ("" = oberste Ebene).</summary>
+    Public Sub DateiOrdnerSetzen(dateiId As Long, ordner As String) Implements IDatenquelle.DateiOrdnerSetzen
+        Using c = Oeffnen()
+            Befehl(c, Nothing, "UPDATE Datei SET Ordner = $o WHERE Id = $id", "$o", DateiOrdner.Normalisieren(ordner), "$id", dateiId).ExecuteNonQuery()
+        End Using
+    End Sub
 
     Public Sub DateiNotizSpeichern(id As Long, notiz As String) Implements IDatenquelle.DateiNotizSpeichern
         Using c = Oeffnen()

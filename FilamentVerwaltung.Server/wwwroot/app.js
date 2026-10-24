@@ -474,42 +474,76 @@ const GCODE_TYPEN = ['GCODE', 'GCO', 'G', 'BGCODE'];
 const istDruckbar = d => d.hatDruckdaten || GCODE_TYPEN.includes(d.typ);
 const ZUSTAND_BEREIT = [2, 5, 6];   // Bereit, Fertig, Abgebrochen
 
+// Ordner (nur zum Sortieren): man klickt sich durch; die Suche findet Dateien in allen Ordnern
+let dateienOrdner = '';
+const ordnerName = p => p.split('/').pop();
+const ordnerEltern = p => p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
+
 async function dateienSeite() {
   titel('Dateien');
   inhalt(reiter('dateien') + `<div class="suche"><input id="dSuche" type="search" placeholder="Dateiname, Material …" value="${esc(dateienSuche)}">
       <button class="primaer" id="dHochladen">+ Hochladen</button><input type="file" id="dDatei" hidden multiple></div>
-    <p class="leise klein-text">Druckfertige Dateien (G-Code und geslicte 3MF). Antippen, um sie an einen Drucker zu senden.</p>
+    <div id="dPfad" class="ordner-pfad"></div>
     <div id="dListe"><p class="leer">Lade …</p></div>`);
-  let dateien;
-  try { dateien = (await holen('dateien')).filter(istDruckbar); } catch (e) { return fehler(e); }
+  let dateien, ordner;
+  try { [dateien, ordner] = await Promise.all([holen('dateien').then(l => l.filter(istDruckbar)), holen('ordner').catch(() => [])]); }
+  catch (e) { return fehler(e); }
+  if (dateienOrdner && !ordner.some(o => o.toLowerCase() === dateienOrdner.toLowerCase())) dateienOrdner = '';
+  const inOrdner = (d, o) => (d.ordner || '').toLowerCase() === o.toLowerCase();
+  const darunter = (d, o) => !o || inOrdner(d, o) || (d.ordner || '').toLowerCase().startsWith(o.toLowerCase() + '/');
   const zeigen = () => {
     const q = dateienSuche.toLowerCase();
-    const treffer = dateien.filter(d => !q || [d.name, d.material, d.notiz].some(x => (x || '').toLowerCase().includes(q)));
-    $('#dListe').innerHTML = treffer.length ? treffer.map(d => wischen(`<button class="karte datei-eintrag" data-senden="${d.id}">
+    // Pfadleiste: Dateien › Werkstatt › Halter (antippbar) und "Neuer Ordner"
+    const teile = dateienOrdner ? dateienOrdner.split('/') : [];
+    $('#dPfad').innerHTML = `<button class="link" data-ordner="">Alle Ordner</button>` +
+      teile.map((t, i) => ` › <button class="link" data-ordner="${esc(teile.slice(0, i + 1).join('/'))}">${esc(t)}</button>`).join('') +
+      `<button class="knopf klein" id="dNeuerOrdner">+ Ordner</button>`;
+    let html = '';
+    if (!q) {
+      const unter = ordner.filter(o => ordnerEltern(o).toLowerCase() === dateienOrdner.toLowerCase());
+      html += unter.map(o => `<button class="karte ordner-eintrag" data-ordner="${esc(o)}">
+          <span class="ordner-symbol">📁</span><b>${esc(ordnerName(o))}</b>
+          <small class="leise">${dateien.filter(d => darunter(d, o)).length}</small></button>`).join('');
+    }
+    const treffer = q
+      ? dateien.filter(d => darunter(d, dateienOrdner) && [d.name, d.material, d.notiz, d.ordner].some(x => (x || '').toLowerCase().includes(q)))
+      : dateien.filter(d => inOrdner(d, dateienOrdner));
+    html += treffer.map(d => wischen(`<button class="karte datei-eintrag" data-senden="${d.id}">
         <b>${esc(d.name)}</b>
-        <small class="leise">${[d.typ, d.gramm ? zahl(d.gramm) + ' g' : '', dauer(d.druckzeit), d.material, datumZeit(d.hinzugefuegt)].filter(Boolean).map(esc).join(' · ')}</small>
-      </button>`, 'datei', d.id, d.name)).join('')
-      : `<p class="leer">${dateien.length ? 'Keine passenden Dateien.' : 'Noch keine druckfertigen Dateien.<br><small>G-Code oder geslicte 3MF fügst du in der Windows-App unter „Dateien“ hinzu.</small>'}</p>`;
+        <small class="leise">${[q && d.ordner ? '📁 ' + d.ordner.replace(/\//g, ' › ') : '', d.typ, d.gramm ? zahl(d.gramm) + ' g' : '', dauer(d.druckzeit), d.material, datumZeit(d.hinzugefuegt)].filter(Boolean).map(esc).join(' · ')}</small>
+      </button>`, 'datei', d.id, d.name)).join('');
+    $('#dListe').innerHTML = html || `<p class="leer">${!dateien.length ? 'Noch keine druckfertigen Dateien.<br><small>G-Code oder geslicte 3MF fügst du in der Windows-App unter „Dateien“ hinzu oder lädst sie hier hoch.</small>'
+      : q ? 'Keine passenden Dateien.' : 'Dieser Ordner ist leer.'}</p>`;
+    document.querySelectorAll('[data-ordner]').forEach(b => b.onclick = () => { dateienOrdner = b.dataset.ordner; dateienSuche = ''; $('#dSuche').value = ''; zeigen(); });
+    $('#dNeuerOrdner').onclick = async () => {
+      const name = prompt(dateienOrdner ? `Neuer Ordner in „${dateienOrdner.replace(/\//g, ' › ')}“:` : 'Name des neuen Ordners:');
+      if (!name || !name.trim()) return;
+      const pfad = (dateienOrdner ? dateienOrdner + '/' : '') + name.trim();
+      try { await schicken('ordner', 'POST', { wert: pfad }); } catch (e) { return fehler(e); }
+      dateienOrdner = pfad.split('/').map(x => x.trim()).filter(Boolean).join('/');
+      dateienSeite();
+    };
   };
   $('#dSuche').oninput = e => { dateienSuche = e.target.value; zeigen(); };
   $('#dHochladen').onclick = () => $('#dDatei').click();
-  $('#dDatei').onchange = e => dateienHochladen([...e.target.files]);
+  $('#dDatei').onchange = e => dateienHochladen([...e.target.files], dateienOrdner);
   zeigen();
 }
-
 // vorauswahl (aus der Warteschlange): { druckerId, platte, auftragId } – nach dem Start wird der Auftrag entfernt
 async function sendenFormular(dateiId, vorauswahl = {}) {
-  let datei, drucker, live, spulen, platten;
+  let datei, drucker, live, spulen, platten, ordner;
   try {
     [datei, drucker, live, spulen, platten] = await Promise.all([
       holen('dateien').then(l => l.find(d => d.id === dateiId)), holen('drucker'), holen('drucker/live'),
       holen('filament'), holen(`dateien/${dateiId}/platten`)]);
+    ordner = await holen('ordner').catch(() => null);
   } catch (e) { return fehler(e); }
   if (!datei) return toast('Die Datei gibt es nicht mehr.', true);
   drucker = drucker.filter(d => d.aktiv);
   const kopf = `<div class="zeile"><div><h2>${esc(datei.name)}</h2>
       <small class="leise">${[datei.gramm ? zahl(datei.gramm) + ' g' : '', dauer(datei.druckzeit), datei.material].filter(Boolean).map(esc).join(' · ')}</small></div>
-      <button class="knopf" id="sAbbrechen">Abbrechen</button></div>`;
+      <button class="knopf" id="sAbbrechen">Abbrechen</button></div>
+    ${ordner ? `<label>Ordner<select id="sOrdner"><option value="">– ohne Ordner –</option>${ordner.map(o => `<option value="${esc(o)}" ${o.toLowerCase() === (datei.ordner || '').toLowerCase() ? 'selected' : ''}>${esc(o.replace(/\//g, ' › '))}</option>`).join('')}</select></label>` : ''}`;
   if (!drucker.length) {
     blattOeffnen(kopf + '<p class="fehler">Es ist kein Drucker angebunden (Drucker legst du in der Windows-App an).</p>');
     $('#sAbbrechen').onclick = blattSchliessen;
@@ -634,6 +668,10 @@ async function sendenFormular(dateiId, vorauswahl = {}) {
   if ($('#sPlatte')) $('#sPlatte').onchange = pruefen;
   await pruefen();
 
+  if ($('#sOrdner')) $('#sOrdner').onchange = async e => {
+    try { await schicken(`dateien/${datei.id}/ordner`, 'PUT', { wert: e.target.value }); datei.ordner = e.target.value; toast('Ordner geändert.'); }
+    catch (x) { fehler(x); }
+  };
   $('#sAbbrechen').onclick = async () => {
     if (!auftrag) return blattSchliessen();
     try { await schicken(`sendeauftraege/${auftrag}`, 'DELETE'); } catch { /* läuft evtl. schon nicht mehr */ }
@@ -1718,7 +1756,7 @@ async function gekauft(schluessel) {
 
 // ------------------------------------------------------------------ Dateien vom Handy hochladen (in Stücken, wie die App)
 
-async function dateienHochladen(dateien) {
+async function dateienHochladen(dateien, ordner = '') {
   if (!dateien.length) return;
   const STUECK = 16 * 1024 * 1024;   // wie Api.UploadStueckBytes – unter der 100-MB-Grenze von Cloudflare
   blattOeffnen(`<h2>Hochladen</h2><p id="uText" class="leise"></p><div class="balken"><div id="uBalken" style="width:0"></div></div>`);
@@ -1736,7 +1774,8 @@ async function dateienHochladen(dateien) {
         if (datei.size === 0) break;
       }
       $('#uBalken').style.width = '100%';
-      await schicken(`uploads/${id}/fertig`, 'POST', { name: datei.name });
+      const neu = await (await schicken(`uploads/${id}/fertig`, 'POST', { name: datei.name })).json();
+      if (ordner) await schicken(`dateien/${neu.id}/ordner`, 'PUT', { wert: ordner });
       fertig++;
     } catch (e) {
       toast(`${datei.name}: ${e.message}`, true);

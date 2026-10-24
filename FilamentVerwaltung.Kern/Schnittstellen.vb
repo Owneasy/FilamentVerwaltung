@@ -56,6 +56,12 @@ Public Interface IDatenquelle
     Function DateienLaden() As List(Of Datei)
     Function DateiImportieren(quelle As String) As Datei
     Sub DateiNotizSpeichern(id As Long, notiz As String)
+    ' Ordner für Dateien (nur zum Sortieren)
+    Function OrdnerLaden() As List(Of String)
+    Sub OrdnerAnlegen(pfad As String)
+    Sub OrdnerUmbenennen(alt As String, neu As String)
+    Sub OrdnerLoeschen(pfad As String)
+    Sub DateiOrdnerSetzen(dateiId As Long, ordner As String)
     Sub DateiLoeschen(d As Datei)
     ''' <summary>Pfad einer lokal lesbaren Kopie der Datei (beim Server wird sie dafür heruntergeladen).</summary>
     Function DateiPfad(d As Datei) As String

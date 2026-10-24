@@ -29,6 +29,20 @@ Public Class DateienSeite
     Private ReadOnly tipps As New ToolTip()
     Private karte As TabellenKarte
 
+    ' --- Ordner (nur zum Sortieren; links als Baum)
+    Private Const ZiehFormat As String = "FilamentVerwaltung.DateiIds"
+    Private ReadOnly baum As New TreeView With {.Dock = DockStyle.Fill, .BorderStyle = BorderStyle.None, .FullRowSelect = True,
+                                                .HideSelection = False, .ShowLines = False, .ShowRootLines = True, .AllowDrop = True,
+                                                .LabelEdit = False}
+    Private ordnerKarte As Karte
+    Private _ordner As New List(Of String)
+    ''' <summary>Gewählter Ordner; Nothing = alle Dateien, "" = oberste Ebene.</summary>
+    Private _aktuellerOrdner As String
+    Private _baumWirdAufgebaut As Boolean
+    Private _ziehStart As Point?
+    ''' <summary>Dateitypen, die beim Hinzufügen eines ganzen Ordners übernommen werden.</summary>
+    Private Shared ReadOnly OrdnerImportTypen As String() = {".stl", ".3mf", ".obj", ".step", ".stp", ".gcode", ".gco", ".bgcode", ".f3d", ".scad"}
+
     ' --- Detailbereich
     Private ReadOnly lblName As New Label With {.AutoSize = True, .Font = Theme.SchriftLogo, .ForeColor = Theme.TextStark,
                                                 .Margin = New Padding(0, 0, 0, 2)}
@@ -89,9 +103,14 @@ Public Class DateienSeite
         kopf.Knoepfe.Controls.Add(btnHinzu)
         seite.Controls.Add(kopf, 0, 0)
 
-        Dim inhalt As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 2, .RowCount = 1, .Margin = New Padding(0)}
+        Dim inhalt As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 3, .RowCount = 1, .Margin = New Padding(0)}
+        inhalt.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 230))
         inhalt.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
         inhalt.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 420))
+
+        ' --- Ordner
+        ordnerKarte = OrdnerKarteAufbauen()
+        inhalt.Controls.Add(ordnerKarte, 0, 0)
 
         ' --- Liste
         TabelleAufbauen()
@@ -104,7 +123,7 @@ Public Class DateienSeite
         AddHandler cboTyp.SelectedIndexChanged, Sub(s, e) AnsichtAktualisieren()
         karte.Werkzeug.Controls.Add(cboTyp)
         karte.FussRechts.Text = "Dateien hierher ziehen zum Hinzufügen"
-        inhalt.Controls.Add(karte, 0, 0)
+        inhalt.Controls.Add(karte, 1, 0)
 
         ' --- Vorschau und Details
         Dim rechts As New Karte With {.Dock = DockStyle.Fill, .Padding = New Padding(12)}
@@ -115,7 +134,7 @@ Public Class DateienSeite
         details = DetailsAufbauen()
         spalte.Controls.Add(details, 0, 1)
         rechts.Controls.Add(spalte)
-        inhalt.Controls.Add(rechts, 1, 0)
+        inhalt.Controls.Add(rechts, 2, 0)
 
         seite.Controls.Add(inhalt, 0, 1)
         Controls.Add(seite)
@@ -189,7 +208,23 @@ Public Class DateienSeite
         menue.Items.Add("Im Slicer öffnen", Nothing, Sub(s, e) ImSlicerOeffnen(Nothing))
         menue.Items.Add("Öffnen", Nothing, Sub(s, e) Oeffnen())
         menue.Items.Add("Im Ordner anzeigen", Nothing, Sub(s, e) OrdnerOeffnen(_angezeigt))
+        Dim mnuVerschieben As New ToolStripMenuItem("In Ordner verschieben")
+        menue.Items.Add(mnuVerschieben)
         menue.Items.Add(New ToolStripSeparator())
+        AddHandler menue.Opening, Sub(s, e)
+                                      mnuVerschieben.Visible = OrdnerVerfuegbar()
+                                      mnuVerschieben.DropDownItems.Clear()
+                                      mnuVerschieben.DropDownItems.Add("(oberste Ebene)", Nothing, Sub(x, y) Verschieben(AusgewaehlteIds(), ""))
+                                      For Each o In _ordner
+                                          Dim ziel = o
+                                          mnuVerschieben.DropDownItems.Add(o.Replace("/", " › "), Nothing, Sub(x, y) Verschieben(AusgewaehlteIds(), ziel))
+                                      Next
+                                      mnuVerschieben.DropDownItems.Add(New ToolStripSeparator())
+                                      mnuVerschieben.DropDownItems.Add("Neuer Ordner …", Nothing, Sub(x, y)
+                                                                                                Dim neu = OrdnerNameAbfragen("Neuer Ordner", If(_aktuellerOrdner, ""), "")
+                                                                                                If neu IsNot Nothing Then Verschieben(AusgewaehlteIds(), neu)
+                                                                                            End Sub)
+                                  End Sub
         menue.Items.Add("Löschen", Nothing, Sub(s, e) Loeschen()).ForeColor = Theme.Rot
         AddHandler menue.Opening, Sub(s, e) e.Cancel = Ausgewaehlt() Is Nothing
         grid.ContextMenuStrip = menue
@@ -242,10 +277,12 @@ Public Class DateienSeite
     End Sub
 
     Private Sub Ziel_DragEnter(sender As Object, e As DragEventArgs)
+        If e.Data IsNot Nothing AndAlso e.Data.GetDataPresent(ZiehFormat) Then Return   ' Dateien in einen Ordner ziehen: regelt der Baum
         e.Effect = If(e.Data IsNot Nothing AndAlso e.Data.GetDataPresent(DataFormats.FileDrop), DragDropEffects.Copy, DragDropEffects.None)
     End Sub
 
     Private Sub Ziel_DragDrop(sender As Object, e As DragEventArgs)
+        If e.Data IsNot Nothing AndAlso e.Data.GetDataPresent(ZiehFormat) Then Return
         Dim pfade = TryCast(e.Data?.GetData(DataFormats.FileDrop), String())
         If pfade IsNot Nothing Then
             ' Erst nach dem Drop verarbeiten, damit der Explorer nicht blockiert wird
@@ -259,10 +296,13 @@ Public Class DateienSeite
         Try
             _alle = _db.DateienLaden()
             _buchungen = _db.BuchungenLaden()
+            _ordner = If(OrdnerVerfuegbar(), _db.OrdnerLaden(), New List(Of String))
         Catch ex As Exception
             Fehler("Die Dateien konnten nicht geladen werden.", ex)
             Return
         End Try
+        ordnerKarte.Visible = OrdnerVerfuegbar()
+        BaumAufbauen()
         TypFilterAktualisieren()
         AnsichtAktualisieren(auswahlId)
     End Sub
@@ -290,6 +330,13 @@ Public Class DateienSeite
         If typ IsNot Nothing AndAlso typ <> AlleTypen Then treffer = treffer.Where(Function(d) d.Typ = typ)
         Dim begriff = suche.Eingabe.Text.Trim()
         If begriff.Length > 0 Then treffer = treffer.Where(Function(d) d.Passt(begriff))
+        ' Ordner: nur die Dateien direkt darin; beim Suchen auch die Unterordner
+        If _aktuellerOrdner IsNot Nothing Then
+            Dim ordner = _aktuellerOrdner
+            treffer = If(begriff.Length > 0,
+                         treffer.Where(Function(d) DateiOrdner.IstInnerhalb(d.Ordner, ordner)),
+                         treffer.Where(Function(d) String.Equals(DateiOrdner.Normalisieren(d.Ordner), ordner, StringComparison.OrdinalIgnoreCase)))
+        End If
 
         Dim liste = grid.Sortieren(treffer)
         quelle.DataSource = liste
@@ -320,6 +367,7 @@ Public Class DateienSeite
             InfoZeile("Verbrauch laut Slicer", GrammText(d.Gramm))
             InfoZeile("Druckzeit laut Slicer", DauerText(d.Druckzeit))
             InfoZeile("Material", d.Material)
+            If OrdnerVerfuegbar() Then InfoZeile("Ordner", If(d.Ordner.Length > 0, d.Ordner.Replace("/", " › "), "oberste Ebene"))
             Dim drucke = _buchungen.Where(Function(b) b.DateiId.HasValue AndAlso b.DateiId.Value = d.Id).ToList()
             InfoZeile("Gedruckt", If(drucke.Count = 0, "noch nie",
                                      $"{drucke.Count}× · zuletzt am {drucke.Max(Function(b) b.Datum):dd.MM.yyyy}"))
@@ -444,6 +492,275 @@ Public Class DateienSeite
                               TextFormatFlags.HorizontalCenter Or TextFormatFlags.WordBreak Or TextFormatFlags.NoPadding)
     End Sub
 
+    ' ------------------------------------------------------------------ Ordner
+
+    Private Function OrdnerVerfuegbar() As Boolean
+        Return ServerFunktionen.Verfuegbar(_db, ServerFunktionen.Ordner)
+    End Function
+
+    Private Function OrdnerKarteAufbauen() As Karte
+        Dim k As New Karte With {.Dock = DockStyle.Fill, .Padding = New Padding(8, 10, 8, 8), .Margin = New Padding(0, 0, 16, 0)}
+        Dim t As New TableLayoutPanel With {.Dock = DockStyle.Fill, .ColumnCount = 2, .RowCount = 2, .Margin = New Padding(0)}
+        t.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
+        t.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
+        t.RowStyles.Add(New RowStyle(SizeType.AutoSize))
+        t.RowStyles.Add(New RowStyle(SizeType.Percent, 100))
+        t.Controls.Add(New Label With {.Text = "Ordner", .Font = Theme.SchriftFett, .ForeColor = Theme.TextStark, .AutoSize = True,
+                                       .Anchor = AnchorStyles.Left, .Margin = New Padding(6, 0, 0, 6)}, 0, 0)
+        Dim btnNeu As New WebButton("", Theme.SymNeu) With {.Margin = New Padding(0, 0, 0, 6)}
+        AddHandler btnNeu.Click, Sub(s, e) NeuerOrdner(If(_aktuellerOrdner, ""))
+        tipps.SetToolTip(btnNeu, "Neuer Ordner (im gewählten Ordner)")
+        t.Controls.Add(btnNeu, 1, 0)
+
+        baum.BackColor = Theme.KartenFlaeche
+        baum.ForeColor = Theme.TextNormal
+        baum.Font = Theme.Schrift
+        baum.ItemHeight = Px(Me, 28)
+        baum.Indent = Px(Me, 14)
+        baum.DrawMode = TreeViewDrawMode.OwnerDrawText
+        ' Im Dunkel-Modus übernimmt die Baumansicht BackColor nicht von selbst – Farben direkt setzen, Pfeile im Explorer-Stil
+        AddHandler baum.HandleCreated, Sub(s, e) BaumFarbenSetzen()
+        AddHandler baum.DrawNode, AddressOf Baum_DrawNode
+        AddHandler baum.AfterSelect, Sub(s, e)
+                                         If _baumWirdAufgebaut Then Return
+                                         _aktuellerOrdner = TryCast(e.Node?.Tag, String)
+                                         _angezeigt = Nothing
+                                         AnsichtAktualisieren()
+                                     End Sub
+        AddHandler baum.NodeMouseClick, Sub(s, e)
+                                            If e.Button = MouseButtons.Right Then baum.SelectedNode = e.Node
+                                        End Sub
+        ' Dateien aus der Liste auf einen Ordner ziehen
+        AddHandler baum.DragOver, AddressOf Baum_DragOver
+        AddHandler baum.DragDrop, AddressOf Baum_DragDrop
+        AddHandler grid.MouseDown, Sub(s, e) _ziehStart = If(e.Button = MouseButtons.Left AndAlso grid.HitTest(e.X, e.Y).RowIndex >= 0, e.Location, CType(Nothing, Point?))
+        AddHandler grid.MouseMove, AddressOf Grid_MouseMove
+
+        Dim menue As New ContextMenuStrip With {.Font = Theme.Schrift}
+        Dim neu = menue.Items.Add("Neuer Ordner …", Nothing, Sub(s, e) NeuerOrdner(If(_aktuellerOrdner, "")))
+        Dim umbenennen = menue.Items.Add("Umbenennen …", Nothing, Sub(s, e) OrdnerUmbenennen())
+        Dim loeschen = menue.Items.Add("Ordner auflösen …", Nothing, Sub(s, e) OrdnerAufloesen())
+        loeschen.ForeColor = Theme.Rot
+        AddHandler menue.Opening, Sub(s, e)
+                                      Dim echt = Not String.IsNullOrEmpty(_aktuellerOrdner)
+                                      neu.Text = If(echt, "Neuer Unterordner …", "Neuer Ordner …")
+                                      umbenennen.Visible = echt
+                                      loeschen.Visible = echt
+                                  End Sub
+        baum.ContextMenuStrip = menue
+        t.Controls.Add(baum, 0, 1)
+        t.SetColumnSpan(baum, 2)
+        k.Controls.Add(t)
+        Return k
+    End Function
+
+    <Runtime.InteropServices.DllImport("user32.dll")>
+    Private Shared Function SendMessage(hWnd As IntPtr, msg As Integer, wParam As IntPtr, lParam As IntPtr) As IntPtr
+    End Function
+
+    <Runtime.InteropServices.DllImport("uxtheme.dll", CharSet:=Runtime.InteropServices.CharSet.Unicode)>
+    Private Shared Function SetWindowTheme(hWnd As IntPtr, appName As String, idList As String) As Integer
+    End Function
+
+    Private Sub BaumFarbenSetzen()
+        Const TVM_SETBKCOLOR = &H1100 + 29, TVM_SETTEXTCOLOR = &H1100 + 30, TVM_SETLINECOLOR = &H1100 + 40
+        Try
+            SetWindowTheme(baum.Handle, If(Theme.Dunkel, "DarkMode_Explorer", "Explorer"), Nothing)
+        Catch ex As Exception
+            ' Ohne Design-Unterstützung bleiben die Standard-Pfeile
+        End Try
+        SendMessage(baum.Handle, TVM_SETBKCOLOR, IntPtr.Zero, New IntPtr(ColorTranslator.ToWin32(Theme.KartenFlaeche)))
+        SendMessage(baum.Handle, TVM_SETTEXTCOLOR, IntPtr.Zero, New IntPtr(ColorTranslator.ToWin32(Theme.TextNormal)))
+        SendMessage(baum.Handle, TVM_SETLINECOLOR, IntPtr.Zero, New IntPtr(ColorTranslator.ToWin32(Theme.TextLeise)))
+    End Sub
+
+    ''' <summary>"Alle Dateien", "Ohne Ordner" und die Ordner als Baum; aufgeklappte Ordner und Auswahl bleiben erhalten.</summary>
+    Private Sub BaumAufbauen()
+        Dim offen = AlleKnoten(baum.Nodes).Where(Function(n) n.IsExpanded).Select(Function(n) TryCast(n.Tag, String)).ToHashSet()
+        _baumWirdAufgebaut = True
+        baum.BeginUpdate()
+        baum.Nodes.Clear()
+        Dim alle = baum.Nodes.Add("Alle Dateien")
+        alle.Tag = Nothing
+        Dim ohne = baum.Nodes.Add("Ohne Ordner")
+        ohne.Tag = ""
+        Dim knoten As New Dictionary(Of String, TreeNode)(StringComparer.OrdinalIgnoreCase)
+        For Each pfad In _ordner
+            Dim eltern = DateiOrdner.Eltern(pfad)
+            Dim liste = If(eltern.Length > 0 AndAlso knoten.ContainsKey(eltern), knoten(eltern).Nodes, baum.Nodes)
+            Dim n = liste.Add(DateiOrdner.Name(pfad))
+            n.Tag = pfad
+            knoten(pfad) = n
+        Next
+        For Each n In AlleKnoten(baum.Nodes)
+            If offen.Contains(TryCast(n.Tag, String)) Then n.Expand()
+        Next
+        ' Gewählten Ordner wieder auswählen (oder "Alle Dateien", wenn es ihn nicht mehr gibt)
+        Dim auswahl = If(_aktuellerOrdner Is Nothing, alle, If(_aktuellerOrdner = "", ohne,
+                         If(knoten.ContainsKey(_aktuellerOrdner), knoten(_aktuellerOrdner), Nothing)))
+        If auswahl Is Nothing Then
+            auswahl = alle
+            _aktuellerOrdner = Nothing
+        End If
+        baum.SelectedNode = auswahl
+        auswahl.EnsureVisible()
+        baum.EndUpdate()
+        _baumWirdAufgebaut = False
+    End Sub
+
+    Private Shared Iterator Function AlleKnoten(liste As TreeNodeCollection) As IEnumerable(Of TreeNode)
+        For Each n As TreeNode In liste
+            Yield n
+            For Each kind In AlleKnoten(n.Nodes)
+                Yield kind
+            Next
+        Next
+    End Function
+
+    ''' <summary>Anzahl der Dateien direkt im Ordner (bzw. alle / ohne Ordner).</summary>
+    Private Function Anzahl(pfad As String) As Integer
+        If pfad Is Nothing Then Return _alle.Count
+        Return _alle.Where(Function(d) String.Equals(DateiOrdner.Normalisieren(d.Ordner), pfad, StringComparison.OrdinalIgnoreCase)).Count()
+    End Function
+
+    Private Sub Baum_DrawNode(sender As Object, e As DrawTreeNodeEventArgs)
+        If e.Node Is Nothing OrElse e.Bounds.IsEmpty Then Return
+        Dim r As New Rectangle(e.Bounds.X, e.Bounds.Y, baum.ClientSize.Width - e.Bounds.X, e.Bounds.Height)
+        Dim gewaehlt = (e.State And TreeNodeStates.Selected) <> 0
+        Dim ziel = e.Node Is _ablegeZiel
+        Using b As New SolidBrush(If(ziel, Hell(Theme.Akzent, 0.25), If(gewaehlt, Theme.Auswahl, Theme.KartenFlaeche)))
+            e.Graphics.FillRectangle(b, r)
+        End Using
+        Dim pfad = TryCast(e.Node.Tag, String)
+        Dim symbol = If(pfad Is Nothing, Theme.SymDatei, Theme.SymOrdner)
+        Dim x = r.X + Px(baum, 2)
+        TextRenderer.DrawText(e.Graphics, symbol, Theme.SymbolSchrift, New Rectangle(x, r.Y, Px(baum, 20), r.Height),
+                              If(pfad Is Nothing OrElse pfad = "", Theme.TextLeise, Theme.Gelb),
+                              TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding)
+        x += Px(baum, 24)
+        Dim zahl = Anzahl(pfad).ToString()
+        Dim zahlBreite = TextRenderer.MeasureText(zahl, Theme.SchriftKlein).Width + Px(baum, 8)
+        TextRenderer.DrawText(e.Graphics, e.Node.Text, If(gewaehlt, Theme.SchriftFett, Theme.Schrift),
+                              New Rectangle(x, r.Y, Math.Max(0, r.Right - x - zahlBreite), r.Height),
+                              If(gewaehlt, Theme.TextStark, Theme.TextNormal),
+                              TextFormatFlags.Left Or TextFormatFlags.VerticalCenter Or TextFormatFlags.EndEllipsis Or TextFormatFlags.NoPadding)
+        TextRenderer.DrawText(e.Graphics, zahl, Theme.SchriftKlein, New Rectangle(r.Right - zahlBreite, r.Y, zahlBreite - Px(baum, 4), r.Height),
+                              Theme.TextLeise, TextFormatFlags.Right Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding)
+    End Sub
+
+    ''' <summary>Fragt einen Ordnernamen ab und gibt den vollständigen Pfad zurück (Nothing = abgebrochen).</summary>
+    Private Function OrdnerNameAbfragen(titel As String, eltern As String, vorgabe As String) As String
+        Dim wo = If(String.IsNullOrEmpty(eltern), "auf oberster Ebene", $"in ""{eltern.Replace("/", " › ")}""")
+        Dim name = Eingabe.Abfragen(Me, titel, $"Name des Ordners ({wo}). Mit ""/"" lassen sich auch Unterordner anlegen, z. B. ""Halter/Wand"".", vorgabe)
+        If name Is Nothing Then Return Nothing
+        Dim pfad = DateiOrdner.Normalisieren(eltern & "/" & name)
+        If DateiOrdner.Normalisieren(name).Length = 0 Then Return Nothing
+        Return pfad
+    End Function
+
+    Private Sub NeuerOrdner(eltern As String)
+        Dim pfad = OrdnerNameAbfragen("Neuer Ordner", eltern, "")
+        If pfad Is Nothing Then Return
+        Try
+            _db.OrdnerAnlegen(pfad)
+            _aktuellerOrdner = pfad
+            DatenLaden()
+        Catch ex As Exception
+            Fehler("Der Ordner konnte nicht angelegt werden.", ex)
+        End Try
+    End Sub
+
+    Private Sub OrdnerUmbenennen()
+        Dim alt = _aktuellerOrdner
+        If String.IsNullOrEmpty(alt) Then Return
+        Dim neu = OrdnerNameAbfragen("Ordner umbenennen", DateiOrdner.Eltern(alt), DateiOrdner.Name(alt))
+        If neu Is Nothing OrElse String.Equals(neu, alt, StringComparison.Ordinal) Then Return
+        Try
+            _db.OrdnerUmbenennen(alt, neu)
+            _aktuellerOrdner = neu
+            DatenLaden()
+        Catch ex As Exception
+            Fehler("Der Ordner konnte nicht umbenannt werden.", ex)
+        End Try
+    End Sub
+
+    ''' <summary>Ordner entfernen – Dateien und Unterordner wandern eine Ebene nach oben, gelöscht wird nichts.</summary>
+    Private Sub OrdnerAufloesen()
+        Dim pfad = _aktuellerOrdner
+        If String.IsNullOrEmpty(pfad) Then Return
+        Dim eltern = DateiOrdner.Eltern(pfad)
+        Dim innen = _alle.Where(Function(d) DateiOrdner.IstInnerhalb(d.Ordner, pfad)).Count()
+        If MessageBox.Show(Me, $"Ordner ""{DateiOrdner.Name(pfad)}"" auflösen?" & Environment.NewLine & Environment.NewLine &
+                               If(innen > 0, $"Die {innen} Datei(en) und Unterordner darin wandern nach ""{If(eltern.Length > 0, eltern.Replace("/", " › "), "Ohne Ordner")}"" – gelöscht wird nichts.",
+                                  "Der Ordner ist leer."),
+                           "Ordner auflösen", MessageBoxButtons.YesNo, MessageBoxIcon.Question) <> DialogResult.Yes Then Return
+        Try
+            _db.OrdnerLoeschen(pfad)
+            _aktuellerOrdner = If(eltern.Length > 0, eltern, Nothing)
+            DatenLaden()
+        Catch ex As Exception
+            Fehler("Der Ordner konnte nicht aufgelöst werden.", ex)
+        End Try
+    End Sub
+
+    Private Function AusgewaehlteIds() As List(Of Long)
+        Dim ids = grid.SelectedRows.Cast(Of DataGridViewRow)().Select(Function(r) TryCast(r.DataBoundItem, Datei)).
+                                    Where(Function(d) d IsNot Nothing).Select(Function(d) d.Id).ToList()
+        If ids.Count = 0 AndAlso Ausgewaehlt() IsNot Nothing Then ids.Add(Ausgewaehlt().Id)
+        Return ids
+    End Function
+
+    Private Sub Verschieben(ids As List(Of Long), ziel As String)
+        If ids.Count = 0 Then Return
+        Try
+            For Each id In ids
+                _db.DateiOrdnerSetzen(id, ziel)
+            Next
+            Dim erste = ids(0)
+            DatenLaden(If(_aktuellerOrdner Is Nothing, erste, 0))
+        Catch ex As Exception
+            Fehler("Die Datei konnte nicht verschoben werden.", ex)
+        End Try
+    End Sub
+
+    Private _ablegeZiel As TreeNode
+
+    Private Sub Grid_MouseMove(sender As Object, e As MouseEventArgs)
+        If Not _ziehStart.HasValue OrElse e.Button <> MouseButtons.Left OrElse Not OrdnerVerfuegbar() Then Return
+        Dim groesse = SystemInformation.DragSize
+        If Math.Abs(e.X - _ziehStart.Value.X) < groesse.Width AndAlso Math.Abs(e.Y - _ziehStart.Value.Y) < groesse.Height Then Return
+        _ziehStart = Nothing
+        Dim ids = AusgewaehlteIds()
+        If ids.Count = 0 Then Return
+        Dim daten As New DataObject()
+        daten.SetData(ZiehFormat, String.Join(",", ids))
+        grid.DoDragDrop(daten, DragDropEffects.Move)
+        AblegeZielSetzen(Nothing)
+    End Sub
+
+    Private Sub AblegeZielSetzen(n As TreeNode)
+        If n Is _ablegeZiel Then Return
+        _ablegeZiel = n
+        baum.Invalidate()
+    End Sub
+
+    Private Sub Baum_DragOver(sender As Object, e As DragEventArgs)
+        If e.Data Is Nothing OrElse Not e.Data.GetDataPresent(ZiehFormat) Then Return
+        Dim n = baum.GetNodeAt(baum.PointToClient(New Point(e.X, e.Y)))
+        AblegeZielSetzen(n)
+        e.Effect = If(n IsNot Nothing, DragDropEffects.Move, DragDropEffects.None)
+    End Sub
+
+    Private Sub Baum_DragDrop(sender As Object, e As DragEventArgs)
+        If e.Data Is Nothing OrElse Not e.Data.GetDataPresent(ZiehFormat) Then Return
+        Dim n = baum.GetNodeAt(baum.PointToClient(New Point(e.X, e.Y)))
+        AblegeZielSetzen(Nothing)
+        If n Is Nothing Then Return
+        Dim ids = CStr(e.Data.GetData(ZiehFormat)).Split(","c).Select(Function(x) Long.Parse(x)).ToList()
+        ' "Alle Dateien" und "Ohne Ordner": auf die oberste Ebene
+        Verschieben(ids, If(TryCast(n.Tag, String), ""))
+    End Sub
+
     ' ------------------------------------------------------------------ Aktionen
 
     Private Sub DateienWaehlen()
@@ -452,20 +769,44 @@ Public Class DateienSeite
         End Using
     End Sub
 
+    ''' <summary>
+    ''' Dateien hinzufügen – in den gerade geöffneten Ordner. Ein ganzer Windows-Ordner wird mit seiner Struktur
+    ''' übernommen (Unterordner werden zu Ordnern hier), sofern es die Ordner gibt.
+    ''' </summary>
     Private Sub Importieren(pfade As IEnumerable(Of String))
         Dim fehlerListe As New List(Of String)
         Dim letzte As Datei = Nothing
-        Cursor = Cursors.WaitCursor
-        Try
-            For Each pfad In pfade
-                If Directory.Exists(pfad) Then
-                    fehlerListe.Add($"{Path.GetFileName(pfad)}: Ordner werden nicht unterstützt")
+        Dim basis = If(OrdnerVerfuegbar(), If(_aktuellerOrdner, ""), "")
+        ' (Quelle, Ziel-Ordner) – Windows-Ordner werden aufgelöst
+        Dim liste As New List(Of (Pfad As String, Ordner As String))
+        For Each pfad In pfade
+            If Directory.Exists(pfad) Then
+                If Not OrdnerVerfuegbar() Then
+                    fehlerListe.Add($"{Path.GetFileName(pfad)}: Ordner werden von diesem Server noch nicht unterstützt")
                     Continue For
                 End If
+                Dim wurzel = Path.GetFullPath(pfad).TrimEnd(Path.DirectorySeparatorChar)
+                Dim name = Path.GetFileName(wurzel)
+                For Each datei In Directory.EnumerateFiles(wurzel, "*", SearchOption.AllDirectories).
+                                            Where(Function(f) OrdnerImportTypen.Contains(Path.GetExtension(f).ToLowerInvariant())).OrderBy(Function(f) f)
+                    Dim relativ = Path.GetRelativePath(wurzel, Path.GetDirectoryName(datei))
+                    liste.Add((datei, DateiOrdner.Normalisieren(basis & "/" & name & "/" & If(relativ = ".", "", relativ))))
+                Next
+            Else
+                liste.Add((pfad, basis))
+            End If
+        Next
+        Cursor = Cursors.WaitCursor
+        Try
+            For Each eintrag In liste
                 Try
-                    letzte = _db.DateiImportieren(pfad)
+                    letzte = _db.DateiImportieren(eintrag.Pfad)
+                    If eintrag.Ordner.Length > 0 Then
+                        _db.DateiOrdnerSetzen(letzte.Id, eintrag.Ordner)
+                        letzte.Ordner = eintrag.Ordner
+                    End If
                 Catch ex As Exception
-                    fehlerListe.Add($"{Path.GetFileName(pfad)}: {ex.Message}")
+                    fehlerListe.Add($"{Path.GetFileName(eintrag.Pfad)}: {ex.Message}")
                 End Try
             Next
         Finally

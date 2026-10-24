@@ -359,6 +359,28 @@ Public Class ServerDatenquelle
         Schicken(HttpMethod.Put, $"drucker/{druckerId}/spulen/{slot}", New SpuleAnfrage With {.FilamentId = filamentId})
     End Sub
 
+    ' ------------------------------------------------------------------ Ordner für Dateien
+
+    Public Function OrdnerLaden() As List(Of String) Implements IDatenquelle.OrdnerLaden
+        Return Abrufen(Of List(Of String))("ordner")
+    End Function
+
+    Public Sub OrdnerAnlegen(pfad As String) Implements IDatenquelle.OrdnerAnlegen
+        Schicken(HttpMethod.Post, "ordner", New WertAnfrage With {.Wert = pfad})
+    End Sub
+
+    Public Sub OrdnerUmbenennen(alt As String, neu As String) Implements IDatenquelle.OrdnerUmbenennen
+        Schicken(HttpMethod.Put, "ordner", New OrdnerAnfrage With {.Alt = alt, .Neu = neu})
+    End Sub
+
+    Public Sub OrdnerLoeschen(pfad As String) Implements IDatenquelle.OrdnerLoeschen
+        Schicken(HttpMethod.Delete, "ordner?pfad=" & Q(pfad))
+    End Sub
+
+    Public Sub DateiOrdnerSetzen(dateiId As Long, ordner As String) Implements IDatenquelle.DateiOrdnerSetzen
+        Schicken(HttpMethod.Put, $"dateien/{dateiId}/ordner", New WertAnfrage With {.Wert = If(ordner, "")})
+    End Sub
+
     ' ------------------------------------------------------------------ Warteschlange
 
     Public Function WarteschlangeLaden() As List(Of Auftrag) Implements IDatenquelle.WarteschlangeLaden

@@ -88,9 +88,10 @@ Public Module ServerFunktionen
     Public Const Benachrichtigungen As String = "benachrichtigungen"
     Public Const HomeAssistant As String = "homeassistant"
     Public Const Warteschlange As String = "warteschlange"
+    Public Const Ordner As String = "ordner"
 
     ''' <summary>Alles, was dieser Server kann (nur beim Server selbst verwendet).</summary>
-    Public ReadOnly Alle As String() = {Wartung, Benachrichtigungen, HomeAssistant, Warteschlange}
+    Public ReadOnly Alle As String() = {Wartung, Benachrichtigungen, HomeAssistant, Warteschlange, Ordner}
 
     ''' <summary>Gibt es die Funktion bei dieser Datenquelle? Lokale Datenbank: immer; Server: siehe ServerDatenquelle.Kann.</summary>
     Public Function Verfuegbar(db As IDatenquelle, funktion As String) As Boolean
@@ -98,3 +99,9 @@ Public Module ServerFunktionen
         Return server Is Nothing OrElse server.Kann(funktion)
     End Function
 End Module
+
+''' <summary>Ordner umbenennen oder verschieben.</summary>
+Public Class OrdnerAnfrage
+    Public Property Alt As String = ""
+    Public Property Neu As String = ""
+End Class

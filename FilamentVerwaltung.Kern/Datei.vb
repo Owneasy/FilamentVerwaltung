@@ -28,6 +28,8 @@ Public Class Datei
     Public Property Druckzeit As Integer?
     Public Property Material As String = ""
     Public Property Notiz As String = ""
+    ''' <summary>Ordner zum Sortieren, z. B. "Halterungen/Wand"; leer = oberste Ebene. Nur in der Datenbank – die Datei wird nicht verschoben.</summary>
+    Public Property Ordner As String = ""
 
     Public ReadOnly Property IstModell As Boolean
         Get
@@ -81,3 +83,48 @@ Public Module Anzeige
     End Function
 
 End Module
+
+''' <summary>
+''' Ordnerpfade der Dateien ("Halterungen/Wand"): nur zum Sortieren, mit "/" getrennt, ohne führenden oder
+''' abschließenden Schrägstrich.
+''' </summary>
+Public NotInheritable Class DateiOrdner
+    ''' <summary>Vereinheitlicht einen Pfad: "\" wird "/", leere Teile und Leerzeichen am Rand fallen weg.</summary>
+    Public Shared Function Normalisieren(pfad As String) As String
+        Dim teile = If(pfad, "").Replace("\"c, "/"c).Split("/"c).Select(Function(x) x.Trim()).Where(Function(x) x.Length > 0)
+        Return String.Join("/", teile)
+    End Function
+
+    ''' <summary>Übergeordneter Ordner ("" für die oberste Ebene).</summary>
+    Public Shared Function Eltern(pfad As String) As String
+        Dim p = Normalisieren(pfad)
+        Dim i = p.LastIndexOf("/"c)
+        Return If(i < 0, "", p.Substring(0, i))
+    End Function
+
+    ''' <summary>Letzter Teil des Pfads (Anzeigename).</summary>
+    Public Shared Function Name(pfad As String) As String
+        Dim p = Normalisieren(pfad)
+        Return p.Substring(p.LastIndexOf("/"c) + 1)
+    End Function
+
+    ''' <summary>Liegt pfad in ordner oder einem seiner Unterordner (oder ist es ordner selbst)?</summary>
+    Public Shared Function IstInnerhalb(pfad As String, ordner As String) As Boolean
+        Dim p = Normalisieren(pfad), o = Normalisieren(ordner)
+        Return o.Length = 0 OrElse String.Equals(p, o, StringComparison.OrdinalIgnoreCase) OrElse
+               p.StartsWith(o & "/", StringComparison.OrdinalIgnoreCase)
+    End Function
+
+    ''' <summary>Alle Ordner einschließlich der übergeordneten ("A/B" ergibt "A" und "A/B"), sortiert.</summary>
+    Public Shared Function MitEltern(pfade As IEnumerable(Of String)) As List(Of String)
+        Dim alle As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        For Each roh In pfade
+            Dim p = Normalisieren(roh)
+            While p.Length > 0
+                alle.Add(p)
+                p = Eltern(p)
+            End While
+        Next
+        Return alle.OrderBy(Function(x) x, StringComparer.CurrentCultureIgnoreCase).ToList()
+    End Function
+End Class

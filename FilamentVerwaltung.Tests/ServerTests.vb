@@ -157,6 +157,20 @@ Public Class ServerTests
     End Sub
 
     <Fact>
+    Public Sub Ordner_ueber_den_Server()
+        Dim db = _server.Client()
+        db.Verbinden()
+        Dim kennung = Guid.NewGuid().ToString("N").Substring(0, 6)
+        Dim datei = db.DateiImportieren(GcodeDatei($"Ordner-{kennung}.gcode"))
+        db.DateiOrdnerSetzen(datei.Id, $"Test {kennung}/Teile")
+        db.OrdnerAnlegen($"Test {kennung}/Leer")
+        Assert.Contains($"Test {kennung}/Leer", db.OrdnerLaden())
+        db.OrdnerUmbenennen($"Test {kennung}", $"Neu {kennung}")
+        Assert.Equal($"Neu {kennung}/Teile", db.DateienLaden().First(Function(x) x.Id = datei.Id).Ordner)
+        db.OrdnerLoeschen($"Neu {kennung}/Teile")
+        Assert.Equal($"Neu {kennung}", db.DateienLaden().First(Function(x) x.Id = datei.Id).Ordner)
+    End Sub
+    <Fact>
     Public Sub Warteschlange_ueber_den_Server_mit_hochgeladener_Datei()
         Dim db = _server.Client()
         db.Verbinden()
