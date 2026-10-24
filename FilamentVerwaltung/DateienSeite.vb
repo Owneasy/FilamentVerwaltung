@@ -41,6 +41,7 @@ Public Class DateienSeite
     Private _aktuellerOrdner As String
     Private _baumWirdAufgebaut As Boolean
     Private _ziehStart As Point?
+    Private _baumZiehStart As Point?
     Private inhaltTabelle As TableLayoutPanel
     Private rechtsKarte As Karte
     ''' <summary>Während die Liste neu gefüllt wird: Auswahlwechsel nicht als Klick werten.</summary>
@@ -579,10 +580,26 @@ Public Class DateienSeite
                                          _angezeigt = Nothing
                                          AnsichtAktualisieren()
                                      End Sub
-        AddHandler baum.NodeMouseClick, Sub(s, e)
-                                            If e.Button = MouseButtons.Right Then baum.SelectedNode = e.Node
-                                        End Sub
-        ' Dateien aus der Liste auf einen Ordner ziehen
+        ' Die ganze Zeile ist anklickbar (mit Verbindungslinien wertet Windows sonst nur den Text aus);
+        ' das +/– klappt weiter nur auf und zu
+        AddHandler baum.MouseDown, Sub(s, e)
+                                       If e.Button <> MouseButtons.Left AndAlso e.Button <> MouseButtons.Right Then Return
+                                       If baum.HitTest(e.Location).Location = TreeViewHitTestLocations.PlusMinus Then Return
+                                       Dim n = KnotenInZeile(e.Y)
+                                       If n IsNot Nothing AndAlso n IsNot baum.SelectedNode Then baum.SelectedNode = n
+                                       _baumZiehStart = If(e.Button = MouseButtons.Left AndAlso n IsNot Nothing, e.Location, CType(Nothing, Point?))
+                                   End Sub
+        ' Ordner auch von der freien Fläche der Zeile aus ziehen (Windows startet das Ziehen sonst nur am Text)
+        AddHandler baum.MouseMove, Sub(s, e)
+                                       If Not _baumZiehStart.HasValue OrElse e.Button <> MouseButtons.Left Then Return
+                                       Dim g = SystemInformation.DragSize
+                                       If Math.Abs(e.X - _baumZiehStart.Value.X) < g.Width AndAlso Math.Abs(e.Y - _baumZiehStart.Value.Y) < g.Height Then Return
+                                       Dim n = KnotenInZeile(_baumZiehStart.Value.Y)
+                                       _baumZiehStart = Nothing
+                                       If n IsNot Nothing Then OrdnerZiehen(n)
+                                   End Sub
+        AddHandler baum.MouseUp, Sub(s, e) _baumZiehStart = Nothing
+        baum.Cursor = Cursors.Hand        ' Dateien aus der Liste auf einen Ordner ziehen
         AddHandler baum.ItemDrag, AddressOf Baum_ItemDrag
         AddHandler baum.DragOver, AddressOf Baum_DragOver
         AddHandler baum.DragDrop, AddressOf Baum_DragDrop
@@ -661,6 +678,11 @@ Public Class DateienSeite
         baum.EndUpdate()
         _baumWirdAufgebaut = False
     End Sub
+
+    ''' <summary>Knoten in der Zeile auf Höhe y – egal ob auf dem Text oder daneben.</summary>
+    Private Function KnotenInZeile(y As Integer) As TreeNode
+        Return AlleKnoten(baum.Nodes).FirstOrDefault(Function(n) n.IsVisible AndAlso y >= n.Bounds.Top AndAlso y < n.Bounds.Bottom)
+    End Function
 
     Private Shared Iterator Function AlleKnoten(liste As TreeNodeCollection) As IEnumerable(Of TreeNode)
         For Each n As TreeNode In liste
@@ -801,9 +823,13 @@ Public Class DateienSeite
 
     ''' <summary>Einen Ordner im Baum anfassen und auf einen anderen ziehen (umhängen).</summary>
     Private Sub Baum_ItemDrag(sender As Object, e As ItemDragEventArgs)
-        Dim n = TryCast(e.Item, TreeNode)
+        _baumZiehStart = Nothing
+        If e.Button = MouseButtons.Left Then OrdnerZiehen(TryCast(e.Item, TreeNode))
+    End Sub
+
+    Private Sub OrdnerZiehen(n As TreeNode)
         Dim pfad = TryCast(n?.Tag, String)
-        If String.IsNullOrEmpty(pfad) OrElse e.Button <> MouseButtons.Left Then Return   ' "Alle Dateien" / "Ohne Ordner" bleiben stehen
+        If String.IsNullOrEmpty(pfad) Then Return   ' "Alle Dateien" / "Ohne Ordner" bleiben stehen
         baum.SelectedNode = n
         Dim daten As New DataObject()
         daten.SetData(OrdnerZiehFormat, pfad)
@@ -821,7 +847,7 @@ Public Class DateienSeite
 
     Private Sub Baum_DragOver(sender As Object, e As DragEventArgs)
         If e.Data Is Nothing Then Return
-        Dim n = baum.GetNodeAt(baum.PointToClient(New Point(e.X, e.Y)))
+        Dim n = KnotenInZeile(baum.PointToClient(New Point(e.X, e.Y)).Y)
         If e.Data.GetDataPresent(OrdnerZiehFormat) Then
             Dim ok = OrdnerAblegbar(CStr(e.Data.GetData(OrdnerZiehFormat)), n)
             AblegeZielSetzen(If(ok, n, Nothing))
@@ -834,7 +860,7 @@ Public Class DateienSeite
 
     Private Sub Baum_DragDrop(sender As Object, e As DragEventArgs)
         If e.Data Is Nothing Then Return
-        Dim n = baum.GetNodeAt(baum.PointToClient(New Point(e.X, e.Y)))
+        Dim n = KnotenInZeile(baum.PointToClient(New Point(e.X, e.Y)).Y)
         AblegeZielSetzen(Nothing)
         If n Is Nothing Then Return
         If e.Data.GetDataPresent(OrdnerZiehFormat) Then
