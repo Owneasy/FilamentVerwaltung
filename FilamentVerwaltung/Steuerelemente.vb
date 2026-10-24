@@ -77,6 +77,21 @@ Public Class WebButton
         End Set
     End Property
 
+    Private _nurSymbol As Boolean
+
+    ''' <summary>Eingeklappte Seitenleiste: nur das Symbol, mittig (der Text bleibt für den Tooltip erhalten).</summary>
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property NurSymbol As Boolean
+        Get
+            Return _nurSymbol
+        End Get
+        Set(value As Boolean)
+            If _nurSymbol = value Then Return
+            _nurSymbol = value
+            Invalidate()
+        End Set
+    End Property
+
     ''' <summary>Navigation: Zahl rechtsbündig (z. B. Anzahl Einträge), leer = keine.</summary>
     <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
     Public Property Zahl As String
@@ -222,6 +237,18 @@ Public Class WebButton
                     g.FillRectangle(b, 0, Px(Me, 8), Px(Me, 3), Height - Px(Me, 16))
                 End If
             End Using
+        End If
+        If _nurSymbol AndAlso _symbol.Length > 0 Then
+            ' Eingeklappt: Symbol mittig, Zahl als kleiner Punkt oben rechts
+            TextRenderer.DrawText(g, _symbol, Theme.SymbolSchrift, New Rectangle(0, 0, Width, Height), vorder,
+                                  TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.NoPadding)
+            If _zahl.Length > 0 Then
+                Dim d = Px(Me, 8)
+                Using b As New SolidBrush(Theme.Rot)
+                    g.FillEllipse(b, Width \ 2 + Px(Me, 6), Height \ 2 - Px(Me, 11), d, d)
+                End Using
+            End If
+            Return
         End If
         Dim zahlBreite = 0
         If Stil = KnopfStil.Navigation AndAlso _zahl.Length > 0 Then

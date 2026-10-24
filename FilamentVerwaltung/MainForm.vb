@@ -52,6 +52,22 @@ Public Class MainForm
 
     ' --- Updates
     Private Const EinstellungUebersprungen As String = "Update.UebersprungeneVersion"
+
+    ' --- Seitenleiste einklappen
+    Private Const EinstellungLeisteEingeklappt As String = "Leiste.Eingeklappt"
+    Private ReadOnly btnEinklappen As New Label With {.Text = ChrW(&HE700), .Font = Theme.SymbolSchrift, .ForeColor = Theme.LeisteText,
+                                                     .BackColor = Theme.Leiste, .Dock = DockStyle.Right, .TextAlign = ContentAlignment.MiddleCenter,
+                                                     .Cursor = Cursors.Hand}
+    Private _eingeklappt As Boolean
+    Private _leiste As TableLayoutPanel
+    Private _leisteAussen As Panel
+    Private _logo As Panel
+    Private _unten As TableLayoutPanel
+    Private _fuss As Panel
+    Private _versionLabel As Label
+    Private ReadOnly _ueberschriften As New List(Of Label)
+    Private ReadOnly _tooltipVorher As New Dictionary(Of WebButton, String)
+
     Private ReadOnly banner As New TableLayoutPanel With {
         .Dock = DockStyle.Top, .Height = 52, .Visible = False, .ColumnCount = 3, .RowCount = 1,
         .BackColor = Hell(Theme.Akzent, 0.1), .Padding = New Padding(28, 8, 20, 8)
@@ -122,16 +138,24 @@ Public Class MainForm
         leiste.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
 
         Dim logo As New Panel With {.Height = 44, .Dock = DockStyle.Fill, .Margin = New Padding(0, 0, 0, 16)}
-        AddHandler logo.Paint, Sub(s, e) LogoZeichnen(e.Graphics, logo)
+        AddHandler logo.Paint, Sub(s, e) If Not _eingeklappt Then LogoZeichnen(e.Graphics, logo)
+        ' ☰ klappt die Leiste ein und aus
+        btnEinklappen.Width = Px(Me, 32)
+        AddHandler btnEinklappen.Click, Sub(s, e) LeisteEinklappen(Not _eingeklappt, speichern:=True)
+        AddHandler btnEinklappen.MouseEnter, Sub(s, e) btnEinklappen.ForeColor = Theme.LeisteTextAktiv
+        AddHandler btnEinklappen.MouseLeave, Sub(s, e) btnEinklappen.ForeColor = Theme.LeisteText
+        tipps.SetToolTip(btnEinklappen, "Seitenleiste einklappen")
+        logo.Controls.Add(btnEinklappen)
+        _logo = logo
         Zeile(leiste, logo)
 
-        Zeile(leiste, New Label With {
+        Zeile(leiste, Ueberschrift(New Label With {
             .Text = "VERWALTUNG",
             .Font = Theme.SchriftKopf,
             .ForeColor = Color.FromArgb(100, 116, 139),
             .AutoSize = True,
             .Margin = New Padding(16, 0, 0, 8)
-        })
+        }))
         Zeile(leiste, NavEintrag("Übersicht", Theme.SymStart, uebersichtSeite))
         Dim navFilament = NavEintrag("Filament", Theme.SymSpule, filamentSeite)
         AddHandler navFilament.Click, Sub(s, e) FilamentAnsicht(FilamentBestand.Alle)
@@ -156,13 +180,13 @@ Public Class MainForm
         Zeile(leiste, NavEintrag("Statistik", Theme.SymDiagramm, statistikSeite))
         Zeile(leiste, NavEintrag("Dateien (CAD / STL)", Theme.SymOrdner, dateienSeite))
 
-        Zeile(leiste, New Label With {
+        Zeile(leiste, Ueberschrift(New Label With {
             .Text = "WERKZEUGE",
             .Font = Theme.SchriftKopf,
             .ForeColor = Color.FromArgb(100, 116, 139),
             .AutoSize = True,
             .Margin = New Padding(16, 12, 0, 8)
-        })
+        }))
         Dim btnSuchen As New WebButton("Spule suchen", Theme.SymScanner, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42, .Margin = New Padding(0, 0, 0, 4)}
         AddHandler btnSuchen.Click, Sub(s, e) SchnellsucheZeigen()
         tipps.SetToolTip(btnSuchen, "QR-Code scannen oder ID eingeben und die Spule öffnen (Strg+K)")
@@ -208,13 +232,16 @@ Public Class MainForm
         unten.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
         ' Version links, Design und Verbindungspunkt rechtsbündig in derselben Zeile
         Dim fuss As New Panel With {.Dock = DockStyle.Fill, .Height = Px(Me, 22), .Margin = New Padding(16, 0, 4, 0), .BackColor = Theme.Leiste}
-        fuss.Controls.Add(New Label With {
+        _versionLabel = New Label With {
             .Text = $"Version {AktuelleVersion}",
             .Font = New Font("Segoe UI", 8.0F),
             .ForeColor = Color.FromArgb(100, 116, 139),
             .AutoSize = True,
             .Location = New Point(0, Px(Me, 4))
-        })
+        }
+        fuss.Controls.Add(_versionLabel)
+        _fuss = fuss
+        _unten = unten
         ' Glocke: verschickte Benachrichtigungen (nur mit Server), roter Punkt bei neuen
         AddHandler btnGlocke.Click, Sub(s, e) GlockeOeffnen()
         AddHandler btnGlocke.MouseEnter, Sub(s, e) btnGlocke.ForeColor = Theme.LeisteTextAktiv
@@ -239,7 +266,14 @@ Public Class MainForm
         Controls.Add(banner)
         Controls.Add(serverBanner)
         Controls.Add(druckBanner)
-        Controls.Add(LeisteMitScrollen(leiste, unten))
+        _leiste = leiste
+        _leisteAussen = LeisteMitScrollen(leiste, unten)
+        Controls.Add(_leisteAussen)
+        ' Eingeklappt? (Einstellung auf dem Server, wie das Design)
+        Try
+            If _db.EinstellungLesen(EinstellungLeisteEingeklappt) = "1" Then LeisteEinklappen(True, speichern:=False)
+        Catch ex As Exception
+        End Try
 
         SeiteZeigen(uebersichtSeite)
         ResumeLayout(False)
@@ -288,6 +322,52 @@ Public Class MainForm
         AddHandler balken.MouseWheel, rad
         Return aussen
     End Function
+
+    ' ------------------------------------------------------------------ Seitenleiste einklappen
+
+    Private Function Ueberschrift(l As Label) As Label
+        _ueberschriften.Add(l)
+        Return l
+    End Function
+
+    ''' <summary>
+    ''' Eingeklappt: schmale Leiste nur mit Symbolen (Name als Tooltip), ohne Logo, Überschriften und Version.
+    ''' Unten bleiben Glocke, Design und Verbindungspunkt.
+    ''' </summary>
+    Private Sub LeisteEinklappen(ein As Boolean, speichern As Boolean)
+        _eingeklappt = ein
+        SuspendLayout()
+        For Each b In _leiste.Controls.OfType(Of WebButton)()
+            If Not _tooltipVorher.ContainsKey(b) Then _tooltipVorher(b) = tipps.GetToolTip(b)
+            b.NurSymbol = ein
+            Dim vorher = _tooltipVorher(b)
+            tipps.SetToolTip(b, If(ein, b.Text & If(vorher.Length > 0, " – " & vorher, ""), vorher))
+        Next
+        For Each l In _ueberschriften
+            l.Visible = Not ein
+        Next
+        _versionLabel.Visible = Not ein
+        _leiste.Padding = If(ein, New Padding(Px(Me, 10), Px(Me, 18), Px(Me, 10), Px(Me, 4)), New Padding(Px(Me, 12), Px(Me, 18), Px(Me, 12), Px(Me, 4)))
+        _unten.Padding = If(ein, New Padding(Px(Me, 4), Px(Me, 4), Px(Me, 4), Px(Me, 14)), New Padding(Px(Me, 12), Px(Me, 4), Px(Me, 12), Px(Me, 14)))
+        _fuss.Margin = If(ein, New Padding(0), New Padding(Px(Me, 16), 0, Px(Me, 4), 0))
+        ' ☰ eingeklappt mittig statt rechts neben dem Logo
+        btnEinklappen.Dock = If(ein, DockStyle.Fill, DockStyle.Right)
+        tipps.SetToolTip(btnEinklappen, If(ein, "Seitenleiste ausklappen", "Seitenleiste einklappen"))
+        UntermenueAktualisieren()
+        _leisteAussen.Width = Px(Me, If(ein, 84, 240))
+        _logo.Invalidate()
+        ResumeLayout()
+        If speichern Then
+            Dim wert = If(ein, "1", "0")
+            Task.Run(Sub()
+                         Try
+                             _db.EinstellungSpeichern(EinstellungLeisteEingeklappt, wert)
+                         Catch ex As Exception
+                             ' Nicht kritisch – beim nächsten Start ggf. wieder ausgeklappt
+                         End Try
+                     End Sub)
+        End If
+    End Sub
 
     Private Shared Sub Zeile(t As TableLayoutPanel, c As Control)
         t.RowStyles.Add(New RowStyle(SizeType.AutoSize))
@@ -571,7 +651,7 @@ Public Class MainForm
     End Sub
 
     Private Sub UntermenueAktualisieren()
-        Dim offen = _aktuelleSeite Is filamentSeite
+        Dim offen = _aktuelleSeite Is filamentSeite AndAlso Not _eingeklappt
         For Each eintrag In filamentUntermenue
             eintrag.Knopf.Visible = offen
             eintrag.Knopf.Aktiv = offen AndAlso filamentSeite.Bestand = eintrag.Bestand
