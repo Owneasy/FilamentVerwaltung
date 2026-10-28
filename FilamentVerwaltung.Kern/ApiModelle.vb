@@ -90,9 +90,10 @@ Public Module ServerFunktionen
     Public Const Warteschlange As String = "warteschlange"
     Public Const Ordner As String = "ordner"
     Public Const Vorschaubilder As String = "vorschaubilder"
+    Public Const Stromkosten As String = "stromkosten"
 
     ''' <summary>Alles, was dieser Server kann (nur beim Server selbst verwendet).</summary>
-    Public ReadOnly Alle As String() = {Wartung, Benachrichtigungen, HomeAssistant, Warteschlange, Ordner, Vorschaubilder}
+    Public ReadOnly Alle As String() = {Wartung, Benachrichtigungen, HomeAssistant, Warteschlange, Ordner, Vorschaubilder, Stromkosten}
 
     ''' <summary>Gibt es die Funktion bei dieser Datenquelle? Lokale Datenbank: immer; Server: siehe ServerDatenquelle.Kann.</summary>
     Public Function Verfuegbar(db As IDatenquelle, funktion As String) As Boolean

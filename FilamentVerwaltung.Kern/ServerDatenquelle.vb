@@ -315,7 +315,13 @@ Public Class ServerDatenquelle
         Dim gespeichert = Schicken(Of Buchung)(HttpMethod.Post, "buchungen/druck", b)
         b.Id = gespeichert.Id
         b.Kosten = gespeichert.Kosten
+        b.Stromkosten = gespeichert.Stromkosten
     End Sub
+
+    Public Function StromkostenNachrechnen() As Integer Implements IDatenquelle.StromkostenNachrechnen
+        If Not Kann(ServerFunktionen.Stromkosten) Then Return 0
+        Return Schicken(Of Integer)(HttpMethod.Post, "buchungen/stromkosten", New WertAnfrage())
+    End Function
 
     Public Sub BuchungLoeschen(id As Long, zurueckbuchenJa As Boolean) Implements IDatenquelle.BuchungLoeschen
         Schicken(HttpMethod.Delete, $"buchungen/{id}?zurueckbuchen={zurueckbuchenJa.ToString().ToLowerInvariant()}")

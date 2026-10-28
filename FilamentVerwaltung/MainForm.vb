@@ -205,7 +205,7 @@ Public Class MainForm
         VerbindungAnzeigen(True)
         Dim btnEinstellungen As New WebButton("Einstellungen", Theme.SymEinstellungen, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
         AddHandler btnEinstellungen.Click, Sub(s, e) EinstellungenMenueZeigen(btnEinstellungen)
-        tipps.SetToolTip(btnEinstellungen, "Benachrichtigungen und Home Assistant")
+        tipps.SetToolTip(btnEinstellungen, "Benachrichtigungen, Home Assistant und Stromkosten")
         Zeile(leiste, btnEinstellungen)
 
         Dim btnSicherungen As New WebButton("Sicherungen", Theme.SymSicherung, KnopfStil.Navigation) With {.Dock = DockStyle.Fill, .Height = 42}
@@ -506,6 +506,16 @@ Public Class MainForm
                                                              dlg.ShowDialog(Me)
                                                          End Using
                                                      End Sub).ToolTipText = "Drucker und Lager per MQTT an Home Assistant melden"
+        menue.Items.Add("Stromkosten …", Nothing, Sub(s, e)
+                                                      If Not ServerFunktionen.Verfuegbar(_db, ServerFunktionen.Stromkosten) Then
+                                                          MessageBox.Show(Me, "Für Stromkosten muss der Server aktualisiert werden.", "Stromkosten",
+                                                                          MessageBoxButtons.OK, MessageBoxIcon.Information)
+                                                          Return
+                                                      End If
+                                                      Using dlg As New StromkostenDialog(_db)
+                                                          If dlg.ShowDialog(Me) = DialogResult.OK Then TryCast(_aktuelleSeite, ISeite)?.Neuladen()
+                                                      End Using
+                                                  End Sub).ToolTipText = "Strompreis und Leistung der Drucker – Strom zählt zu den Kosten eines Drucks"
         AddHandler menue.Closed, Sub(s, e) BeginInvoke(Sub() menue.Dispose())
         menue.Show(knopf, New Point(knopf.Width, 0), ToolStripDropDownDirection.AboveRight)
     End Sub

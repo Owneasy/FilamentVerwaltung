@@ -219,10 +219,10 @@ Public Class DruckDialog
         Dim danach = basis - gramm
         Dim kosten = If(f.Gewicht > 0, f.Preis * gramm / f.Gewicht, 0D)
         If danach < 0 Then
-            lblVorschau.Text = $"Kosten {kosten:C2} · Achtung: nur {basis:N0} g auf der Spule!"
+            lblVorschau.Text = $"Material {kosten:C2} · Achtung: nur {basis:N0} g auf der Spule!"
             lblVorschau.ForeColor = Theme.Rot
         Else
-            lblVorschau.Text = $"Kosten {kosten:C2} · Rest danach {danach:N0} g ({If(f.Gewicht > 0, danach / f.Gewicht, 0):P0})"
+            lblVorschau.Text = $"Material {kosten:C2} · Rest danach {danach:N0} g ({If(f.Gewicht > 0, danach / f.Gewicht, 0):P0})"
             lblVorschau.ForeColor = Theme.Akzent
         End If
     End Sub

@@ -1656,12 +1656,13 @@ async function verlaufSeite() {
   const drucke = monat.filter(b => b.art === 'Druck').length;
   const gramm = monat.filter(istVerbrauch).reduce((s, b) => s + b.gramm, 0);
   const kosten = monat.filter(istVerbrauch).reduce((s, b) => s + b.kosten, 0);
+  const strom = monat.filter(istVerbrauch).reduce((s, b) => s + (b.stromkosten || 0), 0);
   const fehl = monat.filter(b => b.art === 'Druck' && b.fehldruck);
   inhalt(reiter('buchen') + `
     <div class="kennzahlen">
       <div><b>${drucke}</b><small>Drucke im ${heute.toLocaleString('de-DE', { month: 'long' })}</small></div>
       <div><b>${zahl(gramm)} g</b><small>verbraucht</small></div>
-      <div><b>${euro(kosten)}</b><small>Kosten</small></div>
+      <div><b>${euro(kosten)}</b><small>Kosten${strom ? ` · davon Strom ${euro(strom)}` : ''}</small></div>
     </div>
     <button class="karte fehl-hinweis${verlaufNurFehl ? ' aktiv' : ''}" id="vFehl">
       <b>${fehl.length} ${fehl.length === 1 ? 'Fehldruck' : 'Fehldrucke'}</b> diesen Monat${drucke ? ` (${Math.round(fehl.length / drucke * 100)} %)` : ''}
@@ -1693,7 +1694,7 @@ async function buchungZeigen(id) {
   try { b = (await holen('buchungen')).find(x => x.id === id); } catch (e) { return fehler(e); }
   if (!b) return toast('Diesen Eintrag gibt es nicht mehr.', true);
   const zeilen = [['Datum', datumZeit(b.datum)], ['Art', b.art], ['Spule', `${b.filamentCode} ${b.filamentText}`.trim()],
-    ['Verbrauch', `${zahl(b.gramm)} g`], ['Kosten', b.art === 'Druck' ? euro(b.kosten) : ''], ['Druckzeit', dauer(b.druckzeit)],
+    ['Verbrauch', `${zahl(b.gramm)} g`], ['Kosten', b.art === 'Druck' ? euro(b.kosten) + (b.stromkosten ? ` (davon Strom ${euro(b.stromkosten)})` : '') : ''], ['Druckzeit', dauer(b.druckzeit)],
     ['Drucker', b.drucker], ['Fehldruck', b.fehldruck ? (b.fehldruckGrund || 'ohne Angabe') : ''], ['Datei', b.dateiName], ['Notiz', b.notiz]].filter(z => z[1]);
   blattOeffnen(`<div class="zeile"><h2>${esc(b.bezeichnung || b.art)}</h2><button class="knopf" data-schliessen>Schließen</button></div>
     ${b.foto ? '<img class="druckfoto" id="vFoto" alt="Foto vom Druckende">' : ''}

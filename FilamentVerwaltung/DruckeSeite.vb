@@ -127,6 +127,7 @@ Public Class DruckeSeite
         grid.Spalte("FilamentText", "Filament", 130, minBreite:=110)
         grid.Spalte("Gramm", "Verbrauch", 0, "#,##0 g", True)
         grid.Spalte("Kosten", "Kosten", 0, "C2", True)
+        grid.Spalte("Stromkosten", "davon Strom", 0, "C2", True)
         grid.Spalte("Druckzeit", "Druckzeit", 0, rechtsbuendig:=True)
         grid.Spalte("DateiName", "Datei", 110, minBreite:=80)
         grid.Columns("FilamentCode").DefaultCellStyle.Font = Theme.SchriftFett
@@ -243,8 +244,9 @@ Public Class DruckeSeite
         kzDrucke.Setzen(drucke.Where(imMonat).Count().ToString("N0"), $"{drucke.Count:N0} insgesamt")
         kzVerbrauch.Setzen($"{verbrauch.Where(imMonat).Sum(Function(b) b.Gramm):N0} g",
                            $"{verbrauch.Sum(Function(b) CLng(b.Gramm)) / 1000.0:N2} kg insgesamt")
+        Dim stromMonat = verbrauch.Where(imMonat).Sum(Function(b) b.Stromkosten)
         kzKosten.Setzen(verbrauch.Where(imMonat).Sum(Function(b) b.Kosten).ToString("C2"),
-                        $"{verbrauch.Sum(Function(b) b.Kosten):C2} insgesamt")
+                        If(stromMonat > 0D, $"davon Strom {stromMonat:C2} · ", "") & $"{verbrauch.Sum(Function(b) b.Kosten):C2} insgesamt")
         Dim zeitMonat = drucke.Where(imMonat).Sum(Function(b) If(b.Druckzeit, 0))
         Dim zeitGesamt = drucke.Sum(Function(b) CLng(If(b.Druckzeit, 0)))
         kzZeit.Setzen(If(zeitMonat > 0, DauerText(zeitMonat), "–"), $"{zeitGesamt / 3600.0:N1} h insgesamt")
@@ -266,6 +268,13 @@ Public Class DruckeSeite
             Case "Druckzeit"
                 e.Value = DauerText(b.Druckzeit)
                 e.FormattingApplied = True
+            Case "Stromkosten"
+                If b.Stromkosten = 0D Then
+                    e.Value = ""
+                    e.FormattingApplied = True
+                Else
+                    e.CellStyle.ForeColor = Theme.TextLeise
+                End If
             Case "Gramm"
                 If b.Gramm < 0 Then
                     e.Value = $"+{-b.Gramm:N0} g"

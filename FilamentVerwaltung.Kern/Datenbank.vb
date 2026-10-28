@@ -172,6 +172,8 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             Dim druckerNeu = SpalteErgaenzen(c, "Buchung", "Drucker", "TEXT NOT NULL DEFAULT ''")
             Dim fehldruckNeu = SpalteErgaenzen(c, "Buchung", "Fehldruck", "INTEGER NOT NULL DEFAULT 0")
             SpalteErgaenzen(c, "Buchung", "FehldruckGrund", "TEXT NOT NULL DEFAULT ''")
+            SpalteErgaenzen(c, "Buchung", "Stromkosten", "REAL NOT NULL DEFAULT 0")
+            SpalteErgaenzen(c, "Drucker", "Watt", "INTEGER NOT NULL DEFAULT 0")
             If druckerNeu OrElse fehldruckNeu Then BuchungenNachruesten(c)
         End Using
     End Sub
@@ -445,7 +447,8 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
             End If
 
             Dim spule = SpuleLesen(c, t, b.FilamentId)
-            b.Kosten = Kosten(b.Gramm, spule.Preis, spule.Gewicht)
+            b.Stromkosten = If(b.IstDruck, StromkostenBerechnen(c, t, b.Drucker, b.Druckzeit), 0D)
+            b.Kosten = Kosten(b.Gramm, spule.Preis, spule.Gewicht) + b.Stromkosten
             Befehl(c, t, "UPDATE Filament SET Restgewicht = MAX(0, Restgewicht - $gramm) WHERE Id = $id",
                    "$gramm", b.Gramm, "$id", b.FilamentId).ExecuteNonQuery()
 
@@ -453,11 +456,11 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
                 BuchungEinfuegen(c, t, b)
             Else
                 Befehl(c, t, "UPDATE Buchung SET FilamentId = $filament, Datum = $datum, Art = $art, Gramm = $gramm, " &
-                             "Bezeichnung = $bezeichnung, DateiId = $datei, Druckzeit = $zeit, Kosten = $kosten, Notiz = $notiz, Foto = $foto, Drucker = $drucker, Fehldruck = $fehl, FehldruckGrund = $grund " &
+                             "Bezeichnung = $bezeichnung, DateiId = $datei, Druckzeit = $zeit, Kosten = $kosten, Stromkosten = $strom, Notiz = $notiz, Foto = $foto, Drucker = $drucker, Fehldruck = $fehl, FehldruckGrund = $grund " &
                              "WHERE Id = $id",
                        "$filament", b.FilamentId, "$datum", b.Datum.ToString(DatumZeitFormat, CultureInfo.InvariantCulture),
                        "$art", b.Art, "$gramm", b.Gramm, "$bezeichnung", If(b.Bezeichnung, "").Trim(),
-                       "$datei", b.DateiId, "$zeit", b.Druckzeit, "$kosten", CDbl(b.Kosten), "$notiz", If(b.Notiz, ""),
+                       "$datei", b.DateiId, "$zeit", b.Druckzeit, "$kosten", CDbl(b.Kosten), "$strom", CDbl(b.Stromkosten), "$notiz", If(b.Notiz, ""),
                        "$foto", If(b.Foto, ""), "$drucker", If(b.Drucker, ""), "$fehl", If(b.Fehldruck, 1, 0), "$grund", If(b.Fehldruck, If(b.FehldruckGrund, ""), ""), "$id", b.Id).ExecuteNonQuery()
             End If
             t.Commit()
@@ -486,7 +489,7 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         Using c = Oeffnen(), cmd = c.CreateCommand()
             cmd.CommandText =
                 "SELECT b.Id, b.FilamentId, b.Datum, b.Art, b.Gramm, b.Bezeichnung, b.DateiId, b.Druckzeit, b.Kosten, b.Notiz, " &
-                "f.Code, f.Hersteller, f.Material, f.Farbe, d.Name, b.Foto, b.Drucker, b.Fehldruck, b.FehldruckGrund " &
+                "f.Code, f.Hersteller, f.Material, f.Farbe, d.Name, b.Foto, b.Drucker, b.Fehldruck, b.FehldruckGrund, b.Stromkosten " &
                 "FROM Buchung b LEFT JOIN Filament f ON f.Id = b.FilamentId LEFT JOIN Datei d ON d.Id = b.DateiId " &
                 "ORDER BY b.Datum DESC, b.Id DESC"
             Using r = cmd.ExecuteReader()
@@ -513,7 +516,8 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
                         .Foto = Text(r, 15),
                         .Drucker = Text(r, 16),
                         .Fehldruck = r.GetInt64(17) <> 0,
-                        .FehldruckGrund = Text(r, 18)
+                        .FehldruckGrund = Text(r, 18),
+                        .Stromkosten = Math.Round(CDec(r.GetDouble(19)), 2)
                     })
                 End While
             End Using
@@ -535,16 +539,51 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
 
     Private Sub BuchungEinfuegen(c As SqliteConnection, t As SqliteTransaction, b As Buchung)
         b.Id = Convert.ToInt64(Befehl(c, t,
-            "INSERT INTO Buchung (FilamentId, Datum, Art, Gramm, Bezeichnung, DateiId, Druckzeit, Kosten, Notiz, Foto, Drucker, Fehldruck, FehldruckGrund) " &
-            "VALUES ($filament, $datum, $art, $gramm, $bezeichnung, $datei, $zeit, $kosten, $notiz, $foto, $drucker, $fehl, $grund); SELECT last_insert_rowid();",
+            "INSERT INTO Buchung (FilamentId, Datum, Art, Gramm, Bezeichnung, DateiId, Druckzeit, Kosten, Stromkosten, Notiz, Foto, Drucker, Fehldruck, FehldruckGrund) " &
+            "VALUES ($filament, $datum, $art, $gramm, $bezeichnung, $datei, $zeit, $kosten, $strom, $notiz, $foto, $drucker, $fehl, $grund); SELECT last_insert_rowid();",
             "$filament", b.FilamentId, "$datum", b.Datum.ToString(DatumZeitFormat, CultureInfo.InvariantCulture),
             "$art", b.Art, "$gramm", b.Gramm, "$bezeichnung", If(b.Bezeichnung, "").Trim(), "$datei", b.DateiId,
-            "$zeit", b.Druckzeit, "$kosten", CDbl(b.Kosten), "$notiz", If(b.Notiz, ""), "$foto", If(b.Foto, ""), "$drucker", If(b.Drucker, ""), "$fehl", If(b.Fehldruck, 1, 0), "$grund", If(b.Fehldruck, If(b.FehldruckGrund, ""), "")).ExecuteScalar())
+            "$zeit", b.Druckzeit, "$kosten", CDbl(b.Kosten), "$strom", CDbl(b.Stromkosten), "$notiz", If(b.Notiz, ""), "$foto", If(b.Foto, ""), "$drucker", If(b.Drucker, ""), "$fehl", If(b.Fehldruck, 1, 0), "$grund", If(b.Fehldruck, If(b.FehldruckGrund, ""), "")).ExecuteScalar())
     End Sub
 
     Private Shared Function Kosten(gramm As Integer, preis As Decimal, gewicht As Integer) As Decimal
         If gewicht <= 0 Then Return 0D
         Return Math.Round(preis * gramm / gewicht, 2)
+    End Function
+
+    ''' <summary>Stromkosten für einen Druck auf dem Drucker mit diesem Namen (Watt am Drucker, Preis aus den Einstellungen).</summary>
+    Private Shared Function StromkostenBerechnen(c As SqliteConnection, t As SqliteTransaction, druckerName As String, sekunden As Integer?) As Decimal
+        If Not sekunden.HasValue OrElse String.IsNullOrWhiteSpace(druckerName) Then Return 0D
+        Dim watt = Befehl(c, t, "SELECT Watt FROM Drucker WHERE Name = $n COLLATE NOCASE ORDER BY Watt DESC LIMIT 1", "$n", druckerName.Trim()).ExecuteScalar()
+        If watt Is Nothing OrElse watt Is DBNull.Value Then Return 0D
+        Dim preis = Strom.PreisLesen(TryCast(Befehl(c, t, "SELECT Wert FROM Einstellungen WHERE Schluessel = $s", "$s", Strom.PreisSchluessel).ExecuteScalar(), String))
+        Return Strom.Kosten(sekunden, Convert.ToInt32(watt), preis)
+    End Function
+
+    ''' <summary>
+    ''' Rechnet die Stromkosten aller Drucke mit Druckzeit neu (z. B. nach dem Eintragen von Strompreis oder Leistung).
+    ''' Der Materialanteil bleibt, wie er gebucht wurde. Liefert die Zahl der geänderten Drucke.
+    ''' </summary>
+    Public Function StromkostenNachrechnen() As Integer Implements IDatenquelle.StromkostenNachrechnen
+        Dim geaendert = 0
+        Using c = Oeffnen(), t = c.BeginTransaction()
+            Dim drucke As New List(Of (Id As Long, Drucker As String, Sekunden As Integer, Kosten As Decimal, Strom As Decimal))
+            Using r = Befehl(c, t, "SELECT Id, Drucker, Druckzeit, Kosten, Stromkosten FROM Buchung WHERE Art = $art AND Druckzeit > 0",
+                             "$art", Buchung.ArtDruck).ExecuteReader()
+                While r.Read()
+                    drucke.Add((r.GetInt64(0), Text(r, 1), r.GetInt32(2), Math.Round(CDec(r.GetDouble(3)), 2), Math.Round(CDec(r.GetDouble(4)), 2)))
+                End While
+            End Using
+            For Each d In drucke
+                Dim neu = StromkostenBerechnen(c, t, d.Drucker, d.Sekunden)
+                If neu = d.Strom Then Continue For
+                Befehl(c, t, "UPDATE Buchung SET Kosten = $k, Stromkosten = $s WHERE Id = $id",
+                       "$k", CDbl(d.Kosten - d.Strom + neu), "$s", CDbl(neu), "$id", d.Id).ExecuteNonQuery()
+                geaendert += 1
+            Next
+            t.Commit()
+        End Using
+        Return geaendert
     End Function
 
     ''' <summary>Erstellt einen Befehl mit Parametern (abwechselnd Name, Wert; Nothing wird zu NULL).</summary>
@@ -564,12 +603,13 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
     Public Function DruckerLaden() As List(Of Drucker) Implements IDatenquelle.DruckerLaden
         Dim liste As New List(Of Drucker)
         Using c = Oeffnen(), cmd = c.CreateCommand()
-            cmd.CommandText = "SELECT Id, Name, Typ, Adresse, Zugang, Benutzer, Seriennummer, Aktiv, Drucksekunden FROM Drucker ORDER BY Name"
+            cmd.CommandText = "SELECT Id, Name, Typ, Adresse, Zugang, Benutzer, Seriennummer, Aktiv, Drucksekunden, Watt FROM Drucker ORDER BY Name"
             Using r = cmd.ExecuteReader()
                 While r.Read()
                     liste.Add(New Drucker With {
                         .Id = r.GetInt64(0), .Name = Text(r, 1), .Typ = Text(r, 2), .Adresse = Text(r, 3),
-                        .Zugang = Text(r, 4), .Benutzer = Text(r, 5), .Seriennummer = Text(r, 6), .Aktiv = r.GetInt64(7) <> 0, .Drucksekunden = r.GetInt64(8)})
+                        .Zugang = Text(r, 4), .Benutzer = Text(r, 5), .Seriennummer = Text(r, 6), .Aktiv = r.GetInt64(7) <> 0, .Drucksekunden = r.GetInt64(8),
+                        .Watt = r.GetInt32(9)})
                 End While
             End Using
         End Using
@@ -580,15 +620,15 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         Using c = Oeffnen()
             If d.Id = 0 Then
                 d.Id = Convert.ToInt64(Befehl(c, Nothing,
-                    "INSERT INTO Drucker (Name, Typ, Adresse, Zugang, Benutzer, Seriennummer, Aktiv) " &
-                    "VALUES ($n, $t, $a, $z, $b, $s, $akt); SELECT last_insert_rowid();",
+                    "INSERT INTO Drucker (Name, Typ, Adresse, Zugang, Benutzer, Seriennummer, Aktiv, Watt) " &
+                    "VALUES ($n, $t, $a, $z, $b, $s, $akt, $w); SELECT last_insert_rowid();",
                     "$n", d.Name.Trim(), "$t", d.Typ, "$a", d.Adresse.Trim(), "$z", d.Zugang.Trim(), "$b", d.Benutzer.Trim(),
-                    "$s", d.Seriennummer.Trim(), "$akt", If(d.Aktiv, 1, 0)).ExecuteScalar())
+                    "$s", d.Seriennummer.Trim(), "$akt", If(d.Aktiv, 1, 0), "$w", Math.Max(0, d.Watt)).ExecuteScalar())
             Else
                 Befehl(c, Nothing, "UPDATE Drucker SET Name = $n, Typ = $t, Adresse = $a, Zugang = $z, Benutzer = $b, " &
-                                   "Seriennummer = $s, Aktiv = $akt WHERE Id = $id",
+                                   "Seriennummer = $s, Aktiv = $akt, Watt = $w WHERE Id = $id",
                        "$n", d.Name.Trim(), "$t", d.Typ, "$a", d.Adresse.Trim(), "$z", d.Zugang.Trim(), "$b", d.Benutzer.Trim(),
-                       "$s", d.Seriennummer.Trim(), "$akt", If(d.Aktiv, 1, 0), "$id", d.Id).ExecuteNonQuery()
+                       "$s", d.Seriennummer.Trim(), "$akt", If(d.Aktiv, 1, 0), "$w", Math.Max(0, d.Watt), "$id", d.Id).ExecuteNonQuery()
             End If
         End Using
     End Sub

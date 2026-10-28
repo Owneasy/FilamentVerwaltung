@@ -140,6 +140,23 @@ Public Class ServerTests
     End Sub
 
     <Fact>
+    Public Sub Stromkosten_ueber_den_Server()
+        Dim db = _server.Client()
+        db.Verbinden()
+        Dim d As New Drucker With {.Name = "Strom-" & Guid.NewGuid().ToString("N").Substring(0, 6), .Typ = Drucker.TypMoonraker, .Adresse = "127.0.0.1:1", .Aktiv = False, .Watt = 200}
+        db.DruckerSpeichern(d)
+        Assert.Equal(200, db.DruckerLaden().Single(Function(x) x.Id = d.Id).Watt)
+        db.EinstellungSpeichern(Strom.PreisSchluessel, "0.25")
+        Dim f As New Filament With {.Code = "STR-" & Guid.NewGuid().ToString("N").Substring(0, 6), .Gewicht = 1000, .Restgewicht = 1000, .Preis = 0D}
+        db.Speichern(f)
+        Dim b As New Buchung With {.FilamentId = f.Id, .Art = Buchung.ArtDruck, .Gramm = 10, .Drucker = d.Name, .Druckzeit = 3600}
+        db.DruckSpeichern(b)
+        Assert.Equal(0.05D, b.Stromkosten)   ' 1 h × 200 W × 0,25 €/kWh
+        Assert.Equal(0.05D, db.BuchungenLaden().Single(Function(x) x.Id = b.Id).Kosten)
+        Assert.True(db.StromkostenNachrechnen() >= 0)
+    End Sub
+
+    <Fact>
     Public Sub Wartung_ueber_den_Server()
         Dim db = _server.Client()
         db.Verbinden()

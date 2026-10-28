@@ -17,8 +17,16 @@ Public Class Buchung
     Public Property DateiId As Long?
     ''' <summary>Druckzeit in Sekunden.</summary>
     Public Property Druckzeit As Integer?
-    ''' <summary>Kosten zum Zeitpunkt der Buchung (Gramm × Preis pro Gramm der Spule).</summary>
+    ''' <summary>Kosten zum Zeitpunkt der Buchung: Material (Gramm × Preis pro Gramm der Spule) plus <see cref="Stromkosten"/>.</summary>
     Public Property Kosten As Decimal
+    ''' <summary>Davon Strom (Druckzeit × Watt des Druckers × Strompreis); 0 = nicht berechnet.</summary>
+    Public Property Stromkosten As Decimal
+
+    Public ReadOnly Property Materialkosten As Decimal
+        Get
+            Return Kosten - Stromkosten
+        End Get
+    End Property
     Public Property Notiz As String = ""
     ''' <summary>Dateiname des Kamerabilds vom Druckende (Ordner "Fotos"), leer = keins.</summary>
     Public Property Foto As String = ""

@@ -103,6 +103,11 @@ Public Class DatenController
         Return _db.BuchungenLaden()
     End Function
 
+    <HttpPost("buchungen/stromkosten")>
+    Public Function StromkostenNachrechnen() As Integer
+        Return _db.StromkostenNachrechnen()
+    End Function
+
     <HttpPost("buchungen/druck")>
     Public Function DruckSpeichern(<FromBody> b As Buchung) As Buchung
         Dim vorher = _regeln.RestVorher(b.FilamentId)

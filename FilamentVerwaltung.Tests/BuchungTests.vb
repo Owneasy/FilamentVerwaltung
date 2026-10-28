@@ -77,6 +77,41 @@ Public Class BuchungTests
     End Sub
 
     <Fact>
+    Public Sub Stromkosten_kommen_zu_den_Materialkosten_und_lassen_sich_nachrechnen()
+        Dim db = NeueDatenbank()
+        Dim f = Spule(db, "FIL-0001", rest:=800, gewicht:=1000, preis:=20D)
+        db.DruckerSpeichern(New Drucker With {.Name = "X1C", .Typ = Drucker.TypBambu, .Watt = 100})
+
+        ' Ohne Strompreis: nur Material
+        Dim ohne = Druck(f, 50) : ohne.Drucker = "X1C" : ohne.Druckzeit = 2 * 3600
+        db.DruckSpeichern(ohne)
+        Assert.Equal(1D, db.BuchungenLaden().Single().Kosten)
+
+        ' 2 h × 100 W = 0,2 kWh × 0,30 € = 0,06 €
+        db.EinstellungSpeichern(Strom.PreisSchluessel, "0.30")
+        Dim mit = Druck(f, 50) : mit.Drucker = "x1c" : mit.Druckzeit = 2 * 3600
+        db.DruckSpeichern(mit)
+        Dim b = db.BuchungenLaden().Single(Function(x) x.Id = mit.Id)
+        Assert.Equal(0.06D, b.Stromkosten)
+        Assert.Equal(1.06D, b.Kosten)
+        Assert.Equal(1D, b.Materialkosten)
+
+        ' Unbekannter Drucker oder keine Druckzeit: kein Strom
+        Dim fremd = Druck(f, 50) : fremd.Drucker = "Anderer" : fremd.Druckzeit = 3600
+        db.DruckSpeichern(fremd)
+        Assert.Equal(0D, db.BuchungenLaden().Single(Function(x) x.Id = fremd.Id).Stromkosten)
+
+        ' Neuer Preis: beide X1C-Drucke werden nachgerechnet, Material bleibt
+        db.EinstellungSpeichern(Strom.PreisSchluessel, "0,50")
+        Assert.Equal(2, db.StromkostenNachrechnen())
+        Assert.All(db.BuchungenLaden().Where(Function(x) x.Drucker <> "Anderer"), Sub(x)
+                                                                                      Assert.Equal(0.1D, x.Stromkosten)
+                                                                                      Assert.Equal(1.1D, x.Kosten)
+                                                                                  End Sub)
+        Assert.Equal(0, db.StromkostenNachrechnen())
+    End Sub
+
+    <Fact>
     Public Sub Alte_Datenbank_wird_umgestellt_Drucker_und_Abbruch_aus_der_Notiz()
         Dim db = NeueDatenbank()
         Dim f = Spule(db, "FIL-0001")

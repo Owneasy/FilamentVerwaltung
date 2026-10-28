@@ -31,6 +31,8 @@ Public Class Drucker
     Public Property Aktiv As Boolean = True
     ''' <summary>Gezählte Druckzeit in Sekunden (für Wartungsintervalle); wird nur über DrucksekundenSetzen/-Addieren geändert.</summary>
     Public Property Drucksekunden As Long
+    ''' <summary>Durchschnittliche Leistung beim Drucken in Watt (für die Stromkosten; 0 = nicht berechnen).</summary>
+    Public Property Watt As Integer
 
     Public ReadOnly Property TypName As String
         Get

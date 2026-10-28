@@ -28,6 +28,8 @@ Public Interface IDatenquelle
     Sub DruckSpeichern(b As Buchung)
     Sub BuchungLoeschen(id As Long, zurueckbuchenJa As Boolean)
     Function BuchungenLaden() As List(Of Buchung)
+    ''' <summary>Stromkosten aller Drucke neu berechnen; Anzahl der geänderten Drucke.</summary>
+    Function StromkostenNachrechnen() As Integer
     ''' <summary>Kamerabild vom Druckende (Buchung.Foto) als JPEG; Nothing, wenn es fehlt.</summary>
     Function FotoLaden(name As String) As Byte()
 

@@ -17,6 +17,9 @@ Public Class DruckerDialog
     Private ReadOnly chkAnzeigen As New CheckBox With {.Text = "anzeigen", .AutoSize = True, .Margin = New Padding(8, 5, 0, 0)}
     Private ReadOnly txtSerien As New TextBox With {.Width = 320, .CharacterCasing = CharacterCasing.Upper}
     Private ReadOnly chkAktiv As New CheckBox With {.Text = "Drucker überwachen", .AutoSize = True, .Checked = True}
+    Private ReadOnly numWatt As New NumericUpDown With {.Minimum = 0, .Maximum = 3000, .Increment = 10, .Width = 80}
+    ''' <summary>Neuer Drucker: die Leistung folgt Name und Art, bis man sie selbst ändert.</summary>
+    Private _wattVorschlag As Boolean
     Private ReadOnly lblHilfe As New Label With {.AutoSize = True, .MaximumSize = New Size(440, 0), .ForeColor = Theme.TextLeise,
                                                 .Font = Theme.SchriftKlein, .Margin = New Padding(3, 4, 3, 8)}
     Private ReadOnly lblTest As New Label With {.AutoSize = True, .MaximumSize = New Size(440, 0), .Margin = New Padding(3, 8, 3, 0)}
@@ -42,6 +45,11 @@ Public Class DruckerDialog
         txtZugang.Text = d.Zugang
         txtSerien.Text = d.Seriennummer
         chkAktiv.Checked = d.Aktiv
+        _wattVorschlag = d.Id = 0 AndAlso d.Watt <= 0
+        numWatt.Value = Math.Min(numWatt.Maximum, If(_wattVorschlag, Strom.TypischeWatt(d.Name, d.Typ), d.Watt))
+        AddHandler numWatt.ValueChanged, Sub(s, e) If numWatt.ContainsFocus Then _wattVorschlag = False
+        AddHandler txtName.TextChanged, Sub(s, e) WattVorschlagen()
+        AddHandler cboTyp.SelectedIndexChanged, Sub(s, e) WattVorschlagen()
         AddHandler cboTyp.SelectedIndexChanged, Sub(s, e) TypGewechselt()
         AddHandler chkAnzeigen.CheckedChanged, Sub(s, e) txtZugang.UseSystemPasswordChar = Not chkAnzeigen.Checked
         TypGewechselt()
@@ -85,6 +93,11 @@ Public Class DruckerDialog
         t.Controls.Add(lblZugang, 0, t.RowCount)
         t.Controls.Add(zugang, 1, t.RowCount)
         t.RowCount += 1
+        Dim leistung As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False, .Margin = New Padding(0)}
+        leistung.Controls.Add(numWatt)
+        leistung.Controls.Add(New Label With {.Text = "W beim Drucken (für die Stromkosten, 0 = keine)", .AutoSize = True, .ForeColor = Theme.TextLeise,
+                                              .Margin = New Padding(6, 5, 0, 0)})
+        Zeile(t, "Leistung:", leistung)
         t.Controls.Add(chkAktiv, 1, t.RowCount)
         chkAktiv.Margin = New Padding(3, 8, 3, 0)
         t.RowCount += 1
@@ -176,6 +189,10 @@ Public Class DruckerDialog
         lblHilfe.Text = lblHilfe.Text
     End Sub
 
+    Private Sub WattVorschlagen()
+        If _wattVorschlag Then numWatt.Value = Strom.TypischeWatt(txtName.Text, Typ)
+    End Sub
+
     Private Function AusFeldern() As Drucker
         Dim d = _d.Kopie()
         d.Name = txtName.Text.Trim()
@@ -185,6 +202,7 @@ Public Class DruckerDialog
         d.Zugang = txtZugang.Text.Trim()
         d.Seriennummer = If(Typ = Drucker.TypBambu, txtSerien.Text.Trim(), "")
         d.Aktiv = chkAktiv.Checked
+        d.Watt = CInt(EingabeWert(numWatt))
         Return d
     End Function
 
@@ -228,7 +246,7 @@ Public Class DruckerDialog
             Return
         End If
         _d.Name = d.Name : _d.Typ = d.Typ : _d.Adresse = d.Adresse : _d.Benutzer = d.Benutzer
-        _d.Zugang = d.Zugang : _d.Seriennummer = d.Seriennummer : _d.Aktiv = d.Aktiv
+        _d.Zugang = d.Zugang : _d.Seriennummer = d.Seriennummer : _d.Aktiv = d.Aktiv : _d.Watt = d.Watt
         DialogResult = DialogResult.OK
     End Sub
 
