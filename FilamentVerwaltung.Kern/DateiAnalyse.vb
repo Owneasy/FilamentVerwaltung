@@ -274,6 +274,70 @@ Public Module DateiAnalyse
         Return False
     End Function
 
+    ''' <summary>
+    ''' Eingebettetes Vorschaubild (PNG/JPG): bei 3MF das Plattenbild von Bambu Studio / Orca bzw. das Thumbnail von PrusaSlicer,
+    ''' bei G-Code das größte "; thumbnail begin"-Bild. Nothing, wenn es keins gibt (z. B. STL, STEP, BGCODE).
+    ''' </summary>
+    Public Function VorschaubildLesen(pfad As String) As Byte()
+        Try
+            Select Case Path.GetExtension(pfad).ToLowerInvariant()
+                Case ".3mf"
+                    Using zip = ZipFile.OpenRead(pfad)
+                        Dim namen = {"Metadata/plate_1.png", "Metadata/thumbnail.png", "Auxiliaries/.thumbnails/thumbnail_middle.png",
+                                     "Auxiliaries/.thumbnails/thumbnail_3mf.png", "Metadata/plate_1_small.png"}
+                        Dim eintrag = namen.Select(Function(n) zip.GetEntry(n)).FirstOrDefault(Function(e) e IsNot Nothing)
+                        ' Andere Platte als 1 (z. B. nur Platte 2 geslict)
+                        If eintrag Is Nothing Then
+                            eintrag = zip.Entries.Where(Function(e) Regex.IsMatch(e.FullName, "^Metadata/plate_\d+\.png$", RegexOptions.IgnoreCase)).
+                                                  OrderBy(Function(e) e.FullName).FirstOrDefault()
+                        End If
+                        If eintrag Is Nothing OrElse eintrag.Length = 0 OrElse eintrag.Length > 8 * 1024 * 1024 Then Return Nothing
+                        Using s = eintrag.Open(), ms As New MemoryStream()
+                            s.CopyTo(ms)
+                            Return ms.ToArray()
+                        End Using
+                    End Using
+                Case ".gcode", ".gco", ".g"
+                    Return GcodeVorschaubild(pfad)
+            End Select
+        Catch ex As Exception
+            ' Kein lesbares Bild
+        End Try
+        Return Nothing
+    End Function
+
+    ''' <summary>"; thumbnail begin 300x300 12345" (auch thumbnail_PNG / thumbnail_JPG) … Base64 … "; thumbnail end" – das größte Bild.</summary>
+    Private Function GcodeVorschaubild(pfad As String) As Byte()
+        Dim bestes As Byte() = Nothing
+        Dim puffer As Text.StringBuilder = Nothing
+        Dim zeilen = 0
+        Using r As New StreamReader(pfad)
+            Do
+                Dim zeile = r.ReadLine()
+                If zeile Is Nothing Then Exit Do
+                zeilen += 1
+                ' Die Bilder stehen im Kopf; danach kommt nur noch Bewegung
+                If puffer Is Nothing AndAlso zeilen > 20000 Then Exit Do
+                Dim t = zeile.TrimStart(";"c, " "c)
+                If puffer Is Nothing Then
+                    If (t.StartsWith("thumbnail begin", StringComparison.OrdinalIgnoreCase) OrElse
+                        t.StartsWith("thumbnail_PNG begin", StringComparison.OrdinalIgnoreCase) OrElse
+                        t.StartsWith("thumbnail_JPG begin", StringComparison.OrdinalIgnoreCase)) Then puffer = New Text.StringBuilder()
+                ElseIf t.StartsWith("thumbnail", StringComparison.OrdinalIgnoreCase) AndAlso t.EndsWith(" end", StringComparison.OrdinalIgnoreCase) Then
+                    Try
+                        Dim bild = Convert.FromBase64String(puffer.ToString())
+                        If bestes Is Nothing OrElse bild.Length > bestes.Length Then bestes = bild
+                    Catch ex As FormatException
+                    End Try
+                    puffer = Nothing
+                Else
+                    puffer.Append(t.Trim())
+                End If
+            Loop
+        End Using
+        Return bestes
+    End Function
+
     ''' <summary>"1d 2h 3m 4s" → Sekunden.</summary>
     Public Function DauerLesen(text As String) As Integer?
         Dim summe = 0

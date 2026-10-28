@@ -1197,6 +1197,33 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         End Using
     End Sub
 
+    ''' <summary>Ordner für zwischengespeicherte Vorschaubilder (neben der Datenbank).</summary>
+    Private ReadOnly Property VorschauOrdner As String
+        Get
+            Return Path.Combine(Path.GetDirectoryName(Pfad), "Vorschaubilder")
+        End Get
+    End Property
+
+    ''' <summary>
+    ''' Vorschaubild einer Datei (PNG/JPG aus 3MF bzw. G-Code), einmal ausgelesen und zwischengespeichert.
+    ''' Nothing, wenn die Datei keins enthält (eine leere Merkdatei verhindert, dass immer wieder gesucht wird).
+    ''' </summary>
+    Public Function DateiVorschaubild(d As Datei) As Byte() Implements IDatenquelle.DateiVorschaubild
+        Dim bild = Path.Combine(VorschauOrdner, $"{d.Id}.bild")
+        Dim keins = Path.Combine(VorschauOrdner, $"{d.Id}.keins")
+        If File.Exists(bild) Then Return File.ReadAllBytes(bild)
+        If File.Exists(keins) Then Return Nothing
+        Dim quelle = DateiPfad(d)
+        If Not File.Exists(quelle) Then Return Nothing
+        Dim daten = DateiAnalyse.VorschaubildLesen(quelle)
+        Try
+            Directory.CreateDirectory(VorschauOrdner)
+            If daten Is Nothing Then File.WriteAllBytes(keins, Array.Empty(Of Byte)()) Else File.WriteAllBytes(bild, daten)
+        Catch ex As Exception
+            ' Zwischenspeicher ist nur eine Beschleunigung
+        End Try
+        Return daten
+    End Function
     Public Sub DateiNotizSpeichern(id As Long, notiz As String) Implements IDatenquelle.DateiNotizSpeichern
         Using c = Oeffnen()
             Befehl(c, Nothing, "UPDATE Datei SET Notiz = $notiz WHERE Id = $id", "$notiz", If(notiz, ""), "$id", id).ExecuteNonQuery()
@@ -1213,6 +1240,10 @@ CREATE TABLE IF NOT EXISTS DruckerSpule (
         End Using
         Dim pfadDatei = DateiPfad(d)
         If File.Exists(pfadDatei) Then File.Delete(pfadDatei)
+        For Each endung In {".bild", ".keins"}
+            Dim zwischen = Path.Combine(VorschauOrdner, d.Id & endung)
+            If File.Exists(zwischen) Then File.Delete(zwischen)
+        Next
     End Sub
 
     Private Shared Function Text(r As SqliteDataReader, spalte As Integer) As String

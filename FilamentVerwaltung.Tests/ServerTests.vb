@@ -157,6 +157,16 @@ Public Class ServerTests
     End Sub
 
     <Fact>
+    Public Sub Vorschaubild_ueber_den_Server()
+        Dim db = _server.Client()
+        db.Verbinden()
+        Dim kennung = Guid.NewGuid().ToString("N").Substring(0, 6)
+        Dim mit = db.DateiImportieren(VorschaubildTests.GcodeMitBild($"Bild-{kennung}.gcode"))
+        Dim ohne = db.DateiImportieren(GcodeDatei($"OhneBild-{kennung}.gcode"))
+        Assert.Equal(VorschaubildTests.Png, db.DateiVorschaubild(mit))
+        Assert.Null(db.DateiVorschaubild(ohne))
+    End Sub
+    <Fact>
     Public Sub Ordner_ueber_den_Server()
         Dim db = _server.Client()
         db.Verbinden()

@@ -63,6 +63,10 @@ Public Class DateienSeite
     Private ReadOnly btnOeffnen As New WebButton("Öffnen", Theme.SymOeffnen)
     Private ReadOnly btnSlicen As New WebButton("Slicen …", Theme.SymWuerfel)
     Private ReadOnly btnSenden As New WebButton("An Drucker senden …", Theme.SymNetzDrucker)
+    Private ReadOnly btnNochmal As New WebButton("Nochmal drucken …", Theme.SymVerlauf)
+    ''' <summary>Vorschaubilder je Datei-Id (Nothing = keins vorhanden); geladen wird im Hintergrund.</summary>
+    Private ReadOnly _bilder As New Dictionary(Of Long, Image)
+    Private ReadOnly _bildLaedt As New HashSet(Of Long)
     Private ReadOnly btnImSlicer As New WebButton("Im Slicer öffnen", Theme.SymOeffnen)
     Private _slicer As List(Of SlicerInstallation)
     Private _bambu As BambuStudio
@@ -163,7 +167,7 @@ Public Class DateienSeite
         infos.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100))
 
         Dim knoepfe As New FlowLayoutPanel With {.AutoSize = True, .Dock = DockStyle.Top, .WrapContents = True, .Margin = New Padding(0, 10, 0, 0)}
-        For Each b In {btnBuchen, btnSlicen, btnSenden, btnImSlicer, btnOeffnen, btnImOrdner, btnLoeschen}
+        For Each b In {btnBuchen, btnSlicen, btnNochmal, btnSenden, btnImSlicer, btnOeffnen, btnImOrdner, btnLoeschen}
             b.Margin = New Padding(0, 0, 8, 6)
             knoepfe.Controls.Add(b)
         Next
@@ -171,6 +175,8 @@ Public Class DateienSeite
         AddHandler btnOeffnen.Click, Sub(s, e) Oeffnen()
         AddHandler btnSlicen.Click, Sub(s, e) Slicen()
         AddHandler btnSenden.Click, Sub(s, e) Senden()
+        AddHandler btnNochmal.Click, Sub(s, e) Senden(nochmal:=True)
+        tipps.SetToolTip(btnNochmal, "Wie beim letzten Mal drucken: gleicher Drucker, im AMS bevorzugt die gleiche Spule")
         tipps.SetToolTip(btnSenden, "Datei an einen angebundenen Drucker senden und den Druck starten (mit Bestätigung)")
         AddHandler btnImSlicer.Click, Sub(s, e) ImSlicerOeffnen(btnImSlicer)
         tipps.SetToolTip(btnSlicen, "Mit Bambu Studio slicen – das Ergebnis (mit Gewicht und Druckzeit) landet hier in Dateien")
@@ -203,11 +209,20 @@ Public Class DateienSeite
         grid.DataSource = quelle
         grid.SortSpalte = "Hinzugefuegt"
         grid.SortAufsteigend = False
+        ' Vorschaubild (aus 3MF / G-Code, im Hintergrund geladen)
+        grid.RowTemplate.Height = Px(Me, 48)
+        Dim bild As New DataGridViewImageColumn With {.Name = "Bild", .HeaderText = "", .ImageLayout = DataGridViewImageCellLayout.Zoom,
+                                                      .AutoSizeMode = DataGridViewAutoSizeColumnMode.None, .Width = Px(Me, 56),
+                                                      .SortMode = DataGridViewColumnSortMode.NotSortable, .Resizable = DataGridViewTriState.False}
+        bild.DefaultCellStyle.NullValue = Nothing
+        bild.DefaultCellStyle.Padding = New Padding(Px(Me, 4))
+        grid.Columns.Add(bild)
         grid.Spalte("Name", "Name", 220, minBreite:=160)
         grid.Spalte("Typ", "Typ", 0).MinimumWidth = Px(Me, 80)
         grid.Spalte("Groesse", "Größe", 0, rechtsbuendig:=True)
         grid.Spalte("Gramm", "Verbrauch", 0, rechtsbuendig:=True)
         grid.Spalte("Druckzeit", "Druckzeit", 0, rechtsbuendig:=True)
+        grid.Spalte("Gedruckt", "Gedruckt", 0, rechtsbuendig:=True)
         grid.Spalte("Hinzugefuegt", "Hinzugefügt", 0, "dd.MM.yyyy", True)
         grid.Columns("Name").DefaultCellStyle.Font = Theme.SchriftFett
 
@@ -215,6 +230,8 @@ Public Class DateienSeite
         menue.Items.Add("Als Druck buchen", Nothing, Sub(s, e) AlsDruckBuchen())
         menue.Items.Add("Slicen …", Nothing, Sub(s, e) Slicen())
         menue.Items.Add("An Drucker senden …", Nothing, Sub(s, e) Senden())
+        Dim mnuNochmal = menue.Items.Add("Nochmal drucken …", Nothing, Sub(s, e) Senden(nochmal:=True))
+        AddHandler menue.Opening, Sub(s, e) mnuNochmal.Visible = NochmalMoeglich(Ausgewaehlt())
         menue.Items.Add("Im Slicer öffnen", Nothing, Sub(s, e) ImSlicerOeffnen(Nothing))
         menue.Items.Add("Öffnen", Nothing, Sub(s, e) Oeffnen())
         menue.Items.Add("Im Ordner anzeigen", Nothing, Sub(s, e) OrdnerOeffnen(_angezeigt))
@@ -329,6 +346,12 @@ Public Class DateienSeite
         Try
             _alle = _db.DateienLaden()
             _buchungen = _db.BuchungenLaden()
+            ' Wie oft gedruckt (und wie oft daneben) – für die Spalte "Gedruckt" und "Nochmal drucken"
+            Dim drucke = _buchungen.Where(Function(b) b.IstDruck AndAlso b.DateiId.HasValue).ToLookup(Function(b) b.DateiId.Value)
+            For Each d In _alle
+                d.Gedruckt = drucke(d.Id).Count()
+                d.Fehldrucke = drucke(d.Id).Where(Function(b) b.Fehldruck).Count()
+            Next
             _ordner = If(OrdnerVerfuegbar(), _db.OrdnerLaden(), New List(Of String))
         Catch ex As Exception
             Fehler("Die Dateien konnten nicht geladen werden.", ex)
@@ -441,10 +464,11 @@ Public Class DateienSeite
         btnImSlicer.Visible = d IsNot Nothing AndAlso Not Datei.GcodeTypen.Contains(d.Typ)
         ' Senden: geslicte 3MF (Bambu) oder G-Code (Klipper, OctoPrint, PrusaLink)
         btnSenden.Visible = d IsNot Nothing AndAlso (d.HatDruckdaten OrElse Datei.GcodeTypen.Contains(d.Typ) OrElse d.Typ = "BGCODE")
+        btnNochmal.Visible = NochmalMoeglich(d)
         ' Feste Reihenfolge erzwingen – erst nach dem Ein-/Ausblenden, weil ein erstmals sichtbarer Knopf sonst ans Ende rutscht
         Dim leiste = btnBuchen.Parent
         If leiste IsNot Nothing Then
-            Dim reihenfolge = {btnBuchen, btnSlicen, btnSenden, btnImSlicer, btnOeffnen, btnImOrdner, btnLoeschen}
+            Dim reihenfolge = {btnBuchen, btnSlicen, btnNochmal, btnSenden, btnImSlicer, btnOeffnen, btnImOrdner, btnLoeschen}
             For i = 0 To reihenfolge.Length - 1
                 leiste.Controls.SetChildIndex(reihenfolge(i), i)
             Next
@@ -516,10 +540,55 @@ Public Class DateienSeite
             Case "Gramm"
                 e.Value = GrammText(d.Gramm)
                 e.FormattingApplied = True
+            Case "Bild"
+                e.Value = Vorschaubild(d)
+                e.FormattingApplied = True
+                Return
+            Case "Gedruckt"
+                e.Value = If(d.Gedruckt = 0, "–", $"{d.Gedruckt}×" & If(d.Fehldrucke > 0, $" · {d.Fehldrucke} ✕", ""))
+                If d.Gedruckt = 0 Then e.CellStyle.ForeColor = Theme.TextLeise
+                e.FormattingApplied = True
             Case "Druckzeit"
                 e.Value = DauerText(d.Druckzeit)
                 e.FormattingApplied = True
         End Select
+    End Sub
+
+    ''' <summary>Vorschaubild aus dem Zwischenspeicher – sonst im Hintergrund laden und die Zeile danach neu zeichnen.</summary>
+    Private Function Vorschaubild(d As Datei) As Image
+        Dim bild As Image = Nothing
+        If _bilder.TryGetValue(d.Id, bild) Then Return bild
+        If _bildLaedt.Add(d.Id) Then BildLaden(d)
+        Return Nothing
+    End Function
+
+    Private Async Sub BildLaden(d As Datei)
+        Dim klein As Image = Nothing
+        Try
+            Dim groesse = Px(Me, 96)
+            klein = Await Task.Run(Function() As Image
+                                       Dim daten = _db.DateiVorschaubild(d)
+                                       If daten Is Nothing OrElse daten.Length = 0 Then Return Nothing
+                                       ' Verkleinert ablegen – die Originale sind oft einige Hundert KB
+                                       Using ms As New IO.MemoryStream(daten), roh = Image.FromStream(ms)
+                                           Dim faktor = Math.Min(1.0, groesse / Math.Max(roh.Width, roh.Height))
+                                           Dim b As New Bitmap(Math.Max(1, CInt(roh.Width * faktor)), Math.Max(1, CInt(roh.Height * faktor)))
+                                           Using g = Graphics.FromImage(b)
+                                               g.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                                               g.DrawImage(roh, 0, 0, b.Width, b.Height)
+                                           End Using
+                                           Return b
+                                       End Using
+                                   End Function)
+        Catch ex As Exception
+            ' Kein Bild – die Zelle bleibt leer
+        End Try
+        If IsDisposed Then Return
+        _bilder(d.Id) = klein
+        If klein Is Nothing Then Return
+        For Each r As DataGridViewRow In grid.Rows
+            If TryCast(r.DataBoundItem, Datei)?.Id = d.Id Then grid.InvalidateRow(r.Index)
+        Next
     End Sub
 
     Private Sub Grid_CellPainting(sender As Object, e As DataGridViewCellPaintingEventArgs)
@@ -1016,12 +1085,30 @@ Public Class DateienSeite
         End Using
     End Sub
 
-    Private Sub Senden()
+    ''' <summary>Druckfertig und schon einmal gedruckt?</summary>
+    Private Function NochmalMoeglich(d As Datei) As Boolean
+        Return d IsNot Nothing AndAlso d.Gedruckt > 0 AndAlso (d.HatDruckdaten OrElse Datei.GcodeTypen.Contains(d.Typ) OrElse d.Typ = "BGCODE")
+    End Function
+
+    ''' <param name="nochmal">Wie beim letzten Druck dieser Datei: Drucker und (im AMS) die Spule vorauswählen.</param>
+    Private Sub Senden(Optional nochmal As Boolean = False)
         Dim d = Ausgewaehlt()
         If d Is Nothing Then Return
+        Dim druckerId As Long? = Nothing, spuleId As Long? = Nothing
+        If nochmal Then
+            Dim letzter = _buchungen.Where(Function(b) b.IstDruck AndAlso b.DateiId.HasValue AndAlso b.DateiId.Value = d.Id AndAlso Not b.Fehldruck).OrderByDescending(Function(b) b.Datum).FirstOrDefault()
+            If letzter Is Nothing Then letzter = _buchungen.Where(Function(b) b.IstDruck AndAlso b.DateiId.HasValue AndAlso b.DateiId.Value = d.Id).OrderByDescending(Function(b) b.Datum).FirstOrDefault()
+            If letzter IsNot Nothing Then
+                spuleId = letzter.FilamentId
+                Try
+                    druckerId = _db.DruckerLaden().FirstOrDefault(Function(x) String.Equals(x.Name, letzter.Drucker, StringComparison.OrdinalIgnoreCase))?.Id
+                Catch ex As Exception
+                End Try
+            End If
+        End If
         Dim pfad = LadeDialog.DateiHolen(Me, _db, d)
         If pfad Is Nothing Then Return
-        Using dlg As New SendenDialog(_db, _ueberwachung, d, pfad)
+        Using dlg As New SendenDialog(_db, _ueberwachung, d, pfad, druckerId, 1, spuleId)
             If dlg.ShowDialog(Me) = DialogResult.OK Then
                 MessageBox.Show(Me, "Der Auftrag wurde an den Drucker gesendet. Den Fortschritt siehst du auf der Seite ""Drucker""; " &
                                 "nach dem Druck wird der Verbrauch mit dieser Datei zum Buchen vorgeschlagen.", "An Drucker senden",

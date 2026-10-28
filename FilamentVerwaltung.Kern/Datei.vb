@@ -31,6 +31,12 @@ Public Class Datei
     ''' <summary>Ordner zum Sortieren, z. B. "Halterungen/Wand"; leer = oberste Ebene. Nur in der Datenbank – die Datei wird nicht verschoben.</summary>
     Public Property Ordner As String = ""
 
+    ' --- Aus den Buchungen ergänzt (Anzeige; nicht gespeichert)
+    ''' <summary>Wie oft mit dieser Datei gedruckt wurde.</summary>
+    Public Property Gedruckt As Integer
+    ''' <summary>Davon Fehldrucke.</summary>
+    Public Property Fehldrucke As Integer
+
     Public ReadOnly Property IstModell As Boolean
         Get
             Return ModellTypen.Contains(Typ)

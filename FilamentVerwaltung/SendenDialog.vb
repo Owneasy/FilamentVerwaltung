@@ -41,13 +41,16 @@ Public Class SendenDialog
     Private ReadOnly btnWarteschlange As New WebButton("In Warteschlange", Theme.SymHinzufuegen) With {.Margin = New Padding(8, 0, 0, 0)}
     Private ReadOnly _vorauswahlDrucker As Long?
     Private ReadOnly _vorauswahlPlatte As Integer
+    ''' <summary>Spule vom letzten Druck: im AMS bevorzugt das Fach, dem sie zugeordnet ist.</summary>
+    Private ReadOnly _vorauswahlSpule As Long?
 
     ''' <param name="druckerId">Vorauswahl (z. B. aus der Warteschlange), sonst der passende, bereite Drucker.</param>
     Public Sub New(db As IDatenquelle, ueberwachung As IDruckerDienst, datei As Datei, pfad As String,
-                   Optional druckerId As Long? = Nothing, Optional platte As Integer = 1)
+                   Optional druckerId As Long? = Nothing, Optional platte As Integer = 1, Optional spuleId As Long? = Nothing)
         _db = db
         _vorauswahlDrucker = druckerId
         _vorauswahlPlatte = platte
+        _vorauswahlSpule = spuleId
         _ueberwachung = ueberwachung
         _datei = datei
         _pfad = pfad
@@ -262,6 +265,7 @@ Public Class SendenDialog
                 If typ.Length > 0 AndAlso spule IsNot Nothing AndAlso spule.Material.ToUpperInvariant().Contains(typ) Then punkte += 4
                 If typ.Length > 0 AndAlso f.Beschreibung.ToUpperInvariant().Contains(typ) Then punkte += 2
                 If s?.Slot = f.Slot Then punkte += 1
+                If spule IsNot Nothing AndAlso _vorauswahlSpule.HasValue AndAlso spule.Id = _vorauswahlSpule.Value Then punkte += 8
                 If punkte > besterPunkte Then
                     besterPunkte = punkte
                     bester = auswahl.Items.Count - 1

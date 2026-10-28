@@ -414,6 +414,18 @@ async function fotoLaden(name, img) {
   } catch { if (img) img.remove(); }
 }
 
+// Vorschaubilder der Dateien (aus 3MF / G-Code); 204 = kein Bild. Bleiben für die Sitzung im Speicher.
+const vorschaubilder = new Map();
+function vorschaubildLaden(platz) {
+  const id = platz.dataset.bild;
+  if (!vorschaubilder.has(id)) vorschaubilder.set(id, api(`dateien/${id}/vorschaubild`)
+    .then(r => r.status === 204 ? null : r.blob()).then(b => b ? URL.createObjectURL(b) : null).catch(() => null));
+  vorschaubilder.get(id).then(url => {
+    if (url && platz.isConnected) platz.innerHTML = `<img src="${url}" alt="">`;
+    else if (platz.isConnected) platz.classList.add('ohne');
+  });
+}
+
 async function buchenFormular(id) {
   let vorschlag, spulen;
   try {
@@ -485,9 +497,16 @@ async function dateienSeite() {
       <button class="primaer" id="dHochladen">+ Hochladen</button><input type="file" id="dDatei" hidden multiple></div>
     <div id="dPfad" class="ordner-pfad"></div>
     <div id="dListe"><p class="leer">Lade …</p></div>`);
-  let dateien, ordner;
-  try { [dateien, ordner] = await Promise.all([holen('dateien').then(l => l.filter(istDruckbar)), holen('ordner').catch(() => [])]); }
+  let dateien, ordner, buchungen;
+  try { [dateien, ordner, buchungen] = await Promise.all([holen('dateien').then(l => l.filter(istDruckbar)), holen('ordner').catch(() => []), holen('buchungen').catch(() => [])]); }
   catch (e) { return fehler(e); }
+  // Wie oft wurde jede Datei schon gedruckt (aus den Buchungen)?
+  const gedruckt = {};
+  buchungen.filter(b => b.dateiId).forEach(b => {
+    const g = (gedruckt[b.dateiId] ||= { n: 0, fehl: 0, zuletzt: b.datum });
+    g.n++; if (b.fehldruck) g.fehl++;
+    if (b.datum > g.zuletzt) g.zuletzt = b.datum;
+  });
   if (dateienOrdner && !ordner.some(o => o.toLowerCase() === dateienOrdner.toLowerCase())) dateienOrdner = '';
   const inOrdner = (d, o) => (d.ordner || '').toLowerCase() === o.toLowerCase();
   const darunter = (d, o) => !o || inOrdner(d, o) || (d.ordner || '').toLowerCase().startsWith(o.toLowerCase() + '/');
@@ -508,12 +527,18 @@ async function dateienSeite() {
     const treffer = q
       ? dateien.filter(d => darunter(d, dateienOrdner) && [d.name, d.material, d.notiz, d.ordner].some(x => (x || '').toLowerCase().includes(q)))
       : dateien.filter(d => inOrdner(d, dateienOrdner));
-    html += treffer.map(d => wischen(`<button class="karte datei-eintrag" data-senden="${d.id}">
-        <b>${esc(d.name)}</b>
+    html += treffer.map(d => {
+      const g = gedruckt[d.id];
+      return wischen(`<button class="karte datei-eintrag mit-bild" data-senden="${d.id}">
+        <span class="datei-bild" data-bild="${d.id}"></span>
+        <span class="datei-text"><b>${esc(d.name)}</b>
         <small class="leise">${[q && d.ordner ? '📁 ' + d.ordner.replace(/\//g, ' › ') : '', d.typ, d.gramm ? zahl(d.gramm) + ' g' : '', dauer(d.druckzeit), d.material, datumZeit(d.hinzugefuegt)].filter(Boolean).map(esc).join(' · ')}</small>
-      </button>`, 'datei', d.id, d.name)).join('');
+        ${g ? `<small class="gedruckt">${g.n}× gedruckt${g.fehl ? ` · ${g.fehl} Fehldruck${g.fehl > 1 ? 'e' : ''}` : ''} · zuletzt ${new Date(g.zuletzt).toLocaleDateString('de-DE')}</small>` : ''}</span>
+      </button>`, 'datei', d.id, d.name);
+    }).join('');
     $('#dListe').innerHTML = html || `<p class="leer">${!dateien.length ? 'Noch keine druckfertigen Dateien.<br><small>G-Code oder geslicte 3MF fügst du in der Windows-App unter „Dateien“ hinzu oder lädst sie hier hoch.</small>'
       : q ? 'Keine passenden Dateien.' : 'Dieser Ordner ist leer.'}</p>`;
+    document.querySelectorAll('[data-bild]').forEach(vorschaubildLaden);
     document.querySelectorAll('[data-ordner]').forEach(b => b.onclick = () => { dateienOrdner = b.dataset.ordner; dateienSuche = ''; $('#dSuche').value = ''; zeigen(); });
     $('#dNeuerOrdner').onclick = async () => {
       const name = prompt(dateienOrdner ? `Neuer Ordner in „${dateienOrdner.replace(/\//g, ' › ')}“:` : 'Name des neuen Ordners:');
@@ -540,8 +565,17 @@ async function sendenFormular(dateiId, vorauswahl = {}) {
   } catch (e) { return fehler(e); }
   if (!datei) return toast('Die Datei gibt es nicht mehr.', true);
   drucker = drucker.filter(d => d.aktiv);
+  // Nochmal drucken: letzter gelungener Druck dieser Datei → gleicher Drucker und gleiche Spule vorauswählen
+  const letzter = (await holen('buchungen').catch(() => [])).filter(b => b.dateiId === dateiId && !b.fehldruck)
+    .sort((a, b) => b.datum.localeCompare(a.datum))[0];
+  if (letzter && !vorauswahl.druckerId) {
+    const d = drucker.find(x => x.name.toLowerCase() === (letzter.drucker || '').toLowerCase());
+    if (d) vorauswahl = { ...vorauswahl, druckerId: d.id };
+  }
+  const letzteSpule = letzter ? spulen.find(s => s.id === letzter.filamentId) : null;
   const kopf = `<div class="zeile"><div><h2>${esc(datei.name)}</h2>
-      <small class="leise">${[datei.gramm ? zahl(datei.gramm) + ' g' : '', dauer(datei.druckzeit), datei.material].filter(Boolean).map(esc).join(' · ')}</small></div>
+      <small class="leise">${[datei.gramm ? zahl(datei.gramm) + ' g' : '', dauer(datei.druckzeit), datei.material].filter(Boolean).map(esc).join(' · ')}</small>
+      ${letzter ? `<small class="gedruckt">Zuletzt gedruckt am ${new Date(letzter.datum).toLocaleDateString('de-DE')}${letzter.drucker ? ' auf ' + esc(letzter.drucker) : ''}${letzteSpule ? ' mit ' + esc(letzteSpule.code) : ''}</small>` : ''}</div>
       <button class="knopf" id="sAbbrechen">Abbrechen</button></div>
     ${ordner ? `<label>Ordner<select id="sOrdner"><option value="">– ohne Ordner –</option>${ordner.map(o => `<option value="${esc(o)}" ${o.toLowerCase() === (datei.ordner || '').toLowerCase() ? 'selected' : ''}>${esc(o.replace(/\//g, ' › '))}</option>`).join('')}</select></label>` : ''}`;
   if (!drucker.length) {
@@ -591,7 +625,8 @@ async function sendenFormular(dateiId, vorauswahl = {}) {
       const optionen = verfuegbar.map((f, i) => {
         const spule = spulen.find(x => x.id === zuordnung[f.slot]);
         const typ = (pf.typ || '').toUpperCase();
-        const punkte = (typ && spule && spule.material.toUpperCase().includes(typ) ? 4 : 0) +
+        const punkte = (spule && letzteSpule && spule.id === letzteSpule.id ? 8 : 0) +
+          (typ && spule && spule.material.toUpperCase().includes(typ) ? 4 : 0) +
           (typ && f.beschreibung.toUpperCase().includes(typ) ? 2 : 0) + (s?.slot === f.slot ? 1 : 0);
         if (punkte > punkteBester) { punkteBester = punkte; bester = i; }
         return { slot: f.slot, text: f.beschreibung + (spule ? ` – ${spule.code} ${spulenText(spule)}` : '') };

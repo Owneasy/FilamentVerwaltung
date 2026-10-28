@@ -43,4 +43,15 @@ Public Class OrdnerController
     Public Sub DateiVerschieben(id As Long, <FromBody> a As WertAnfrage)
         _db.DateiOrdnerSetzen(id, If(a?.Wert, ""))
     End Sub
+    ''' <summary>Vorschaubild der Datei (PNG/JPG) – 204, wenn sie keins enthält.</summary>
+    <HttpGet("dateien/{id:long}/vorschaubild")>
+    Public Function Vorschaubild(id As Long) As IActionResult
+        Dim d = _db.DateienLaden().FirstOrDefault(Function(x) x.Id = id)
+        If d Is Nothing Then Return NotFound("Datei unbekannt.")
+        Dim bild = _db.DateiVorschaubild(d)
+        If bild Is Nothing OrElse bild.Length = 0 Then Return NoContent()
+        Dim typ = If(bild.Length > 2 AndAlso bild(0) = &HFF AndAlso bild(1) = &HD8, "image/jpeg", "image/png")
+        Response.Headers.CacheControl = "private, max-age=86400"
+        Return File(bild, typ)
+    End Function
 End Class

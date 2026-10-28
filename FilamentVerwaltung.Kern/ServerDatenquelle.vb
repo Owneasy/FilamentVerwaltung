@@ -359,6 +359,28 @@ Public Class ServerDatenquelle
         Schicken(HttpMethod.Put, $"drucker/{druckerId}/spulen/{slot}", New SpuleAnfrage With {.FilamentId = filamentId})
     End Sub
 
+    ' ------------------------------------------------------------------ Vorschaubilder
+
+    ''' <summary>Vorschaubild vom Server (lokal zwischengespeichert, auch "keins"); älterer Server: Nothing.</summary>
+    Public Function DateiVorschaubild(d As Datei) As Byte() Implements IDatenquelle.DateiVorschaubild
+        If Not Kann(ServerFunktionen.Vorschaubilder) Then Return Nothing
+        Dim ordner = Path.Combine(_zwischenspeicher, "Vorschaubilder")
+        Dim bild = Path.Combine(ordner, $"{d.Id}-{d.Groesse}.bild")
+        Dim keins = Path.Combine(ordner, $"{d.Id}-{d.Groesse}.keins")
+        If File.Exists(bild) Then Return File.ReadAllBytes(bild)
+        If File.Exists(keins) Then Return Nothing
+        Dim daten As Byte() = Nothing
+        Using antwort = Senden(HttpMethod.Get, $"dateien/{d.Id}/vorschaubild")
+            If antwort.StatusCode <> HttpStatusCode.NoContent Then daten = antwort.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult()
+        End Using
+        Try
+            Directory.CreateDirectory(ordner)
+            If daten Is Nothing OrElse daten.Length = 0 Then File.WriteAllBytes(keins, Array.Empty(Of Byte)()) Else File.WriteAllBytes(bild, daten)
+        Catch ex As Exception
+        End Try
+        Return If(daten?.Length > 0, daten, Nothing)
+    End Function
+
     ' ------------------------------------------------------------------ Ordner für Dateien
 
     Public Function OrdnerLaden() As List(Of String) Implements IDatenquelle.OrdnerLaden

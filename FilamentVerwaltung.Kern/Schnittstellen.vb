@@ -56,6 +56,8 @@ Public Interface IDatenquelle
     Function DateienLaden() As List(Of Datei)
     Function DateiImportieren(quelle As String) As Datei
     Sub DateiNotizSpeichern(id As Long, notiz As String)
+    ''' <summary>Vorschaubild aus der Datei (PNG/JPG) oder Nothing.</summary>
+    Function DateiVorschaubild(d As Datei) As Byte()
     ' Ordner für Dateien (nur zum Sortieren)
     Function OrdnerLaden() As List(Of String)
     Sub OrdnerAnlegen(pfad As String)
