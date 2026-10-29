@@ -95,7 +95,7 @@ Public Class DruckerDialog
         t.RowCount += 1
         Dim leistung As New FlowLayoutPanel With {.AutoSize = True, .WrapContents = False, .Margin = New Padding(0)}
         leistung.Controls.Add(numWatt)
-        leistung.Controls.Add(New Label With {.Text = "W beim Drucken (für die Stromkosten, 0 = keine)", .AutoSize = True, .ForeColor = Theme.TextLeise,
+        leistung.Controls.Add(New Label With {.Text = "W beim Drucken (Aufheizen: Einstellungen → Stromkosten)", .AutoSize = True, .ForeColor = Theme.TextLeise,
                                               .Margin = New Padding(6, 5, 0, 0)})
         Zeile(t, "Leistung:", leistung)
         t.Controls.Add(chkAktiv, 1, t.RowCount)

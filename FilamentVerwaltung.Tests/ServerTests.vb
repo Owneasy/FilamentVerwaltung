@@ -146,6 +146,9 @@ Public Class ServerTests
         Dim d As New Drucker With {.Name = "Strom-" & Guid.NewGuid().ToString("N").Substring(0, 6), .Typ = Drucker.TypMoonraker, .Adresse = "127.0.0.1:1", .Aktiv = False, .Watt = 200}
         db.DruckerSpeichern(d)
         Assert.Equal(200, db.DruckerLaden().Single(Function(x) x.Id = d.Id).Watt)
+        d.AufheizWatt = 300 : d.AufheizMinuten = 2 : db.DruckerSpeichern(d)
+        Assert.Equal(300, db.DruckerLaden().Single(Function(x) x.Id = d.Id).AufheizWatt)
+        d.AufheizWatt = 0 : d.AufheizMinuten = 0 : db.DruckerSpeichern(d)
         db.EinstellungSpeichern(Strom.PreisSchluessel, "0.25")
         Dim f As New Filament With {.Code = "STR-" & Guid.NewGuid().ToString("N").Substring(0, 6), .Gewicht = 1000, .Restgewicht = 1000, .Preis = 0D}
         db.Speichern(f)

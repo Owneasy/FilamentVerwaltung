@@ -33,6 +33,10 @@ Public Class Drucker
     Public Property Drucksekunden As Long
     ''' <summary>Durchschnittliche Leistung beim Drucken in Watt (für die Stromkosten; 0 = nicht berechnen).</summary>
     Public Property Watt As Integer
+    ''' <summary>Aufheizen vor jedem Druck: durchschnittliche Leistung in Watt …</summary>
+    Public Property AufheizWatt As Integer
+    ''' <summary>… und Dauer in Minuten (0 = Aufheizen nicht berechnen).</summary>
+    Public Property AufheizMinuten As Integer
 
     Public ReadOnly Property TypName As String
         Get

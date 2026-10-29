@@ -112,6 +112,22 @@ Public Class BuchungTests
     End Sub
 
     <Fact>
+    Public Sub Aufheizen_zaehlt_einmal_pro_Druck()
+        Dim db = NeueDatenbank()
+        Dim f = Spule(db, "FIL-0001", preis:=0D)
+        ' Aufheizen 600 W × 5 min = 50 Wh, Drucken 1 h × 100 W = 100 Wh → 0,15 kWh × 0,40 € = 0,06 €
+        db.DruckerSpeichern(New Drucker With {.Name = "P1S", .Typ = Drucker.TypBambu, .Watt = 100, .AufheizWatt = 600, .AufheizMinuten = 5})
+        Dim d = db.DruckerLaden().Single()
+        Assert.Equal(600, d.AufheizWatt) : Assert.Equal(5, d.AufheizMinuten)
+        db.EinstellungSpeichern(Strom.PreisSchluessel, "0.40")
+        Dim b = Druck(f, 10) : b.Drucker = "P1S" : b.Druckzeit = 3600
+        db.DruckSpeichern(b)
+        Assert.Equal(0.06D, db.BuchungenLaden().Single().Stromkosten)
+        ' Kurzer Druck: das Aufheizen dominiert (50 Wh + 10 Wh)
+        Assert.Equal(0.02D, Strom.Kosten(360, 100, 0.4D, 600, 5))
+    End Sub
+
+    <Fact>
     Public Sub Alte_Datenbank_wird_umgestellt_Drucker_und_Abbruch_aus_der_Notiz()
         Dim db = NeueDatenbank()
         Dim f = Spule(db, "FIL-0001")
