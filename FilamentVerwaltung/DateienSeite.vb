@@ -484,15 +484,20 @@ Public Class DateienSeite
         Dim nummer = _ladeNummer
         _vorschauAbbruch?.Cancel()   ' Download für die vorige Auswahl abbrechen
         vorschau.Netz = Nothing
+        vorschau.Standbild = Nothing
         If d Is Nothing Then
             vorschau.Hinweis = If(_alle.Count = 0, "Hier erscheint die 3D-Vorschau von STL-, 3MF- und OBJ-Dateien.",
                                   "Datei auswählen, um die Vorschau zu sehen.")
             Return
         End If
-        ' Dateien ohne Vorschau (G-Code, STEP …) gar nicht erst vom Server laden
+        ' Geslicte Dateien (G-Code, .gcode.3mf) enthalten kein 3D-Modell mehr – dafür das Vorschaubild des Slicers
+        If Datei.GcodeTypen.Contains(d.Typ) OrElse d.Name.EndsWith(".gcode.3mf", StringComparison.OrdinalIgnoreCase) Then
+            Await SlicerBildZeigen(d, nummer, "Geslicte Datei ohne Vorschaubild – die Druckdaten stehen unten.")
+            Return
+        End If
+        ' Dateien ohne Vorschau (STEP …) gar nicht erst vom Server laden
         If Not Netz.KannLaden(d.Name) Then
-            vorschau.Hinweis = If(Datei.GcodeTypen.Contains(d.Typ), "G-Code hat keine 3D-Vorschau – die Druckdaten stehen unten.",
-                                  $"Für {d.Typ}-Dateien gibt es keine Vorschau. Mit ""Öffnen"" im passenden Programm ansehen.")
+            vorschau.Hinweis = $"Für {d.Typ}-Dateien gibt es keine Vorschau. Mit ""Öffnen"" im passenden Programm ansehen."
             Return
         End If
         Dim pfad As String
@@ -521,13 +526,43 @@ Public Class DateienSeite
             Return
         End If
         vorschau.Hinweis = "Lade Vorschau …"
+        Dim ladeFehler As String = Nothing
         Try
             Dim modell = Await Task.Run(Function() Netz.Laden(pfad))
             If nummer = _ladeNummer Then vorschau.Netz = modell
         Catch ex As Exception
-            If nummer = _ladeNummer Then vorschau.Hinweis = "Keine Vorschau möglich: " & ex.Message
+            ladeFehler = ex.Message
         End Try
+        ' z. B. geslicte 3MF unter anderem Namen: dann wenigstens das Bild aus dem Slicer
+        If ladeFehler IsNot Nothing AndAlso nummer = _ladeNummer Then Await SlicerBildZeigen(d, nummer, "Keine Vorschau möglich: " & ladeFehler)
     End Sub
+
+    ''' <summary>Zeigt das eingebettete Vorschaubild; ohne Bild den Hinweis <paramref name="ohneBild"/>.</summary>
+    Private Async Function SlicerBildZeigen(d As Datei, nummer As Integer, ohneBild As String) As Task
+        vorschau.Hinweis = "Lade Vorschaubild …"
+        Dim bild As Image = Nothing
+        Try
+            bild = Await Task.Run(Function() As Image
+                                      Dim daten = _db.DateiVorschaubild(d)
+                                      If daten Is Nothing OrElse daten.Length = 0 Then Return Nothing
+                                      Using ms As New IO.MemoryStream(daten), roh = Image.FromStream(ms)
+                                          Return New Bitmap(roh)
+                                      End Using
+                                  End Function)
+        Catch ex As Exception
+            bild = Nothing   ' kaputtes Bild: wie "keins"
+        End Try
+        If nummer <> _ladeNummer Then
+            bild?.Dispose()
+            Return
+        End If
+        If bild Is Nothing Then
+            vorschau.Hinweis = ohneBild
+            Return
+        End If
+        vorschau.Hinweis = "Vorschaubild aus dem Slicer (geslicte Datei, kein 3D-Modell)"
+        vorschau.Standbild = bild
+    End Function
 
     Private Sub Grid_CellFormatting(sender As Object, e As DataGridViewCellFormattingEventArgs)
         If e.RowIndex < 0 Then Return

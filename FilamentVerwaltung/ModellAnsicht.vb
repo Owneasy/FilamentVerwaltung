@@ -213,6 +213,24 @@ Public Class ModellAnsicht
         End Set
     End Property
 
+    Private _standbild As Image
+
+    ''' <summary>
+    ''' Vorschaubild aus dem Slicer (geslicte 3MF / G-Code enthalten kein 3D-Modell mehr). Wird ohne Modell
+    ''' anstelle des Hinweises gezeigt; die Ansicht übernimmt das Bild (und gibt das vorige frei).
+    ''' </summary>
+    <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
+    Public Property Standbild As Image
+        Get
+            Return _standbild
+        End Get
+        Set(value As Image)
+            If _standbild IsNot value Then _standbild?.Dispose()
+            _standbild = value
+            Invalidate()
+        End Set
+    End Property
+
     ''' <summary>Text, der ohne Modell angezeigt wird (z. B. "Lade Vorschau …").</summary>
     <DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)>
     Public Property Hinweis As String
@@ -294,6 +312,10 @@ Public Class ModellAnsicht
             Using b As New LinearGradientBrush(ClientRectangle, Theme.TabelleKopf, Theme.Rand, 90.0F)
                 g.FillRectangle(b, ClientRectangle)
             End Using
+            If _standbild IsNot Nothing Then
+                StandbildZeichnen(g)
+                Return
+            End If
             Dim kreis = Px(Me, 72)
             Dim k As New Rectangle((Width - kreis) \ 2, Height \ 2 - kreis + Px(Me, 4), kreis, kreis)
             g.SmoothingMode = SmoothingMode.AntiAlias
@@ -315,6 +337,21 @@ Public Class ModellAnsicht
         Dim info = $"{_netz.Anzahl:N0} Dreiecke · {_netz.GroesseX:0.#} × {_netz.GroesseY:0.#} × {_netz.GroesseZ:0.#} mm"
         TextRenderer.DrawText(g, info, Theme.SchriftKlein,
                               New Rectangle(rand, Height - rand - Px(Me, 18), Width - 2 * rand, Px(Me, 18)), Theme.TextLeise, flags)
+    End Sub
+
+    ''' <summary>Vorschaubild eingepasst (höchstens doppelte Größe, damit kleine Bilder nicht verschwimmen), Hinweis darunter.</summary>
+    Private Sub StandbildZeichnen(g As Graphics)
+        Dim rand = Px(Me, 16), unten = Px(Me, 30)
+        Dim platz As New Rectangle(rand, rand, Width - 2 * rand, Height - 2 * rand - unten)
+        If platz.Width > 10 AndAlso platz.Height > 10 Then
+            Dim faktor = Math.Min(2.0, Math.Min(platz.Width / _standbild.Width, platz.Height / _standbild.Height))
+            Dim w = CInt(_standbild.Width * faktor), h = CInt(_standbild.Height * faktor)
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic
+            g.DrawImage(_standbild, platz.X + (platz.Width - w) \ 2, platz.Y + (platz.Height - h) \ 2, w, h)
+        End If
+        TextRenderer.DrawText(g, If(_hinweis.Length > 0, _hinweis, "Vorschaubild aus dem Slicer"), Theme.SchriftKlein,
+                              New Rectangle(rand, Height - rand - Px(Me, 18), Width - 2 * rand, Px(Me, 18)), Theme.TextLeise,
+                              TextFormatFlags.HorizontalCenter Or TextFormatFlags.NoPadding Or TextFormatFlags.SingleLine Or TextFormatFlags.EndEllipsis)
     End Sub
 
     ''' <summary>Rendert das Modell; schnell = halbe Auflösung ohne Kantenglättung (beim Drehen).</summary>
