@@ -156,10 +156,13 @@ function stoppen() {
   blattSchliessen();
 }
 
+/** Ohne Adresse: am PC (Seitenleiste) die Übersicht wie in der App, auf dem Handy die Drucker. */
+const startseite = () => matchMedia('(min-width: 900px)').matches ? 'uebersicht' : 'drucker';
+
 function navigieren() {
   if (!token) return anmeldenZeigen();
   stoppen();
-  const [name, arg] = (location.hash.slice(1) || 'drucker').split('/');
+  const [name, arg] = (location.hash.slice(1) || startseite()).split('/');
   document.querySelectorAll('.leiste button').forEach(b =>
     b.classList.toggle('aktiv', b.dataset.seite === ({ spule: 'spulen', nachkauf: 'spulen', verlauf: 'buchen', warteschlange: 'dateien' }[name]
       || (name === 'status' || VERWALTUNG_SEITEN[name] ? 'mehr' : name))));
@@ -307,7 +310,7 @@ async function fachZuordnen(druckerId, slot, filamentId) {
     toast(filamentId ? 'Spule zugeordnet.' : 'Zuordnung entfernt.');
   } catch (e) { return fehler(e); }
   blattSchliessen();
-  if ((location.hash.slice(1) || 'drucker') === 'drucker') navigieren();
+  if ((location.hash.slice(1) || startseite()) === 'drucker') navigieren();
 }
 
 async function fachWaehlen(druckerId, slot) {

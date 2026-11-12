@@ -4,7 +4,7 @@
 // ($, esc, holen, schicken, api, inhalt, titel, blattOeffnen, toast, fehler …).
 
 Object.assign(VERWALTUNG_SEITEN, {
-  mehr: mehrSeite, statistik: statistikSeite, wartung: wartungSeite, geraete: geraeteSeite,
+  uebersicht: uebersichtSeite, mehr: mehrSeite, statistik: statistikSeite, wartung: wartungSeite, geraete: geraeteSeite,
   strom: stromSeite, homeassistant: haSeite, sicherungen: sicherungenSeite
 });
 
@@ -25,6 +25,7 @@ async function mehrSeite() {
       <span class="mehr-text"><b>${esc(name)}</b><small class="leise">${esc(text)}</small></span>
       ${zusatz}<span class="mehr-pfeil">›</span></a>`;
   inhalt(`<div id="mListe">
+    ${eintrag('#uebersicht', '🏁', 'Übersicht', 'Lager, Drucker, Verbrauch und Nachkauf auf einen Blick')}
     ${eintrag('#statistik', '📊', 'Statistik', 'Verbrauch, Kosten, Fehldrucke und Reichweite')}
     ${eintrag('#wartung', '🔧', 'Wartung', 'Aufgaben, Herstellerpläne und Druckstunden', '<span id="mWartung"></span>')}
     ${eintrag('druck', '✍️', 'Druck erfassen', 'Einen Druck von Hand buchen')}
@@ -69,6 +70,111 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   fetch('/api/info').then(r => r.json()).then(i => { $('#slVersion').textContent = 'Version ' + i.version; }).catch(() => {});
 });
+
+// ------------------------------------------------------------------ Übersicht (Startseite der App)
+
+/** Kalenderwoche nach ISO 8601. */
+function kalenderwoche(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  return Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7);
+}
+
+/** Karte mit Titel, Untertitel und Link "Alle anzeigen" wie die Listenkarten der App. */
+const listenKarte = (titelText, untertitel, ziel, linkText, inhaltHtml) => `<section class="karte">
+    <div class="zeile karten-kopf"><div><h2>${esc(titelText)}</h2>${untertitel ? `<small class="leise">${esc(untertitel)}</small>` : ''}</div>
+      <a class="link-klein" href="#${ziel}">${esc(linkText)} ›</a></div>
+    ${inhaltHtml}</section>`;
+
+async function uebersichtSeite() {
+  titel('Übersicht');
+  const jetzt = new Date(), stunde = jetzt.getHours();
+  const gruss = `${stunde < 11 ? 'Guten Morgen' : stunde < 18 ? 'Hallo' : 'Guten Abend'} – ${jetzt.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`;
+  inhalt(`<p class="leise untertitel">${esc(gruss)}</p><p class="leer">Lade …</p>`);
+  let spulen, buchungen, sorten, drucker;
+  try {
+    [spulen, buchungen, sorten, drucker] = await Promise.all([holen('filament'), holen('buchungen'), holen('nachkauf').catch(() => []), holen('drucker')]);
+  } catch (e) { return fehler(e); }
+
+  // Kennzahlen
+  const mitRest = spulen.filter(f => f.restgewicht > 0), fastLeer = mitRest.filter(f => f.restgewicht < 150).length;
+  const monatsStart = new Date(jetzt.getFullYear(), jetzt.getMonth(), 1);
+  const imMonat = buchungen.filter(b => istVerbrauch(b) && new Date(b.datum) >= monatsStart);
+  const druckeMonat = imMonat.filter(b => b.art === 'Druck').length, kostenMonat = imMonat.reduce((s, b) => s + b.kosten, 0);
+  const nachkaufen = sorten.filter(s => s.status === 'Nachkaufen'), bald = sorten.filter(s => s.status === 'Bald');
+
+  // Verbrauch pro Woche (12 Kalenderwochen, aktuelle zuletzt)
+  const montag = new Date(jetzt.getFullYear(), jetzt.getMonth(), jetzt.getDate() - (jetzt.getDay() + 6) % 7);
+  const wochen = [];
+  for (let i = 11; i >= 0; i--) {
+    const von = new Date(montag.getFullYear(), montag.getMonth(), montag.getDate() - 7 * i), bis = new Date(von.getFullYear(), von.getMonth(), von.getDate() + 7);
+    const woche = buchungen.filter(b => istVerbrauch(b) && new Date(b.datum) >= von && new Date(b.datum) < bis);
+    const g = woche.reduce((s, b) => s + b.gramm, 0), kw = kalenderwoche(von);
+    const tag = d => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+    wochen.push({ wert: g, kurz: grammKurz(g), text: grammKurz(g), monat: String(kw),
+      titel: `KW ${kw} (${tag(von)} – ${tag(new Date(bis - 86400000))})`, zusatz: `${woche.filter(b => b.art === 'Druck').length} Drucke` });
+  }
+
+  const letzte = buchungen.filter(b => b.art === 'Druck').sort((a, b) => b.datum.localeCompare(a.datum)).slice(0, 6);
+  const knapp = [...nachkaufen, ...bald].sort((a, b) => (a.status === 'Nachkaufen' ? 0 : 1) - (b.status === 'Nachkaufen' ? 0 : 1) || a.rest - b.rest).slice(0, 6);
+
+  inhalt(`<p class="leise untertitel">${esc(gruss)}</p>
+    <div class="kennzahlen vier">
+      <a href="#spulen"><span class="kz-titel">Lagerbestand</span><b>${grammKurz(mitRest.reduce((s, f) => s + f.restgewicht, 0))}</b>
+        <small>${mitRest.length} ${mitRest.length === 1 ? 'Spule' : 'Spulen'} mit Rest${fastLeer ? ` · ${fastLeer} fast leer` : ''}</small></a>
+      <a href="#drucker" id="uDruckerKz"><span class="kz-titel">Drucker</span><b>…</b><small>&nbsp;</small></a>
+      <a href="#verlauf"><span class="kz-titel">Verbrauch diesen Monat</span><b>${grammKurz(imMonat.reduce((s, b) => s + b.gramm, 0))}</b>
+        <small>${druckeMonat} ${druckeMonat === 1 ? 'Druck' : 'Drucke'}${kostenMonat > 0 ? ' · ' + euro(kostenMonat) : ''}</small></a>
+      <a href="#nachkauf"><span class="kz-titel">Nachkaufen</span><b class="${nachkaufen.length ? 'fehler-text' : 'gut-text'}">${nachkaufen.length ? `${nachkaufen.length} ${nachkaufen.length === 1 ? 'Sorte' : 'Sorten'}` : 'Alles da'}</b>
+        <small>${bald.length ? `${bald.length} weitere bald knapp` : nachkaufen.length ? 'jetzt nachbestellen' : 'nichts wird knapp'}</small></a>
+    </div>
+    <div class="uebersicht-raster">
+      ${listenKarte('Drucker', 'Live-Status', 'drucker', 'Zu den Druckern', '<div id="uDrucker" class="ue-liste"><p class="leise">Verbinde …</p></div>')}
+      <section class="karte"><h2>Verbrauch pro Woche</h2><small class="leise">Letzte 12 Kalenderwochen · antippen für Details</small>
+        ${saeulen(wochen, 'Noch kein Verbrauch erfasst – buche Drucke oder wiege Spulen nach.')}<p class="leise saeulen-info"></p></section>
+      ${listenKarte('Letzte Drucke', '', 'verlauf', 'Alle Drucke', letzte.length ? `<div class="ue-liste">${letzte.map(b => `<button class="ue-zeile" data-buchung="${b.id}">
+          <span class="ue-marke">${new Date(b.datum).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}</span>
+          <span class="ue-text"><b>${esc(b.bezeichnung || b.dateiName || 'Druck')}</b><small class="leise">${esc(b.filamentCode)} · ${esc(b.filamentText)}</small></span>
+          <span class="ue-wert">${zahl(b.gramm)} g</span></button>`).join('')}</div>` : '<p class="leise">Noch keine Drucke gebucht.</p>')}
+      ${listenKarte('Nachkaufen', 'Sorten, die knapp werden', 'nachkauf', 'Zur Nachkaufliste', knapp.length ? `<div class="ue-liste">${knapp.map(s => `<a class="ue-zeile" href="#nachkauf">
+          <span class="badge ${s.status === 'Nachkaufen' ? 'rot' : 'gelb'}">${s.status === 'Nachkaufen' ? 'Nachkaufen' : 'Bald'}</span>
+          <span class="ue-text"><b>${esc(s.bezeichnung)}</b><small class="leise">${s.spulen} ${s.spulen === 1 ? 'Spule' : 'Spulen'} · ${s.rest <= 0 ? 'aufgebraucht' : esc(s.reichweiteText)}</small></span>
+          <span class="ue-wert">${zahl(s.rest)} g</span></a>`).join('')}</div>` : '<p class="leise">Alles gut – keine Sorte wird knapp.</p>')}
+    </div>`);
+  document.querySelectorAll('.saeule').forEach(s => s.onclick = () => { s.closest('section').querySelector('.saeulen-info').textContent = s.dataset.info; });
+
+  // Drucker live (alle 5 s, solange die Seite offen ist)
+  const aktive = drucker.filter(d => d.aktiv);
+  const live = async () => {
+    if (!$('#uDrucker')) return;
+    let status = [];
+    try { status = await holen('drucker/live'); } catch { return; }
+    const von = id => (status.find(l => l.druckerId === id) || {}).status || { zustand: 0 };
+    const laeuft = s => s.zustand === DRUCKT || s.zustand === PAUSIERT;
+    const liste = aktive.map(d => ({ d, s: von(d.id) })).sort((a, b) => laeuft(b.s) - laeuft(a.s) || a.d.name.localeCompare(b.d.name));
+    const druckend = liste.filter(x => laeuft(x.s)), offline = liste.filter(x => x.s.zustand === OFFLINE || x.s.zustand === 0).length;
+    const kz = $('#uDruckerKz');
+    if (!aktive.length) kz.innerHTML = '<span class="kz-titel">Drucker</span><b>–</b><small>kein Drucker angebunden</small>';
+    else if (druckend.length) {
+      const rest = Math.min(...druckend.map(x => x.s.restSekunden || Infinity));
+      kz.innerHTML = `<span class="kz-titel">Drucker</span><b class="blau-text">${druckend.length === 1 ? '1 Druck läuft' : druckend.length + ' Drucke laufen'}</b>
+        <small>${rest < Infinity ? 'fertig in ' + dauer(rest) : `von ${aktive.length} Druckern`}</small>`;
+    } else kz.innerHTML = `<span class="kz-titel">Drucker</span><b>${offline === aktive.length ? 'Offline' : 'Bereit'}</b>
+        <small>${aktive.length} Drucker${offline && offline < aktive.length ? ` · ${offline} offline` : ''}</small>`;
+    $('#uDrucker').innerHTML = !aktive.length ? '<p class="leise">Noch kein Drucker angebunden – unter „Drucker verwalten“ hinzufügen.</p>'
+      : liste.map(({ d, s }) => {
+        const z = s.zustand, l = laeuft(s);
+        const info = l ? [prozent(s.fortschritt), s.restSekunden ? 'noch ' + dauer(s.restSekunden) : '', s.schicht ? `Schicht ${s.schicht}${s.schichtenGesamt ? ' / ' + s.schichtenGesamt : ''}` : ''].filter(Boolean).join(' · ')
+          : z === OFFLINE ? 'Nicht erreichbar' : z === FERTIG && s.datei ? 'Fertig: ' + s.datei : 'Kein Druckauftrag';
+        return `<a class="ue-drucker" href="#drucker">
+          <div class="zeile"><b>${esc(d.name)}</b><span class="badge ${ZUSTAND_FARBE[z] || 'grau'}">${ZUSTAND[z] || '?'}</span></div>
+          ${l ? `<div class="datei">${esc(s.datei || '')}</div><div class="balken"><div style="width:${s.fortschritt * 100}%"></div></div>` : ''}
+          <small class="leise">${esc(info)}</small></a>`;
+      }).join('');
+  };
+  await live();
+  if (!document.hidden) seitenTimer = setInterval(live, 5000);
+}
 
 // ------------------------------------------------------------------ Statistik (wie die Seite in der App)
 
