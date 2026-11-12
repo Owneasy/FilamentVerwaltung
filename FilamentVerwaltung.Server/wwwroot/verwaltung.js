@@ -52,11 +52,23 @@ async function wartungZaehlen() {
   if (!token || $('#leiste').hidden) return;
   try {
     const n = (await holen('wartung')).filter(w => w.faellig).length;
-    $('#zahlMehr').textContent = n;
-    $('#zahlMehr').hidden = !n;
+    for (const z of [$('#zahlMehr'), $('#slWartung')]) {
+      z.textContent = n;
+      z.hidden = !n;
+    }
   } catch { /* älterer Server oder offline */ }
 }
-document.addEventListener('DOMContentLoaded', () => { setTimeout(wartungZaehlen, 1500); setInterval(wartungZaehlen, 300000); });
+
+// Seitenleiste (breite Bildschirme): Aktionen ohne eigene Seite und die Version unten
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(wartungZaehlen, 1500);
+  setInterval(wartungZaehlen, 300000);
+  document.querySelectorAll('[data-sl-aktion]').forEach(a => a.onclick = e => {
+    e.preventDefault();
+    if (a.dataset.slAktion === 'druck') druckFormular(); else benachrichtigungenZeigen();
+  });
+  fetch('/api/info').then(r => r.json()).then(i => { $('#slVersion').textContent = 'Version ' + i.version; }).catch(() => {});
+});
 
 // ------------------------------------------------------------------ Statistik (wie die Seite in der App)
 

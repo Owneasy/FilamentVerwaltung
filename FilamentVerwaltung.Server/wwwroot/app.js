@@ -53,6 +53,7 @@ const schicken = (pfad, methode, daten) => api(pfad, { method: methode, body: da
 
 function verbunden(ok) {
   $('#verbindung').className = 'status ' + (ok ? 'ok' : 'weg');
+  $('#slVerbindung').className = 'status ' + (ok ? 'ok' : 'weg');
 }
 
 function fehler(e) {
@@ -98,9 +99,10 @@ const datumZeit = s => new Date(s).toLocaleString('de-DE', { day: '2-digit', mon
 const spulenText = f => [f.hersteller, f.material, f.farbe].filter(Boolean).join(' ');
 
 function zahlBuchen(n) {
-  const z = $('#zahlBuchen');
-  z.textContent = n;
-  z.hidden = !n;
+  for (const z of [$('#zahlBuchen'), $('#slBuchen')]) {
+    z.textContent = n;
+    z.hidden = !n;
+  }
 }
 
 // ------------------------------------------------------------------ Start, Anmeldung, Navigation
@@ -109,6 +111,7 @@ function anmeldenZeigen(meldung) {
   stoppen();
   titel('Anmelden');
   $('#leiste').hidden = true;
+  $('#seitenleiste').hidden = true;
   inhalt(`<section class="karte">
       <h2>Mit dem Server verbinden</h2>
       <p class="leise">Zugangs-Token eingeben – es steht in <b>token.txt</b> im Datenordner des Servers bzw. im Container-Log.
@@ -134,6 +137,7 @@ async function starten() {
     return e instanceof AnmeldeFehler ? anmeldenZeigen(e.message) : inhalt(`<p class="leer">${esc(e.message)}</p>`);
   }
   $('#leiste').hidden = false;
+  $('#seitenleiste').hidden = false;
   $('#glocke').hidden = false;
   $('#glocke').onclick = benachrichtigungenZeigen;
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(glockeAktualisieren).catch(() => {});
@@ -159,6 +163,8 @@ function navigieren() {
   document.querySelectorAll('.leiste button').forEach(b =>
     b.classList.toggle('aktiv', b.dataset.seite === ({ spule: 'spulen', nachkauf: 'spulen', verlauf: 'buchen', warteschlange: 'dateien' }[name]
       || (name === 'status' || VERWALTUNG_SEITEN[name] ? 'mehr' : name))));
+  // Seitenleiste (breite Bildschirme): Eintrag der Seite markieren
+  document.querySelectorAll('[data-sl]').forEach(a => a.classList.toggle('aktiv', a.dataset.sl.split(' ').includes(name)));
   window.scrollTo(0, 0);
   if (VERWALTUNG_SEITEN[name]) VERWALTUNG_SEITEN[name](decodeURIComponent(arg || ''));   // verwaltung.js
   else if (name === 'buchen') buchenSeite();
@@ -335,7 +341,7 @@ async function druckerSeite() {
       druckerListe = drucker;
       if (!drucker.length) return inhalt('<p class="leer">Noch kein Drucker angelegt.<br><a class="primaer" href="#geraete" style="margin-top:12px">+ Drucker hinzufügen</a></p>');
       const status = Object.fromEntries(live.map(l => [l.druckerId, l.status]));
-      inhalt(drucker.map(d => druckerKarte(d, status[d.id], spulen, wartung)).join(''));
+      inhalt('<div class="drucker-raster">' + drucker.map(d => druckerKarte(d, status[d.id], spulen, wartung)).join('') + '</div>');
     } catch (e) { fehler(e); }
   };
   await aktualisieren();
