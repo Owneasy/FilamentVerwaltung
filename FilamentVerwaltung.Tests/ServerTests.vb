@@ -109,6 +109,28 @@ Public Class ServerTests
     End Sub
 
     <Fact>
+    Public Sub Herstellerplan_und_Stromvorschlaege_fuer_den_Browser()
+        Dim db = _server.Client()
+        db.Verbinden()
+        Dim d As New Drucker With {.Name = "Plan-" & Guid.NewGuid().ToString("N").Substring(0, 6) & " A1 mini", .Typ = Drucker.TypBambu, .Adresse = "127.0.0.1:1", .Aktiv = False}
+        db.DruckerSpeichern(d)
+        Using c As New HttpClient()
+            c.DefaultRequestHeaders.Authorization = New Headers.AuthenticationHeaderValue("Bearer", ServerFixture.Token)
+            Dim plaene = c.GetStringAsync(_server.Adresse & "/api/wartung/plaene?typ=Bambu").Result
+            Assert.StartsWith("{""plaene"":[{""modell"":""Bambu Lab", plaene)
+            Assert.Contains("""vorlagen"":[", plaene)
+            ' Plan zweimal übernehmen: beim zweiten Mal wird nichts doppelt angelegt
+            Dim anfrage = Function() New StringContent($"{{""druckerId"":{d.Id},""modell"":""Bambu Lab A1 mini""}}", Text.Encoding.UTF8, "application/json")
+            Assert.Equal("2", c.PostAsync(_server.Adresse & "/api/wartung/plaene", anfrage()).Result.Content.ReadAsStringAsync().Result)
+            Assert.Equal("0", c.PostAsync(_server.Adresse & "/api/wartung/plaene", anfrage()).Result.Content.ReadAsStringAsync().Result)
+            Assert.Equal(HttpStatusCode.NotFound, c.PostAsync(_server.Adresse & "/api/wartung/plaene",
+                New StringContent($"{{""druckerId"":{d.Id},""modell"":""Gibt es nicht""}}", Text.Encoding.UTF8, "application/json")).Result.StatusCode)
+            Dim strom = c.GetStringAsync(_server.Adresse & "/api/strom/vorschlaege").Result
+            Assert.Contains($"{{""druckerId"":{d.Id},""watt"":80,""aufheizWatt"":150,""aufheizMinuten"":3}}", strom)
+        End Using
+    End Sub
+
+    <Fact>
     Public Sub Ohne_Token_gibt_es_keine_Daten()
         Using c As New HttpClient()
             Assert.Equal(HttpStatusCode.Unauthorized, c.GetAsync(_server.Adresse & "/api/filament").Result.StatusCode)

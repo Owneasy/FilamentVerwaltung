@@ -157,9 +157,11 @@ function navigieren() {
   stoppen();
   const [name, arg] = (location.hash.slice(1) || 'drucker').split('/');
   document.querySelectorAll('.leiste button').forEach(b =>
-    b.classList.toggle('aktiv', b.dataset.seite === ({ spule: 'spulen', nachkauf: 'spulen', verlauf: 'buchen', warteschlange: 'dateien' }[name] || name)));
+    b.classList.toggle('aktiv', b.dataset.seite === ({ spule: 'spulen', nachkauf: 'spulen', verlauf: 'buchen', warteschlange: 'dateien' }[name]
+      || (name === 'status' || VERWALTUNG_SEITEN[name] ? 'mehr' : name))));
   window.scrollTo(0, 0);
-  if (name === 'buchen') buchenSeite();
+  if (VERWALTUNG_SEITEN[name]) VERWALTUNG_SEITEN[name](decodeURIComponent(arg || ''));   // verwaltung.js
+  else if (name === 'buchen') buchenSeite();
   else if (name === 'spulen') spulenSeite();
   else if (name === 'dateien') dateienSeite();
   else if (name === 'verlauf') verlaufSeite();
@@ -172,7 +174,7 @@ function navigieren() {
 
 window.addEventListener('hashchange', navigieren);
 document.addEventListener('click', e => {
-  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden],[data-wisch],[data-fach-waehlen],[data-fach-uebernehmen],[data-buchung],[data-gekauft],[data-wartung],[data-auftrag]');
+  const z = e.target.closest('[data-seite],[data-schliessen],[data-kamera],[data-buchen],[data-verwerfen],[data-senden],[data-wisch],[data-fach-waehlen],[data-fach-uebernehmen],[data-buchung],[data-gekauft],[data-wartung],[data-auftrag],[data-datei]');
   if (!z) return;
   if (z.dataset.seite) { if (location.hash === '#' + z.dataset.seite) navigieren(); else location.hash = z.dataset.seite; }
   else if (z.hasAttribute('data-schliessen')) blattSchliessen();
@@ -186,6 +188,7 @@ document.addEventListener('click', e => {
   else if (z.dataset.gekauft) gekauft(z.dataset.gekauft);
   else if (z.dataset.wartung) wartungErledigt(+z.dataset.wartung);
   else if (z.dataset.auftrag) auftragAktion(z.dataset.auftrag);
+  else if (z.dataset.datei) dateiDetails(+z.dataset.datei);   // verwaltung.js
   else if (z.dataset.fachUebernehmen) fachZuordnen(...z.dataset.fachUebernehmen.split(':').map(Number));
 });
 // Im Hintergrund nichts abfragen (spart Akku und Datenvolumen); beim Zurückkehren neu laden –
@@ -330,7 +333,7 @@ async function druckerSeite() {
         holen('wartung').catch(() => [])]);   // ältere Server kennen die Wartung noch nicht
       spulenCache = spulen;
       druckerListe = drucker;
-      if (!drucker.length) return inhalt('<p class="leer">Noch kein Drucker angelegt.<br><small>Drucker legst du in der Windows-App unter „Drucker“ an.</small></p>');
+      if (!drucker.length) return inhalt('<p class="leer">Noch kein Drucker angelegt.<br><a class="primaer" href="#geraete" style="margin-top:12px">+ Drucker hinzufügen</a></p>');
       const status = Object.fromEntries(live.map(l => [l.druckerId, l.status]));
       inhalt(drucker.map(d => druckerKarte(d, status[d.id], spulen, wartung)).join(''));
     } catch (e) { fehler(e); }
@@ -488,6 +491,7 @@ const ZUSTAND_BEREIT = [2, 5, 6];   // Bereit, Fertig, Abgebrochen
 
 // Ordner (nur zum Sortieren): man klickt sich durch; die Suche findet Dateien in allen Ordnern
 let dateienOrdner = '';
+let dateienAlle = false;   // auch Dateien ohne Druckdaten (STL usw.) zeigen
 const ordnerName = p => p.split('/').pop();
 const ordnerEltern = p => p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
 
@@ -495,10 +499,11 @@ async function dateienSeite() {
   titel('Dateien');
   inhalt(reiter('dateien') + `<div class="suche"><input id="dSuche" type="search" placeholder="Dateiname, Material …" value="${esc(dateienSuche)}">
       <button class="primaer" id="dHochladen">+ Hochladen</button><input type="file" id="dDatei" hidden multiple></div>
+    <label class="schalter klein-schalter"><input type="checkbox" id="dAlle" ${dateienAlle ? 'checked' : ''}> auch Modelle zeigen (STL, ungeslicte 3MF …)</label>
     <div id="dPfad" class="ordner-pfad"></div>
     <div id="dListe"><p class="leer">Lade …</p></div>`);
   let dateien, ordner, buchungen;
-  try { [dateien, ordner, buchungen] = await Promise.all([holen('dateien').then(l => l.filter(istDruckbar)), holen('ordner').catch(() => []), holen('buchungen').catch(() => [])]); }
+  try { [dateien, ordner, buchungen] = await Promise.all([holen('dateien').then(l => dateienAlle ? l : l.filter(istDruckbar)), holen('ordner').catch(() => []), holen('buchungen').catch(() => [])]); }
   catch (e) { return fehler(e); }
   // Wie oft wurde jede Datei schon gedruckt (aus den Buchungen)?
   const gedruckt = {};
@@ -516,6 +521,7 @@ async function dateienSeite() {
     const teile = dateienOrdner ? dateienOrdner.split('/') : [];
     $('#dPfad').innerHTML = `<button class="link" data-ordner="">Alle Ordner</button>` +
       teile.map((t, i) => ` › <button class="link" data-ordner="${esc(teile.slice(0, i + 1).join('/'))}">${esc(t)}</button>`).join('') +
+      (dateienOrdner ? '<button class="knopf klein" id="dOrdnerAendern">Umbenennen</button><button class="knopf klein" id="dOrdnerWeg">Entfernen</button>' : '') +
       `<button class="knopf klein" id="dNeuerOrdner">+ Ordner</button>`;
     let html = '';
     if (!q) {
@@ -529,17 +535,19 @@ async function dateienSeite() {
       : dateien.filter(d => inOrdner(d, dateienOrdner));
     html += treffer.map(d => {
       const g = gedruckt[d.id];
-      return wischen(`<button class="karte datei-eintrag mit-bild" data-senden="${d.id}">
+      return wischen(`<button class="karte datei-eintrag mit-bild" data-datei="${d.id}">
         <span class="datei-bild" data-bild="${d.id}"></span>
         <span class="datei-text"><b>${esc(d.name)}</b>
         <small class="leise">${[q && d.ordner ? '📁 ' + d.ordner.replace(/\//g, ' › ') : '', d.typ, d.gramm ? zahl(d.gramm) + ' g' : '', dauer(d.druckzeit), d.material, datumZeit(d.hinzugefuegt)].filter(Boolean).map(esc).join(' · ')}</small>
         ${g ? `<small class="gedruckt">${g.n}× gedruckt${g.fehl ? ` · ${g.fehl} Fehldruck${g.fehl > 1 ? 'e' : ''}` : ''} · zuletzt ${new Date(g.zuletzt).toLocaleDateString('de-DE')}</small>` : ''}</span>
       </button>`, 'datei', d.id, d.name);
     }).join('');
-    $('#dListe').innerHTML = html || `<p class="leer">${!dateien.length ? 'Noch keine druckfertigen Dateien.<br><small>G-Code oder geslicte 3MF fügst du in der Windows-App unter „Dateien“ hinzu oder lädst sie hier hoch.</small>'
+    $('#dListe').innerHTML = html || `<p class="leer">${!dateien.length ? (dateienAlle ? 'Noch keine Dateien.' : 'Noch keine druckfertigen Dateien.') + '<br><small>G-Code oder geslicte 3MF hier hochladen (oder in der Windows-App unter „Dateien“ hinzufügen).</small>'
       : q ? 'Keine passenden Dateien.' : 'Dieser Ordner ist leer.'}</p>`;
     document.querySelectorAll('[data-bild]').forEach(vorschaubildLaden);
     document.querySelectorAll('[data-ordner]').forEach(b => b.onclick = () => { dateienOrdner = b.dataset.ordner; dateienSuche = ''; $('#dSuche').value = ''; zeigen(); });
+    if ($('#dOrdnerAendern')) $('#dOrdnerAendern').onclick = () => ordnerUmbenennen(dateienOrdner);   // verwaltung.js
+    if ($('#dOrdnerWeg')) $('#dOrdnerWeg').onclick = () => ordnerEntfernen(dateienOrdner);
     $('#dNeuerOrdner').onclick = async () => {
       const name = prompt(dateienOrdner ? `Neuer Ordner in „${dateienOrdner.replace(/\//g, ' › ')}“:` : 'Name des neuen Ordners:');
       if (!name || !name.trim()) return;
@@ -550,6 +558,7 @@ async function dateienSeite() {
     };
   };
   $('#dSuche').oninput = e => { dateienSuche = e.target.value; zeigen(); };
+  $('#dAlle').onchange = e => { dateienAlle = e.target.checked; dateienSeite(); };
   $('#dHochladen').onclick = () => $('#dDatei').click();
   $('#dDatei').onchange = e => dateienHochladen([...e.target.files], dateienOrdner);
   zeigen();
@@ -579,7 +588,7 @@ async function sendenFormular(dateiId, vorauswahl = {}) {
       <button class="knopf" id="sAbbrechen">Abbrechen</button></div>
     ${ordner ? `<label>Ordner<select id="sOrdner"><option value="">– ohne Ordner –</option>${ordner.map(o => `<option value="${esc(o)}" ${o.toLowerCase() === (datei.ordner || '').toLowerCase() ? 'selected' : ''}>${esc(o.replace(/\//g, ' › '))}</option>`).join('')}</select></label>` : ''}`;
   if (!drucker.length) {
-    blattOeffnen(kopf + '<p class="fehler">Es ist kein Drucker angebunden (Drucker legst du in der Windows-App an).</p>');
+    blattOeffnen(kopf + '<p class="fehler">Es ist kein Drucker angebunden – anlegen unter „Mehr → Drucker verwalten“.</p>');
     $('#sAbbrechen').onclick = blattSchliessen;
     return;
   }
@@ -750,7 +759,7 @@ async function sendenFormular(dateiId, vorauswahl = {}) {
       $('#sBalken').hidden = true;
       $('#sFortschritt').textContent = '';
       $('#sWarnung').className = 'fehler';
-      $('#sWarnung').textContent = 'Senden fehlgeschlagen: ' + e.message + ' Details stehen im Protokoll des Druckers (Windows-App).';
+      $('#sWarnung').textContent = 'Senden fehlgeschlagen: ' + e.message + ' Details stehen im Protokoll des Druckers (Server-Status).';
       document.querySelectorAll('#blattInhalt select, #blattInhalt input').forEach(e => e.disabled = false);
       $('#sStart').disabled = false;
     }
@@ -776,7 +785,7 @@ async function spulenSeite() {
       <button class="knopf" id="scannen" title="QR-Code oder Barcode scannen">${ICON.qr}</button>
     </div>
     <div class="zeile liste-kopf"><label class="schalter"><input type="checkbox" id="nurVorhanden" ${nurVorhanden ? 'checked' : ''}> nur mit Restbestand</label>
-      <span class="knopf-gruppe"><button class="knopf" id="etiketten">${ICON.drucken} Etiketten</button><button class="primaer" id="neueSpule">+ Neu</button></span></div>
+      <span class="knopf-gruppe"><button class="knopf" id="csv" title="Aktuelle Liste als CSV (z. B. für Excel)">CSV</button><button class="knopf" id="etiketten">${ICON.drucken} Etiketten</button><button class="primaer" id="neueSpule">+ Neu</button></span></div>
     <div id="liste"><p class="leer">Lade …</p></div>`);
   let spulen;
   try { spulen = await holen('filament'); } catch (e) { return fehler(e); }
@@ -799,6 +808,7 @@ async function spulenSeite() {
   $('#nurVorhanden').onchange = e => { nurVorhanden = e.target.checked; zeigen(); };
   $('#scannen').onclick = () => scannen(spulen);
   $('#etiketten').onclick = () => etikettenDialog(gefiltert(), new Set());
+  $('#csv').onclick = () => gefiltert().length ? spulenCsv(gefiltert()) : toast('Es gibt keine Einträge zum Exportieren.', true);   // verwaltung.js
   $('#neueSpule').onclick = () => spuleFormular(null, spulen);
   zeigen();
 }
@@ -965,7 +975,8 @@ async function spuleSeite(code) {
       <div class="knoepfe"><button class="primaer" id="wOk">Übernehmen</button></div>
     </section>
     <div class="knoepfe"><button class="knopf" id="bearbeiten">Bearbeiten</button><button class="knopf" id="duplizieren">Neue Spule wie diese</button></div>
-    <button class="knopf breit" id="etikett">${ICON.drucken} Etikett drucken</button>`);
+    <div class="knoepfe"><button class="knopf" id="etikett">${ICON.drucken} Etikett drucken</button><button class="knopf" id="spuleVerlauf">Verlauf</button></div>`);
+  $('#spuleVerlauf').onclick = () => { verlaufSuche = f.code; verlaufNurFehl = false; location.hash = 'verlauf'; };
   $('#bearbeiten').onclick = async () => spuleFormular(f, await holen('filament'), false);
   $('#duplizieren').onclick = async () => spuleFormular(f, await holen('filament'), true);
   $('#etikett').onclick = () => etikettenDialog([f], new Set([f.id]));
@@ -1668,8 +1679,10 @@ async function verlaufSeite() {
       <b>${fehl.length} ${fehl.length === 1 ? 'Fehldruck' : 'Fehldrucke'}</b> diesen Monat${drucke ? ` (${Math.round(fehl.length / drucke * 100)} %)` : ''}
       · ${zahl(fehl.reduce((s, b) => s + b.gramm, 0))} g · ${euro(fehl.reduce((s, b) => s + b.kosten, 0))}
       <small>${verlaufNurFehl ? 'Alle Einträge zeigen' : 'Nur Fehldrucke zeigen'}</small></button>
-    <div class="suche"><input id="vSuche" type="search" placeholder="Bezeichnung, Spule, Datei …" value="${esc(verlaufSuche)}"></div>
+    <div class="suche"><input id="vSuche" type="search" placeholder="Bezeichnung, Spule, Datei …" value="${esc(verlaufSuche)}">
+      <button class="primaer" id="vNeu">+ Druck</button></div>
     <div id="vListe"></div>`);
+  $('#vNeu').onclick = () => druckFormular();   // verwaltung.js
   const zeigen = () => {
     const q = verlaufSuche.toLowerCase();
     const treffer = buchungen.filter(b => !verlaufNurFehl || b.fehldruck).filter(b => !q || [b.bezeichnung, b.filamentCode, b.filamentText, b.dateiName, b.notiz, b.art]
@@ -1701,8 +1714,9 @@ async function buchungZeigen(id) {
     <dl>${zeilen.map(z => `<dt>${z[0]}</dt><dd>${esc(z[1])}</dd>`).join('')}</dl>
     ${b.art === 'Druck' ? `<label class="schalter"><input type="checkbox" id="vFehldruck" ${b.fehldruck ? 'checked' : ''}> Fehldruck (abgebrochen oder misslungen)</label>
       ${grundAuswahl('vGrund', b.fehldruckGrund, !b.fehldruck)}` : ''}
-    <div class="knoepfe"><button class="knopf gefahr" id="vLoeschen">Löschen …</button></div>`);
+    <div class="knoepfe"><button class="knopf gefahr" id="vLoeschen">Löschen …</button>${b.art === 'Druck' ? '<button class="knopf" id="vBearbeiten">Bearbeiten</button>' : ''}</div>`);
   if (b.foto) fotoLaden(b.foto, $('#vFoto'));
+  if ($('#vBearbeiten')) $('#vBearbeiten').onclick = () => druckFormular(b);   // verwaltung.js
   const fehlSpeichern = async () => {
     const fehldruck = $('#vFehldruck').checked, fehldruckGrund = fehldruck ? $('#vGrund').value : '';
     await schicken('buchungen/druck', 'POST', { ...b, fehldruck, fehldruckGrund });
@@ -1844,7 +1858,9 @@ function automatikVerdrahten() {
     schicken('einstellungen/Buchen.AutomatischAbgebrochen', 'PUT', { wert: e.target.checked ? '1' : '0' }).catch(fehler);
 }
 
-starten();
+// Erst starten, wenn auch verwaltung.js geladen ist (dort liegen weitere Seiten)
+const VERWALTUNG_SEITEN = {};
+document.addEventListener('DOMContentLoaded', starten);
 
 // ------------------------------------------------------------------ Status: Zustand des Servers (Punkt oben rechts antippen)
 
@@ -1873,7 +1889,7 @@ async function statusSeite() {
     const probleme = z.protokoll.filter(p => p.stufe !== 'Info');
     const liste = (statusNurProbleme ? probleme : z.protokoll).slice(0, 100);
     const punkt = ok => `<span class="status ${ok ? 'ok' : 'weg'}"></span>`;
-    inhalt(`<div class="status-seite">
+    inhalt(zurueck() + `<div class="status-seite">
       <div class="kennzahlen">
         <div><b>${esc(z.version)}</b><small>Version</small></div>
         <div><b>${laufzeit(z.laufzeitSekunden)}</b><small>läuft seit</small></div>

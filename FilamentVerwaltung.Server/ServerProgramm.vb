@@ -208,7 +208,7 @@ Public Class StartseiteMitVersion
         Dim index = Path.Combine(wurzel, "index.html")
         If Not File.Exists(index) Then Return
         Dim html = File.ReadAllText(index)
-        For Each name In {"app.js", "app.css"}
+        For Each name In {"app.js", "verwaltung.js", "app.css"}
             Dim datei = Path.Combine(wurzel, name)
             If Not File.Exists(datei) Then Continue For
             Dim kennung = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(datei))).Substring(0, 10).ToLowerInvariant()
